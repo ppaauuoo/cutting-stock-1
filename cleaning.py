@@ -64,8 +64,8 @@ def clean_data(df: pl.DataFrame) -> pl.DataFrame:
     df = df.drop_nulls(subset=["due_date", "order_number", "width", "length", "demand", "quantity", "type"])
     df = df.filter(pl.col("demand") > 0)
     df = df.with_columns([
-        (pl.col("width") * 24.5).alias("width"),
-        (pl.col("length") * 24.5).alias("length")
+        (pl.col("width") / 24.5).alias("width"),
+        (pl.col("length") / 24.5).alias("length")
     ]).select([
         'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type'
     ])
