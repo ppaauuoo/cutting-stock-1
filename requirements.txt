@@ -1,0 +1,5 @@
+pulp
+polars
+fastexcel
+fastapi[standard]
+uv
