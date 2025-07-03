@@ -12,6 +12,7 @@ from pulp import (
     LpProblem,
     LpStatus,
     LpVariable,
+    PULP_CBC_CMD,  # เพิ่มนี่เข้าไป
     lpSum,
     value,
 )
@@ -100,9 +101,28 @@ async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, or
     # Add constraint that cut length must not exceed roll paper length (waste must not be negative)
     prob += effective_order_cut_width <= selected_roll_width, "Constraint_CutsMustFit"
 
-    # 6. Solve the problem
-    prob.solve()
-
+    # 6. Solve the problem (แก้ไขส่วนนี้)
+    try:
+        solver = PULP_CBC_CMD(msg=False)  # ระบุ solver อย่างชัดเจน
+        prob.solve(solver)  # แก้จาก prob.solve() เป็น prob.solve(solver)
+        
+        # ตรวจสอบสถานะการแก้ปัญหา
+        if prob.status != LpStatus.Optimal:  # 1 = Optimal
+            status_str = LpStatus[prob.status]
+            return {
+                "status": f"Solution Status: {status_str}",
+                "objective_value": None,
+                "variables": {},
+                "message": f"Failed to find optimal solution: {status_str}"
+            }
+    except Exception as e:
+        return {
+            "status": "Solver Error",
+            "objective_value": None,
+            "variables": {},
+            "message": f"Solver failed: {str(e)}"
+        }
+    
     # 7. Retrieve and format results
     return await _get_lp_solution_details(
         prob,
@@ -226,6 +246,13 @@ async def main_algorithm(
             result = await solve_linear_program(roll['width'], roll['length'], remaining_orders_df)
 
             status = result["status"]
+            
+            # แจ้งข้อผิดพลาดหากมี
+            if "Error" in status or "Failed" in status or "Infeasible" in status:
+                if progress_callback:
+                    progress_callback(f"    ❌ {result['message']}")
+                break
+            
             selected_order_original_index = result["variables"].get("selected_order_original_index")
 
             if status == "Optimal":
