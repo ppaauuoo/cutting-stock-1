@@ -3,3 +3,5 @@ polars
 fastexcel
 fastapi[standard]
 uv
+PyQt5
+pyinstaller

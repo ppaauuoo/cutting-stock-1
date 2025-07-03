@@ -1,4 +1,6 @@
 import sys
+from typing import Optional
+from datetime import datetime, date # เพิ่ม import datetime, date
 
 import polars as pl
 
@@ -24,13 +26,15 @@ def load_data(file_path: str) -> pl.DataFrame:
         print(f"Error loading data from {file_path}: {e}")
         raise
 
-def clean_data(df: pl.DataFrame) -> pl.DataFrame:
+def clean_data(df: pl.DataFrame, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pl.DataFrame:
     """
     Placeholder function for data cleaning.
     You can add your specific cleaning logic here.
 
     Args:
         df (pl.DataFrame): The input DataFrame to clean.
+        start_date (Optional[str]): Start date for filtering (YYYY-MM-DD).
+        end_date (Optional[str]): End date for filtering (YYYY-MM-DD).
 
     Returns:
         pl.DataFrame: The cleaned DataFrame.
@@ -72,6 +76,23 @@ def clean_data(df: pl.DataFrame) -> pl.DataFrame:
         'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type'
     ])
 
+    # เพิ่มการกรองตามช่วงวันที่หากกำหนดมา
+    if start_date or end_date:
+        # สร้างฟังก์ชันแปลงสตริงเป็น datetime.date
+        def parse_date(date_str: str) -> date:
+            return datetime.strptime(date_str, "%Y-%m-%d").date()
+        
+        conditions = []
+        
+        if start_date:
+            start = parse_date(start_date)
+            conditions.append(pl.col("due_date") >= start)
+        if end_date:
+            end = parse_date(end_date)
+            conditions.append(pl.col("due_date") <= end)
+        
+        df = df.filter(pl.all_horizontal(conditions))
+
     print("Data cleaning complete.")
     return df
 
@@ -85,7 +106,7 @@ if __name__ == "__main__":
         print("\nRaw Data Head:")
         print(raw_df.head())
 
-        # Clean the data
+        # Clean the data (example with no date filtering for CLI)
         cleaned_df = clean_data(raw_df)
 
         print("\nCleaned Data Head:")
@@ -93,5 +114,3 @@ if __name__ == "__main__":
         
         # Write cleaned data to CSV
         cleaned_df.write_csv("clean_order2024.csv", include_header=True)
-
-

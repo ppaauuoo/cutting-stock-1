@@ -1,5 +1,7 @@
 import asyncio
 from pathlib import Path
+import sys
+from typing import Callable, Optional
 
 import polars as pl
 from fastapi import FastAPI
@@ -13,6 +15,8 @@ from pulp import (
     lpSum,
     value,
 )
+
+import cleaning # เพิ่ม import cleaning
 
 app = FastAPI()
 
@@ -179,21 +183,34 @@ async def _get_lp_solution_details(
         "message": "PuLP problem solved successfully. Note: This is a linearized formulation for a mixed-integer linear program."
     }
 
-async def main():
-    # Load all order data and add original index column
-    full_orders_df = pl.read_csv("clean_order2024.csv").head(200)
+async def main_algorithm(
+    roll_width: int,
+    roll_length: int,
+    file_path: str = "order2024.csv", # เปลี่ยนเป็น order2024.csv เพราะจะโหลดและคลีนเอง
+    max_records: Optional[int] = 200,
+    progress_callback: Optional[Callable[[str], None]] = None,
+    start_date: Optional[str] = None,  # เพิ่มพารามิเตอร์นี้
+    end_date: Optional[str] = None,    # เพิ่มพารามิเตอร์นี้
+):
+    # โหลดและคลีนข้อมูลทั้งหมดพร้อมเพิ่ม original index column
+    full_orders_df = cleaning.clean_data(
+        cleaning.load_data(file_path), 
+        start_date,
+        end_date
+    )
+    if max_records:
+        full_orders_df = full_orders_df.head(max_records)
     full_orders_df = full_orders_df.with_row_index("original_idx")
     
     # The widths of the paper rolls we have (can be changed or received from input)
-    # ROLL_PAPER_WIDTHS = [66, 68, 70, 73, 74, 75, 79, 82, 85, 88, 91, 93, 95, 97]
-    # ROLL_PAPER_WIDTHS = [75]
-    # ROLL_PAPER_LENGTHS = [1175]
-    ROLL_PAPER = [{"width": 75, "length": 111175}]
+    ROLL_PAPER = [{"width": roll_width, "length": roll_length}]
 
     all_cut_results = [] # Store all results from cutting all rolls
 
     for roll in ROLL_PAPER:
-        print(f"\n--- Processing for roll paper width: {roll['width']} ---")
+        if progress_callback:
+            progress_callback(f"\n--- Processing for roll paper width: {roll['width']} ---")
+        
         # Create a copy of the full orders DataFrame for the current roll
         remaining_orders_df = full_orders_df.clone()
         current_roll_cuts = [] # Store cutting results for the current roll
@@ -202,7 +219,8 @@ async def main():
         # Loop until no more orders can be cut from the current roll
         while not remaining_orders_df.is_empty():
             iteration += 1
-            print(f"  Iteration {iteration}: Remaining orders: {remaining_orders_df.shape[0]} items")
+            if progress_callback:
+                progress_callback(f"  Iteration {iteration}: Remaining orders: {remaining_orders_df.shape[0]} items")
 
             # Call the LP solving function
             result = await solve_linear_program(roll['width'], roll['length'], remaining_orders_df)
@@ -211,8 +229,9 @@ async def main():
             selected_order_original_index = result["variables"].get("selected_order_original_index")
 
             if status == "Optimal":
-                print(f"    Optimal solution found for roll {roll['width']}. Trim waste: {result['variables']['calculated_trim']:.4f}")
-                print(f"    Selected order width: {result['variables']['selected_order_width']} (Original Index: {selected_order_original_index}), Number of cuts: {result['variables']['num_cuts_z']}")
+                if progress_callback:
+                    progress_callback(f"    Optimal solution found for roll {roll['width']}. Trim waste: {result['variables']['calculated_trim']:.4f}")
+                    progress_callback(f"    Selected order width: {result['variables']['selected_order_width']} (Original Index: {selected_order_original_index}), Number of cuts: {result['variables']['num_cuts_z']}")
 
                 # Store current cut information
                 # Get the order_number using the selected_order_original_index
@@ -223,8 +242,8 @@ async def main():
                     order_number = full_orders_df.row(int(selected_order_original_index))[order_number_col_idx]
                 cut_info = {
                     "roll width": result["variables"]["selected_roll_width"],
-                    "roll length": result["variables"]["selected_roll_length"],
-                    "demand": result["variables"]["calculated_effective_demand_per_cut"],
+                    "roll length": result["variables"]["selected_roll_length"], # ความยาวคงเหลือของม้วน
+                    "demand": result["variables"]["calculated_effective_demand_per_cut"], # ความยาวที่ใช้ไปต่อการตัด 1 ครั้ง
                     "order_number": order_number,
                     "selected_order_width": result["variables"]["selected_order_width"],
                     "selected_order_length": result["variables"]["selected_order_length"],
@@ -243,15 +262,18 @@ async def main():
                         pl.col("original_idx") != selected_order_original_index
                     )
                 else:
-                    print("    Warning: selected_order_original_index is None, cannot remove order.")
+                    if progress_callback:
+                        progress_callback("    Warning: selected_order_original_index is None, cannot remove order.")
                     break # Exit loop if order cannot be identified and removed
 
             elif "No orders left" in status:
-                print(f"    No orders left for roll {roll['width']}.")
+                if progress_callback:
+                    progress_callback(f"    No orders left for roll {roll['width']}.")
                 break # No more orders to process
             else:
-                print(f"    Problem is infeasible or status is undefined for roll {roll['width']}.")
-                print(f"    Status: {status}")
+                if progress_callback:
+                    progress_callback(f"    Problem is infeasible or status is undefined for roll {roll['width']}.")
+                    progress_callback(f"    Status: {status}")
                 break # Cannot find solution for remaining orders with this roll
 
         # Save results for the current roll to a CSV file if cuts occurred
@@ -259,9 +281,11 @@ async def main():
             output_df = pl.DataFrame(current_roll_cuts)
             output_filename = f"roll_cut_results_{roll['width']}.csv"
             output_df.write_csv(output_filename)
-            print(f"--- Saved {len(current_roll_cuts)} cut items for roll {roll['width']} to {output_filename} ---")
+            if progress_callback:
+                progress_callback(f"--- Saved {len(current_roll_cuts)} cut items for roll {roll['width']} to {output_filename} ---")
         else:
-            print(f"--- No cuts made for roll {roll['width']} ---")
+            if progress_callback:
+                progress_callback(f"--- No cuts made for roll {roll['width']} ---")
 
         # Update the roll width based on the last selected order demand
         # จุดนี้อาจจะผิด ถ้าต้องการอัปเดตความกว้างของม้วนกระดาษที่เหลือ
@@ -277,7 +301,34 @@ async def main():
     if all_cut_results:
         final_output_df = pl.DataFrame(all_cut_results)
         final_output_df.write_csv("all_cutting_plan_summary.csv")
-        print("\n--- Saved summary of all cutting plans to all_cutting_plan_summary.csv ---")
+        if progress_callback:
+            progress_callback("\n--- Saved summary of all cutting plans to all_cutting_plan_summary.csv ---")
+    
+    return all_cut_results
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Default values for CLI execution
+    default_roll_width = 75
+    default_roll_length = 111175
+    default_file_path = "order2024.csv" # เปลี่ยนเป็น order2024.csv
+    default_max_records = 200
+    default_start_date = None # เพิ่มค่าเริ่มต้น
+    default_end_date = None   # เพิ่มค่าเริ่มต้น
+
+    print(f"Running cutting optimization with default parameters:")
+    print(f"  Roll Width: {default_roll_width}")
+    print(f"  Roll Length: {default_roll_length}")
+    print(f"  Order File: {default_file_path}")
+    print(f"  Max Records: {default_max_records}")
+    print(f"  Start Date: {default_start_date}")
+    print(f"  End Date: {default_end_date}")
+
+    asyncio.run(main_algorithm(
+        roll_width=default_roll_width,
+        roll_length=default_roll_length,
+        file_path=default_file_path,
+        max_records=default_max_records,
+        progress_callback=print, # Use print for CLI output
+        start_date=default_start_date,
+        end_date=default_end_date
+    ))
