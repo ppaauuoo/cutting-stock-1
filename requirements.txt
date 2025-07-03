@@ -5,3 +5,6 @@ fastapi[standard]
 uv
 PyQt5
 pyinstaller
+cbcpy
+sip
+tzdata

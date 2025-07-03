@@ -1,3 +1,6 @@
 .aider*
 __pycache__
 order2024.xlsx
+build
+dist
+cbc-2.10.12-windows-2022-msvs-v17-x64

@@ -1,12 +1,9 @@
 import sys
-from typing import Optional
-from datetime import datetime, date
 import unicodedata  # เพิ่มส่วน import
+from datetime import date, datetime
+from typing import Optional
 
 import polars as pl
-
-# Configure stdout to use UTF-8 encoding
-sys.stdout.reconfigure(encoding='utf-8')
 
 
 def load_data(file_path: str) -> pl.DataFrame:

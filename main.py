@@ -1,23 +1,23 @@
 import asyncio
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Callable, Optional
 
 import polars as pl
 from fastapi import FastAPI
 from pulp import (
+    PULP_CBC_CMD,  # เพิ่มนี่เข้าไป
     LpBinary,
     LpInteger,
     LpMinimize,
     LpProblem,
     LpStatus,
     LpVariable,
-    PULP_CBC_CMD,  # เพิ่มนี่เข้าไป
     lpSum,
     value,
 )
 
-import cleaning # เพิ่ม import cleaning
+import cleaning  # เพิ่ม import cleaning
 
 app = FastAPI()
 
@@ -107,14 +107,14 @@ async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, or
         prob.solve(solver)  # แก้จาก prob.solve() เป็น prob.solve(solver)
         
         # ตรวจสอบสถานะการแก้ปัญหา
-        if prob.status != LpStatus.Optimal:  # 1 = Optimal
-            status_str = LpStatus[prob.status]
-            return {
-                "status": f"Solution Status: {status_str}",
-                "objective_value": None,
-                "variables": {},
-                "message": f"Failed to find optimal solution: {status_str}"
-            }
+        # if prob.status != LpStatus.Optimal:  # 1 = Optimal
+        #     status_str = LpStatus[prob.status]
+        #     return {
+        #         "status": f"Solution Status: {status_str}",
+        #         "objective_value": None,
+        #         "variables": {},
+        #         "message": f"Failed to find optimal solution: {status_str}"
+        #     }
     except Exception as e:
         return {
             "status": "Solver Error",
