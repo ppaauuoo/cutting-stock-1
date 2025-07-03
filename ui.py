@@ -1,24 +1,51 @@
-import sys
 import asyncio
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QLabel, QLineEdit, QPushButton, QTextEdit, 
-    QProgressBar, QMessageBox, QComboBox, QTableWidget, QTableWidgetItem # เพิ่ม QComboBox, QTableWidget, QTableWidgetItem
+import os
+import re
+import sys
+
+from PyQt5.QtCore import (
+    QDate,
+    QLocale,
+    Qt,
+    QTextCodec,
+    QThread,
+    pyqtSignal,
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QFont  # เพิ่ม import QFont
+from PyQt5.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
 import main  # Import our modified main module
+
 
 class WorkerThread(QThread):
     update_signal = pyqtSignal(str)
     finished = pyqtSignal(list)
     error_signal = pyqtSignal(str)
 
-    def __init__(self, width, length, start_date, end_date): # เพิ่มพารามิเตอร์
+    def __init__(self, width, length, start_date, end_date, file_path):
         super().__init__()
         self.width = width
         self.length = length
-        self.start_date = start_date # เก็บค่าวันที่
-        self.end_date = end_date     # เก็บค่าวันที่
+        self.start_date = start_date
+        self.end_date = end_date
+        self.file_path = file_path
 
     def run(self):
         loop = asyncio.new_event_loop()
@@ -33,8 +60,9 @@ class WorkerThread(QThread):
                     roll_width=self.width,
                     roll_length=self.length,
                     progress_callback=progress_callback,
-                    start_date=self.start_date, # ส่งค่าวันที่ไปยัง main_algorithm
-                    end_date=self.end_date      # ส่งค่าวันที่ไปยัง main_algorithm
+                    start_date=self.start_date,
+                    end_date=self.end_date,
+                    file_path=self.file_path,
                 )
             )
             self.finished.emit(results)
@@ -47,19 +75,33 @@ class CuttingOptimizerUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("กระดาษม้วนตัด Optimizer")
-        self.setGeometry(100, 100, 800, 700) # ปรับขนาดหน้าต่างให้ใหญ่ขึ้น
+        self.setGeometry(100, 100, 800, 700)
         
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
         
+        # เพิ่มส่วนเลือกไฟล์
+        layout.addWidget(QLabel("เลือกไฟล์ออเดอร์:"))
+        
+        file_layout = QHBoxLayout()
+        self.file_path_input = QLineEdit("order2024.csv")
+        self.file_path_input.setPlaceholderText("เลือกไฟล์ CSV...")
+        file_layout.addWidget(self.file_path_input)
+        
+        browse_button = QPushButton("Browse...")
+        browse_button.clicked.connect(self.select_file)
+        file_layout.addWidget(browse_button)
+        
+        layout.addLayout(file_layout)
+
         # Input fields
         # กำหนดค่าความกว้างม้วนกระดาษที่ใช้ได้
         ROLL_PAPER = [66, 68, 70, 73, 74, 75, 79, 82, 85, 88, 91, 93, 95, 97]
 
         layout.addWidget(QLabel("ความกว้างม้วนกระดาษ (inch):")) 
         self.width_combo = QComboBox()
-        self.width_combo.addItems([str(w) for w in ROLL_PAPER]) # เพิ่มตัวเลือกจาก ROLL_PAPER
-        self.width_combo.setCurrentText("75") # กำหนดค่าเริ่มต้น
+        self.width_combo.addItems([str(w) for w in ROLL_PAPER])
+        self.width_combo.setCurrentText("75")
         layout.addWidget(self.width_combo)
         
         layout.addWidget(QLabel("ความยาวม้วนกระดาษ (m):")) 
@@ -67,15 +109,21 @@ class CuttingOptimizerUI(QMainWindow):
         self.length_input.setPlaceholderText("เช่น 111175")
         layout.addWidget(self.length_input)
 
-        # เพิ่มช่องกรอกวันที่
+        # เพิ่มช่องกรอกวันที่ด้วย QDateEdit (บังคับให้แสดงเลขอารบิก)
         layout.addWidget(QLabel("วันที่เริ่มต้น (YYYY-MM-DD):"))
-        self.start_date_input = QLineEdit()
-        self.start_date_input.setPlaceholderText("เช่น 2024-01-01")
+        self.start_date_input = QDateEdit()
+        self.start_date_input.setDisplayFormat("yyyy-MM-dd")
+        self.start_date_input.setCalendarPopup(True)
+        self.start_date_input.setDate(QDate.currentDate().addMonths(-1))
+        self.start_date_input.setLocale(QLocale(QLocale.English, QLocale.Thailand))
         layout.addWidget(self.start_date_input)
-        
+
         layout.addWidget(QLabel("วันที่สิ้นสุด (YYYY-MM-DD):"))
-        self.end_date_input = QLineEdit()
-        self.end_date_input.setPlaceholderText("เช่น 2024-12-31")
+        self.end_date_input = QDateEdit()
+        self.end_date_input.setDisplayFormat("yyyy-MM-dd")
+        self.end_date_input.setCalendarPopup(True)
+        self.end_date_input.setDate(QDate.currentDate())
+        self.end_date_input.setLocale(QLocale(QLocale.English, QLocale.Thailand))
         layout.addWidget(self.end_date_input)
         
         # Progress bar
@@ -103,11 +151,27 @@ class CuttingOptimizerUI(QMainWindow):
             "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", 
             "ความยาวออเดอร์", "จำนวนตัด", "Trim Waste", "ความยาวใช้ไป", "ความยาวคงเหลือ"
         ])
-        self.result_table.setEditTriggers(QTableWidget.NoEditTriggers) # ทำให้แก้ไขไม่ได้
+        self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        # ตั้งค่าตารางให้สามารถเลือกและคัดลอกได้
+        self.result_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.result_table.setSelectionBehavior(QTableWidget.SelectRows)
         layout.addWidget(self.result_table)
         
         self.setCentralWidget(central_widget)
         
+    def select_file(self):
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "เลือกไฟล์ออเดอร์",
+            "",
+            "CSV Files (*.csv);;All Files (*)",
+            options=options
+        )
+        if file_path:
+            self.file_path_input.setText(file_path)
+
     def log_message(self, message: str):
         self.log_display.append(message)
         self.log_display.verticalScrollBar().setValue(
@@ -116,33 +180,36 @@ class CuttingOptimizerUI(QMainWindow):
         
     def run_calculation(self):
         try:
-            width = int(self.width_combo.currentText()) # ดึงค่าจาก QComboBox
+            width = int(self.width_combo.currentText())
             length = int(self.length_input.text())
             
-            # อ่านค่าวันที่จาก UI
-            start_date = self.start_date_input.text().strip()
-            end_date = self.end_date_input.text().strip()
+            # อ่านค่าเส้นทางไฟล์จาก UI
+            file_path = self.file_path_input.text().strip() or "order2024.csv"
 
-            # กำหนดให้เป็น None ถ้าเป็นสตริงว่าง
-            start_date = start_date if start_date else None
-            end_date = end_date if end_date else None
+            # อ่านค่าจาก QDateEdit และแปลงเป็นสตริง
+            start_date = self.start_date_input.date().toString("yyyy-MM-dd") 
+            end_date = self.end_date_input.date().toString("yyyy-MM-dd")
+            
+            # แปลงตัวเลขไทยเป็นอารบิก
+            start_date = convert_thai_digits_to_arabic(start_date).strip() or None
+            end_date = convert_thai_digits_to_arabic(end_date).strip() or None
             
             self.log_display.clear()
-            self.result_table.setRowCount(0) # ล้างตารางก่อนเริ่มคำนวณใหม่
+            self.result_table.setRowCount(0)
             self.log_message("⚙️ กำลังเริ่มการคำนวณ...")
             self.run_button.setEnabled(False)
             self.progress_bar.setFormat("กำลังประมวลผล...")
             
             # Create worker thread
-            self.worker = WorkerThread(width, length, start_date, end_date) # ส่งค่าวันที่ไปยัง worker thread
+            self.worker = WorkerThread(width, length, start_date, end_date, file_path)
             self.worker.update_signal.connect(self.log_message)
             self.worker.finished.connect(self.complete_calculation)
             self.worker.error_signal.connect(self.handle_error)
             self.worker.start()
             
         except ValueError:
-            QMessageBox.warning(self, "ข้อผิดพลาด", "⚠️ โปรดป้อนค่าความยาวเป็นตัวเลขเท่านั้น!") # แก้ไขข้อความเตือน
-            self.log_message("⚠️ โปรดป้อนค่าความยาวเป็นตัวเลขเท่านั้น!") # แก้ไขข้อความเตือน
+            QMessageBox.warning(self, "ข้อผิดพลาด", "⚠️ โปรดป้อนค่าความยาวเป็นตัวเลขเท่านั้น!")
+            self.log_message("⚠️ โปรดป้อนค่าความยาวเป็นตัวเลขเท่านั้น!")
 
     def complete_calculation(self, results):
         self.run_button.setEnabled(True)
@@ -150,18 +217,23 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_message(f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
         QMessageBox.information(self, "เสร็จสิ้น", f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
 
-        # แสดงผลลัพธ์ในตาราง
+        # แสดงผลลัพธ์ในตารางด้วยการตั้งค่า Flag เพื่อให้สามารถเลือกคัดลอกได้
         self.result_table.setRowCount(len(results))
         for row_idx, result in enumerate(results):
-            self.result_table.setItem(row_idx, 0, QTableWidgetItem(str(result.get('roll width', ''))))
-            self.result_table.setItem(row_idx, 1, QTableWidgetItem(str(result.get('order_number', ''))))
-            self.result_table.setItem(row_idx, 2, QTableWidgetItem(f"{result.get('selected_order_width', ''):.2f} inch"))
-            self.result_table.setItem(row_idx, 3, QTableWidgetItem(f"{result.get('selected_order_length', ''):.2f} m"))
-            self.result_table.setItem(row_idx, 4, QTableWidgetItem(str(result.get('num_cuts_z', ''))))
-            self.result_table.setItem(row_idx, 5, QTableWidgetItem(f"{result.get('calculated_trim', ''):.2f} inch"))
-            self.result_table.setItem(row_idx, 6, QTableWidgetItem(f"{result.get('demand', ''):.2f} m"))
-            self.result_table.setItem(row_idx, 7, QTableWidgetItem(f"{result.get('roll length', ''):.2f} m")) # ความยาวคงเหลือของม้วน
-        self.result_table.resizeColumnsToContents() # ปรับขนาดคอลัมน์ให้พอดีเนื้อหา
+            for col_idx, value in enumerate([
+                str(result.get('roll width', '')),
+                str(result.get('order_number', '')),
+                f"{result.get('selected_order_width', ''):.2f}",
+                f"{result.get('selected_order_length', ''):.2f}",
+                str(result.get('num_cuts_z', '')),
+                f"{result.get('calculated_trim', ''):.2f}",
+                f"{result.get('demand', ''):.2f}",
+                f"{result.get('roll length', ''):.2f}"
+            ]):
+                item = QTableWidgetItem(value)
+                item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                self.result_table.setItem(row_idx, col_idx, item)
+        self.result_table.resizeColumnsToContents()
 
     def handle_error(self, error_message: str):
         self.run_button.setEnabled(True)
@@ -169,8 +241,29 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_message(f"❌ {error_message}")
         QMessageBox.critical(self, "ข้อผิดพลาด", f"❌ เกิดข้อผิดพลาดในการคำนวณ:\n{error_message}")
 
+def convert_thai_digits_to_arabic(text: str) -> str:
+    """Convert Thai digits to Arabic digits"""
+    thai_digits = "๐๑๒๓๔๕๖๗๘๙"
+    arabic_digits = "0123456789"
+    translation_table = str.maketrans(thai_digits, arabic_digits)
+    return text.translate(translation_table)
+
 if __name__ == "__main__":
+    # ตั้งค่า environment สำหรับภาษาไทยบน Windows
+    if sys.platform == "win32":
+        os.environ["QT_QPA_PLATFORM"] = "windows:fontengine=freetype"
+        os.environ["PYTHONIOENCODING"] = "utf-8"
+    
+    # ตั้งค่า encoding สำหรับแอปพลิเคชัน
+    QTextCodec.setCodecForLocale(QTextCodec.codecForName("UTF-8"))
+    
+    # แก้ไขตรงนี้: ใช้ QLocale.setDefault() แทน app.setLocale()
+    thai_locale = QLocale(QLocale.Thai, QLocale.Thailand)
+    QLocale.setDefault(thai_locale)
+    
     app = QApplication(sys.argv)
+    app.setFont(QFont('Tahoma', 9))  # ตั้งค่าฟอนต์ภาษาไทย
+    
     window = CuttingOptimizerUI()
     window.show()
     sys.exit(app.exec_())
