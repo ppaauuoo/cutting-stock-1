@@ -1,6 +1,7 @@
 import sys
 from typing import Optional
-from datetime import datetime, date # เพิ่ม import datetime, date
+from datetime import datetime, date
+import unicodedata  # เพิ่มส่วน import
 
 import polars as pl
 
@@ -19,7 +20,12 @@ def load_data(file_path: str) -> pl.DataFrame:
         pl.DataFrame: The loaded DataFrame.
     """
     try:
-        df = pl.read_csv(file_path)
+        # เพิ่ม encoding='utf8' และพารามิเตอร์เกี่ยวกับ null values
+        df = pl.read_csv(
+            file_path,
+            encoding='utf8',  # ระบุ encoding ตรงนี้
+            null_values=["", " ", "NULL", "N/A"]
+        )
         print(f"Successfully loaded data from {file_path}")
         return df
     except Exception as e:
@@ -40,20 +46,37 @@ def clean_data(df: pl.DataFrame, start_date: Optional[str] = None, end_date: Opt
         pl.DataFrame: The cleaned DataFrame.
     """
     print("Starting data cleaning...")
-    # --- Add your data cleaning steps here ---
-    # Example: df = df.drop_nulls()
-    # Example: df = df.with_columns(pl.col('column_name').fill_null(0))
-    # Example: df = df.filter(pl.col('value') > 10)
-    # ---------------------------------------
-    df = df.rename({
-        "กำหนดส่ง": "due_date",
-        "เลขที่ใบสั่งขาย": "order_number",
-        "กว้างผลิต": "width",
-        "ยาวผลิต": "length",
-        "จำนวนสั่งขาย": "demand",
-        "จำนวนสั่งผลิต": "quantity",
-        "ประเภททับเส้น": "type"
-    })
+    
+    # แปลงชื่อคอลัมน์ให้เป็นรูปแบบ Unicode มาตรฐานและตัดช่องว่าง
+    def normalize_col_name(col: str) -> str:
+        return unicodedata.normalize('NFC', col.strip())
+    
+    # สร้าง mapping สำหรับคอลัมน์ไทยพร้อมชื่อที่แปลงแล้ว
+    thai_col_mapping = {
+        normalize_col_name("กำหนดส่ง"): "due_date",
+        normalize_col_name("เลขที่ใบสั่งขาย"): "order_number",
+        normalize_col_name("กว้างผลิต"): "width",
+        normalize_col_name("ยาวผลิต"): "length",
+        normalize_col_name("จำนวนสั่งขาย"): "demand",
+        normalize_col_name("จำนวนสั่งผลิต"): "quantity",
+        normalize_col_name("ประเภททับเส้น"): "type"
+    }
+    
+    # สร้าง dictionary สำหรับเปลี่ยนชื่อคอลัมน์
+    rename_dict = {}
+    for orig_col in df.columns:
+        normalized = normalize_col_name(orig_col)
+        if normalized in thai_col_mapping:
+            rename_dict[orig_col] = thai_col_mapping[normalized]
+    
+    # เปลี่ยนชื่อคอลัมน์
+    df = df.rename(rename_dict)
+    
+    # ตรวจสอบว่ามีคอลัมน์จำเป็นครบ
+    required_cols = ["due_date", "order_number", "width", "length", "demand", "quantity", "type"]
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        raise ValueError(f"⚠️ คอลัมน์หาย: {missing} โปรดตรวจสอบชื่อคอลัมน์ในไฟล์ CSV")
     
     df = df.with_columns(
         pl.col("due_date").str.strptime(pl.Date, "%Y/%m/%d", strict=False),
@@ -113,4 +136,8 @@ if __name__ == "__main__":
         print(cleaned_df.head())
         
         # Write cleaned data to CSV
-        cleaned_df.write_csv("clean_order2024.csv", include_header=True)
+        cleaned_df.write_csv(
+            "clean_order2024.csv", 
+            include_header=True,
+            encoding='utf8'
+        )
