@@ -114,7 +114,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.start_date_input = QDateEdit()
         self.start_date_input.setDisplayFormat("yyyy-MM-dd")
         self.start_date_input.setCalendarPopup(True)
-        self.start_date_input.setDate(QDate.currentDate().addMonths(-1))
+        self.start_date_input.setDate(QDate.currentDate())
         self.start_date_input.setLocale(QLocale(QLocale.English, QLocale.Thailand))
         layout.addWidget(self.start_date_input)
 
@@ -122,7 +122,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.end_date_input = QDateEdit()
         self.end_date_input.setDisplayFormat("yyyy-MM-dd")
         self.end_date_input.setCalendarPopup(True)
-        self.end_date_input.setDate(QDate.currentDate())
+        self.end_date_input.setDate(QDate.currentDate().addDays(3))
         self.end_date_input.setLocale(QLocale(QLocale.English, QLocale.Thailand))
         layout.addWidget(self.end_date_input)
         
