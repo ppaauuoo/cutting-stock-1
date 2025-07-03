@@ -71,12 +71,14 @@ async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, or
         prob += z_effective_cut_width_part[j] <= M_UPPER_BOUND_Z_FOR_LINEARIZATION * y_order_selection[j], f"Linearize_Wj_2_{j}"
         prob += z_effective_cut_width_part[j] >= z - M_UPPER_BOUND_Z_FOR_LINEARIZATION * (1 - y_order_selection[j]), f"Linearize_Wj_3_{j}"
         prob += z_effective_cut_width_part[j] >= 0, f"Linearize_Wj_4_{j}" # Ensure it's non-negative
+        prob += z_effective_cut_width_part[j] <= 6, f"Linearize_Wj_5_{j}" 
+        # prob += (orders_lengths[j]*orders_quantity[j])/z_effective_cut_width_part[j] <= 100, f"Linearize_Wj_5_{j}" 
 
     # Define the selected roll paper width and the total length of cut orders
     selected_roll_width = roll_paper_width # Use the roll paper width passed as input directly
     selected_roll_length = roll_paper_length # Use the roll paper length passed as input directly
     effective_order_cut_width = lpSum(orders_widths[j] * z_effective_cut_width_part[j] for j in range(len(orders_widths)))
-    effective_order_cut_length = lpSum(orders_lengths[j] * orders_quantity[j] for j in range(len(orders_widths)))
+    effective_order_cut_length = lpSum(orders_lengths[j] * orders_quantity[j] * y_order_selection[j] for j in range(len(orders_widths)))
 
     # 4. Define objective function
     # Objective: Minimize trim waste
@@ -89,7 +91,7 @@ async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, or
     prob += selected_roll_width - effective_order_cut_width >= 1, "Constraint_Trim_LowerBound"
     prob += selected_roll_width - effective_order_cut_width <= 5, "Constraint_Trim_UpperBound"
     
-    # prob += selected_roll_length - effective_order_cut_length  >= 100, "Constraint_Length_LowerBound"
+    prob += selected_roll_length * z - effective_order_cut_length  >= 100, "Constraint_Length_LowerBound"
     
     # Add constraint that cut length must not exceed roll paper length (waste must not be negative)
     prob += effective_order_cut_width <= selected_roll_width, "Constraint_CutsMustFit"
@@ -97,50 +99,80 @@ async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, or
     # 6. Solve the problem
     prob.solve()
 
-    # 7. Retrieve results
-    status = LpStatus[prob.status]
-    objective_value = value(prob.objective)
+    # 7. Retrieve and format results
+    return await _get_lp_solution_details(
+        prob,
+        y_order_selection,
+        z,
+        orders_df,
+        roll_paper_width,
+        roll_paper_length,
+        effective_order_cut_length
+    )
 
-    # Retrieve values of selected variables
+async def _get_lp_solution_details(
+    prob: LpProblem,
+    y_order_selection: dict,
+    z: LpVariable,
+    orders_df: pl.DataFrame,
+    roll_paper_width: int,
+    roll_paper_length: int,
+    effective_order_cut_length: LpVariable
+) -> dict:
+    """
+    Extracts and formats the results from the solved PuLP problem.
+    """
+    status = LpStatus[prob.status]
+    objective_value = round(value(prob.objective), 4) if value(prob.objective) is not None else None
+
     selected_order_idx = -1
-    for j in range(len(orders_widths)):
+    # orders_df.shape[0] is the total number of orders in the DataFrame, which is equivalent to len(orders_widths)
+    for j in range(orders_df.shape[0]):
         if y_order_selection[j].varValue == 1:
             selected_order_idx = j
             break
 
     actual_z_value = z.varValue if z.varValue is not None else 0
 
-    # Calculate actual selected_roll_width and selected_order_width
-    actual_selected_roll_width = roll_paper_width # Use the roll_paper_width passed as input
-    actual_selected_order_width = orders_widths[selected_order_idx] if selected_order_idx != -1 else None
-    actual_selected_order_length = orders_lengths[selected_order_idx] if selected_order_idx != -1 else None
-    actual_selected_order_quantity = orders_quantity[selected_order_idx] if selected_order_idx != -1 else None
-    
-    # effective_order_cut_demand ต้องถูกประเมินค่าเป็นตัวเลขก่อนนำไปใช้
-    actual_selected_order_demand = value(effective_order_cut_length)/actual_z_value if selected_order_idx != -1 else None
-    actual_remaining_roll_length = roll_paper_length - (actual_selected_order_demand if actual_selected_order_demand is not None else 0)
-  
-    # Retrieve original_idx of the selected order
+    actual_selected_roll_width = roll_paper_width
+    # Access order details using orders_df directly
+    orders_data = orders_df.to_dicts() # Convert to list of dictionaries for easier access by index
+    actual_selected_order_width = orders_data[selected_order_idx]['width'] if selected_order_idx != -1 else None
+    actual_selected_order_length = orders_data[selected_order_idx]['length'] if selected_order_idx != -1 else None
+    actual_selected_order_quantity = orders_data[selected_order_idx]['quantity'] if selected_order_idx != -1 else None
+
+    # Calculate actual_selected_order_demand from effective_order_cut_length
+    # This represents the total length (length * quantity) for the selected order
+    actual_selected_order_total_length = value(effective_order_cut_length) if selected_order_idx != -1 else None
+
+    # Calculate the demand per effective cut (as per user's request for calculation)
+    # This calculation should only happen if actual_z_value is valid and not zero
+    calculated_effective_demand_per_cut = None
+    if actual_selected_order_length is not None and actual_selected_order_quantity is not None and actual_z_value is not None and actual_z_value > 0:
+        calculated_effective_demand_per_cut = round(actual_selected_order_total_length / actual_z_value, 4)
+
+    actual_remaining_roll_length = round(roll_paper_length - (calculated_effective_demand_per_cut if calculated_effective_demand_per_cut is not None else 0), 4)
+
+
     selected_order_original_index = None
     if selected_order_idx != -1:
-        selected_order_original_index = orders_df['original_idx'].to_list()[selected_order_idx]
+        selected_order_original_index = orders_data[selected_order_idx]['original_idx']
 
-    # Calculate actual Trim
     actual_trim = None
     if actual_selected_roll_width is not None and actual_selected_order_width is not None and actual_z_value is not None:
-        actual_trim = actual_selected_roll_width - (actual_selected_order_width * actual_z_value)
+        actual_trim = round(actual_selected_roll_width - (actual_selected_order_width * actual_z_value), 4)
 
     return {
         "status": status,
         "objective_value": objective_value,
         "variables": {
             "selected_roll_width": actual_selected_roll_width,
-            "selected_roll_length": actual_remaining_roll_length,
+            "selected_roll_length": actual_remaining_roll_length, # This is the remaining length of the roll
             "selected_order_width": actual_selected_order_width,
             "selected_order_length": actual_selected_order_length,
             "selected_order_quantity": actual_selected_order_quantity,
-            "selected_order_demand": actual_selected_order_demand,
-           "num_cuts_z": actual_z_value,
+            "num_cuts_z": actual_z_value,
+            "calculated_effective_demand_per_cut": calculated_effective_demand_per_cut, # The user's calculated demand per cut
             "calculated_trim": actual_trim, # Display calculated trim value
             "selected_order_original_index": selected_order_original_index # Add original_idx of the selected order
         },
@@ -179,7 +211,7 @@ async def main():
             selected_order_original_index = result["variables"].get("selected_order_original_index")
 
             if status == "Optimal":
-                print(f"    Optimal solution found for roll {roll['width']}. Trim waste: {result['variables']['calculated_trim']:.2f}")
+                print(f"    Optimal solution found for roll {roll['width']}. Trim waste: {result['variables']['calculated_trim']:.4f}")
                 print(f"    Selected order width: {result['variables']['selected_order_width']} (Original Index: {selected_order_original_index}), Number of cuts: {result['variables']['num_cuts_z']}")
 
                 # Store current cut information
@@ -192,7 +224,7 @@ async def main():
                 cut_info = {
                     "roll width": result["variables"]["selected_roll_width"],
                     "roll length": result["variables"]["selected_roll_length"],
-                    "demand": result["variables"]["selected_order_demand"],
+                    "demand": result["variables"]["calculated_effective_demand_per_cut"],
                     "order_number": order_number,
                     "selected_order_width": result["variables"]["selected_order_width"],
                     "selected_order_length": result["variables"]["selected_order_length"],
@@ -202,6 +234,8 @@ async def main():
                 }
                 all_cut_results.append(cut_info)
                 current_roll_cuts.append(cut_info)
+
+                roll['length'] = result["variables"]["selected_roll_length"] # Update roll length after cuts
 
                 # Remove the selected order from the remaining orders DataFrame
                 if selected_order_original_index is not None:
