@@ -83,7 +83,7 @@ async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, or
     selected_roll_width = roll_paper_width # Use the roll paper width passed as input directly
     selected_roll_length = roll_paper_length # Use the roll paper length passed as input directly
     effective_order_cut_width = lpSum(orders_widths[j] * z_effective_cut_width_part[j] for j in range(len(orders_widths)))
-    effective_order_cut_length = lpSum(orders_lengths[j] * orders_quantity[j] * y_order_selection[j] for j in range(len(orders_widths)))
+    effective_order_cut_length = lpSum((orders_lengths[j]*25.4/100) * orders_quantity[j] * y_order_selection[j] for j in range(len(orders_widths)))
 
     # 4. Define objective function
     # Objective: Minimize trim waste
