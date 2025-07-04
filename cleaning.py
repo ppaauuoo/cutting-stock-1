@@ -56,7 +56,12 @@ def clean_data(df: pl.DataFrame, start_date: Optional[str] = None, end_date: Opt
         normalize_col_name("ยาวผลิต"): "length",
         normalize_col_name("จำนวนสั่งขาย"): "demand",
         normalize_col_name("จำนวนสั่งผลิต"): "quantity",
-        normalize_col_name("ประเภททับเส้น"): "type"
+        normalize_col_name("ประเภททับเส้น"): "type",
+        normalize_col_name("แผ่นหน้า"): "front",
+        normalize_col_name("ลอน C"): "C",
+        normalize_col_name("แผ่นกลาง"): "middle",
+        normalize_col_name("ลอน B"): "B",
+        normalize_col_name("แผ่นหลัง"): "back"
     }
     
     # สร้าง dictionary สำหรับเปลี่ยนชื่อคอลัมน์
@@ -70,7 +75,7 @@ def clean_data(df: pl.DataFrame, start_date: Optional[str] = None, end_date: Opt
     df = df.rename(rename_dict)
     
     # ตรวจสอบว่ามีคอลัมน์จำเป็นครบ
-    required_cols = ["due_date", "order_number", "width", "length", "demand", "quantity", "type"]
+    required_cols = ["due_date", "order_number", "width", "length", "demand", "quantity", "type", "front", "C", "middle", "B", "back"]
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
         raise ValueError(f"⚠️ คอลัมน์หาย: {missing} โปรดตรวจสอบชื่อคอลัมน์ในไฟล์ CSV")
