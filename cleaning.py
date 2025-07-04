@@ -89,7 +89,7 @@ def clean_data(df: pl.DataFrame,
     df = df.rename(rename_dict)
     
     # ตรวจสอบว่ามีคอลัมน์จำเป็นครบ
-    required_cols = ["due_date", "order_number", "width", "length", "demand", "quantity", "component_type", "type", "front", "C", "middle", "B", "back"]
+    required_cols = ["due_date", "order_number", "width", "length", "demand", "quantity",  "front", "C", "middle", "B", "back", "type", "component_type"]
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
         raise ValueError(f"⚠️ คอลัมน์หาย: {missing} โปรดตรวจสอบชื่อคอลัมน์ในไฟล์ CSV")
