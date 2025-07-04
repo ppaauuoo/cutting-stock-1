@@ -134,31 +134,28 @@ def clean_data(df: pl.DataFrame,
         df = df.filter(pl.all_horizontal(conditions))
 
     # เพิ่มการกรองตามวัสดุหากกำหนดมา (รองรับกรณีเป็น None/Null ด้วย)
-    if front is not None:
-        if front == "null":
-            df = df.filter(pl.col("front").is_null())
-        else:
-            df = df.filter(pl.col("front").str.contains(front, literal=False))
-    if C is not None:
-        if C == "null":
-            df = df.filter(pl.col("C").is_null())
-        else:
-            df = df.filter(pl.col("C").str.contains(C, literal=False))
-    if middle is not None:
-        if middle == "null":
-            df = df.filter(pl.col("middle").is_null())
-        else:
-            df = df.filter(pl.col("middle").str.contains(middle, literal=False))
-    if B is not None:
-        if B == "null":
-            df = df.filter(pl.col("B").is_null())
-        else:
-            df = df.filter(pl.col("B").str.contains(B, literal=False))
-    if back is not None:
-        if back == "null":
-            df = df.filter(pl.col("back").is_null())
-        else:
-            df = df.filter(pl.col("back").str.contains(back, literal=False))
+    print("Filtering data based on material specifications...")
+    print("Front:", front, "C:", C, "Middle:", middle, "B:", B, "Back:", back)
+    if front is None:
+        df = df.filter(pl.col("front").is_null())
+    else:
+        df = df.filter(pl.col("front").str.contains(front, literal=False))
+    if C is None:
+        df = df.filter(pl.col("C").is_null())
+    else:
+        df = df.filter(pl.col("C").str.contains(C, literal=False))
+    if middle is None:
+        df = df.filter(pl.col("middle").is_null())
+    else:
+        df = df.filter(pl.col("middle").str.contains(middle, literal=False))
+    if B is None:
+        df = df.filter(pl.col("B").is_null())
+    else:
+        df = df.filter(pl.col("B").str.contains(B, literal=False))
+    if back is None:
+        df = df.filter(pl.col("back").is_null())
+    else:
+        df = df.filter(pl.col("back").str.contains(back, literal=False))
 
     print("Data cleaning complete.")
     return df
