@@ -146,10 +146,10 @@ class CuttingOptimizerUI(QMainWindow):
         # เพิ่มตารางแสดงผล
         layout.addWidget(QLabel("ผลลัพธ์การตัด:"))
         self.result_table = QTableWidget()
-        self.result_table.setColumnCount(8)
+        self.result_table.setColumnCount(9)
         self.result_table.setHorizontalHeaderLabels([
             "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", 
-            "ความยาวออเดอร์", "จำนวนตัด", "Trim Waste", "ความยาวใช้ไป", "ความยาวคงเหลือ"
+            "ความยาวออเดอร์", "ปริมาณออเดอร์", "จำนวนตัด", "Trim Waste", "ความยาวใช้ไป", "ความยาวคงเหลือ"
         ])
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         # ตั้งค่าตารางให้สามารถเลือกและคัดลอกได้
@@ -225,7 +225,8 @@ class CuttingOptimizerUI(QMainWindow):
                 str(result.get('order_number', '')),
                 f"{result.get('selected_order_width', ''):.2f}",
                 f"{result.get('selected_order_length', ''):.2f}",
-                str(result.get('num_cuts_z', '')),
+                f"{result.get('selected_order_quantity', ''):.2f}",
+               str(result.get('num_cuts_z', '')),
                 f"{result.get('calculated_trim', ''):.2f}",
                 f"{result.get('demand', ''):.2f}",
                 f"{result.get('roll length', ''):.2f}"
