@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDateEdit,
     QFileDialog,
+    QGroupBox,  # เพิ่ม import QGroupBox
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -29,7 +30,6 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
-    QGroupBox, # เพิ่ม import QGroupBox
 )
 
 import main  # Import our modified main module
@@ -120,7 +120,36 @@ class CuttingOptimizerUI(QMainWindow):
         self.width_combo.addItems([str(w) for w in ROLL_PAPER])
         self.width_combo.setCurrentText("75")
         layout.addWidget(self.width_combo)
+                # เพิ่มช่องกรอกข้อมูลแผ่นและลอนในแถวเดียวกัน
+        material_layout = QHBoxLayout()
+
+        material_layout.addWidget(QLabel("แผ่นหน้า:"))
+        self.sheet_front_input = QLineEdit()
+        self.sheet_front_input.setPlaceholderText("แผ่นหน้า")
+        material_layout.addWidget(self.sheet_front_input)
+
+        material_layout.addWidget(QLabel("ลอน C:"))
+        self.corrugate_c_input = QLineEdit()
+        self.corrugate_c_input.setPlaceholderText("ลอน C")
+        material_layout.addWidget(self.corrugate_c_input)
+
+        material_layout.addWidget(QLabel("แผ่นกลาง:"))
+        self.sheet_middle_input = QLineEdit()
+        self.sheet_middle_input.setPlaceholderText("แผ่นกลาง")
+        material_layout.addWidget(self.sheet_middle_input)
+
+        material_layout.addWidget(QLabel("ลอน B:"))
+        self.corrugate_b_input = QLineEdit()
+        self.corrugate_b_input.setPlaceholderText("ลอน B")
+        material_layout.addWidget(self.corrugate_b_input)
+
+        material_layout.addWidget(QLabel("แผ่นหลัง:"))
+        self.sheet_back_input = QLineEdit()
+        self.sheet_back_input.setPlaceholderText("แผ่นหลัง")
+        material_layout.addWidget(self.sheet_back_input)
         
+        layout.addLayout(material_layout)
+
         layout.addWidget(QLabel("ความยาวม้วนกระดาษ (m):")) 
         self.length_input = QLineEdit("111175")
         self.length_input.setPlaceholderText("เช่น 111175")
