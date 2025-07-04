@@ -29,6 +29,7 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+    QGroupBox, # เพิ่ม import QGroupBox
 )
 
 import main  # Import our modified main module
@@ -39,8 +40,8 @@ class WorkerThread(QThread):
     finished = pyqtSignal(list)
     error_signal = pyqtSignal(str)
 
-    def __init__(self, width, length, start_date, end_date, file_path):
-        super().__init__()
+    def __init__(self, width, length, start_date, end_date, file_path, parent=None):
+        super().__init__(parent)
         self.width = width
         self.length = length
         self.start_date = start_date
@@ -70,6 +71,22 @@ class WorkerThread(QThread):
             self.error_signal.emit(f"Error: {str(e)}")
         finally:
             loop.close()
+
+class CustomTableWidget(QTableWidget):
+    """
+    QTableWidget ที่กำหนดเองเพื่อส่งสัญญาณเมื่อกดปุ่ม Enter
+    """
+    enterPressed = pyqtSignal() # สัญญาณที่กำหนดเอง
+
+    def __init__(self, parent=None): # เพิ่ม parent และเรียก super().__init__(parent)
+        super().__init__(parent)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            if self.selectedItems(): # ตรวจสอบว่ามีการเลือกรายการอยู่หรือไม่
+                self.enterPressed.emit()
+                return
+        super().keyPressEvent(event) # เรียกเมธอดของคลาสพื้นฐานสำหรับปุ่มอื่นๆ
 
 class CuttingOptimizerUI(QMainWindow):
     def __init__(self):
@@ -137,15 +154,26 @@ class CuttingOptimizerUI(QMainWindow):
         self.run_button.clicked.connect(self.run_calculation)
         layout.addWidget(self.run_button)
         
-        # Log display
-        layout.addWidget(QLabel("บันทึกการทำงาน:"))
+        # Log display (Collapsible)
+        self.log_group_box = QGroupBox("บันทึกการทำงาน:")
+        self.log_group_box.setCheckable(True) # ทำให้ GroupBox ยุบ/ขยายได้
+        self.log_group_box.setChecked(False)  # เริ่มต้นให้ยุบอยู่
+
+        log_layout = QVBoxLayout()
         self.log_display = QTextEdit()
         self.log_display.setReadOnly(True)
-        layout.addWidget(self.log_display)
+        log_layout.addWidget(self.log_display)
+        self.log_group_box.setLayout(log_layout)
+        
+        layout.addWidget(self.log_group_box)
+        
+        # เชื่อมต่อ signal เพื่อซ่อน/แสดง log_display
+        self.log_group_box.toggled.connect(self.log_display.setVisible)
+        self.log_display.setVisible(False) # ตรวจสอบให้แน่ใจว่าสถานะเริ่มต้นตรงกัน
 
         # เพิ่มตารางแสดงผล
         layout.addWidget(QLabel("ผลลัพธ์การตัด:"))
-        self.result_table = QTableWidget()
+        self.result_table = CustomTableWidget() # ใช้ CustomTableWidget
         self.result_table.setColumnCount(9)
         self.result_table.setHorizontalHeaderLabels([
             "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", 
@@ -159,6 +187,9 @@ class CuttingOptimizerUI(QMainWindow):
         
         self.setCentralWidget(central_widget)
         
+        # เชื่อมต่อสัญญาณ enterPressed ของตารางไปยังเมธอดที่แสดงป๊อปอัป
+        self.result_table.enterPressed.connect(self.show_row_details_popup)
+
     def select_file(self):
         options = QFileDialog.Options()
         options |= QFileDialog.DontUseNativeDialog
@@ -218,6 +249,8 @@ class CuttingOptimizerUI(QMainWindow):
         QMessageBox.information(self, "เสร็จสิ้น", f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
 
         # แสดงผลลัพธ์ในตารางด้วยการตั้งค่า Flag เพื่อให้สามารถเลือกคัดลอกได้
+
+        # แสดงผลลัพธ์ในตารางด้วยการตั้งค่า Flag เพื่อให้สามารถเลือกคัดลอกได้
         self.result_table.setRowCount(len(results))
         for row_idx, result in enumerate(results):
             for col_idx, value in enumerate([
@@ -241,6 +274,28 @@ class CuttingOptimizerUI(QMainWindow):
         self.progress_bar.setFormat("เกิดข้อผิดพลาด!")
         self.log_message(f"❌ {error_message}")
         QMessageBox.critical(self, "ข้อผิดพลาด", f"❌ เกิดข้อผิดพลาดในการคำนวณ:\n{error_message}")
+
+    def show_row_details_popup(self):
+        """
+        แสดงป๊อปอัปพร้อมรายละเอียดของแถวที่เลือกในตาราง
+        """
+        selected_rows = self.result_table.selectedIndexes()
+        if not selected_rows:
+            return
+
+        row_index = selected_rows[0].row() # รับดัชนีของแถวที่เลือก
+
+        # รับชื่อหัวข้อคอลัมน์เพื่อนำไปแสดง
+        headers = [self.result_table.horizontalHeaderItem(col).text() for col in range(self.result_table.columnCount())]
+        
+        details = []
+        for col_idx in range(self.result_table.columnCount()):
+            item = self.result_table.item(row_index, col_idx)
+            if item:
+                details.append(f"{headers[col_idx]}: {item.text()}")
+        
+        detail_message = "\n".join(details)
+        QMessageBox.information(self, "รายละเอียดผลลัพธ์การตัด", detail_message)
 
 def convert_thai_digits_to_arabic(text: str) -> str:
     """Convert Thai digits to Arabic digits"""
