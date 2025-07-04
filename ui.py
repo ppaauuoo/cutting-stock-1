@@ -114,11 +114,19 @@ class CustomTableWidget(QTableWidget):
         super().keyPressEvent(event) # เรียกเมธอดของคลาสพื้นฐานสำหรับปุ่มอื่นๆ
 
 class CuttingOptimizerUI(QMainWindow):
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("กระดาษม้วนตัด Optimizer")
         self.setGeometry(100, 100, 800, 700)
         
+        # Input fields
+        # กำหนดค่าความกว้างม้วนกระดาษที่ใช้ได้
+        ROLL_PAPER = [66, 68, 70, 73, 74, 75, 79, 82, 85, 88, 91, 93, 95, 97]
+    
+        self.ROLL_SPECS = {'66': {'CM127': 20000, 'KB120':9000, 'CM100':8000},'75': {'CM127': 1920}}  # Mockup stock specs
+
+
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
         
@@ -136,9 +144,6 @@ class CuttingOptimizerUI(QMainWindow):
         
         layout.addLayout(file_layout)
 
-        # Input fields
-        # กำหนดค่าความกว้างม้วนกระดาษที่ใช้ได้
-        ROLL_PAPER = [66, 68, 70, 73, 74, 75, 79, 82, 85, 88, 91, 93, 95, 97]
 
         layout.addWidget(QLabel("ความกว้างม้วนกระดาษ (inch):")) 
         self.width_combo = QComboBox()
@@ -173,6 +178,14 @@ class CuttingOptimizerUI(QMainWindow):
         self.sheet_back_input.setPlaceholderText("แผ่นหลัง")
         material_layout.addWidget(self.sheet_back_input)
         
+        # Connect material/width changes to stock update
+        self.sheet_front_input.textChanged.connect(self.update_length_based_on_stock)
+        self.corrugate_c_input.textChanged.connect(self.update_length_based_on_stock)
+        self.sheet_middle_input.textChanged.connect(self.update_length_based_on_stock)
+        self.corrugate_b_input.textChanged.connect(self.update_length_based_on_stock)
+        self.sheet_back_input.textChanged.connect(self.update_length_based_on_stock)
+        self.width_combo.currentTextChanged.connect(self.update_length_based_on_stock)
+
         layout.addLayout(material_layout)
 
         # เพิ่มช่องกรอกความยาวม้วนกระดาษ พร้อมไอคอน info
@@ -183,14 +196,13 @@ class CuttingOptimizerUI(QMainWindow):
         info_icon.setToolTip(
             "ความยาวม้วนกระดาษสูงสุดในสเปคนี้ที่ใช้ได้โดยไม่เกินม้วนอื่น (หน่วย: เมตร)\n"
             "ระบบจะใช้ค่านี้เป็นขีดจำกัดในการคำนวณการตัดม้วนกระดาษ\n"
-            "ตัวอย่าง: 111175"
         )
         info_layout.addWidget(info_label)
         info_layout.addWidget(info_icon)
         info_layout.addStretch()
         layout.addLayout(info_layout)
 
-        self.length_input = QLineEdit("111175")
+        self.length_input = QLineEdit("")
         self.length_input.setPlaceholderText("ความยาวม้วนกระดาษ (เมตร)")
         layout.addWidget(self.length_input)
 
@@ -263,6 +275,30 @@ class CuttingOptimizerUI(QMainWindow):
         self.result_table.enterPressed.connect(self.show_row_details_popup)
         # เชื่อมต่อสัญญาณ doubleClicked ของตารางไปยังเมธอดที่แสดงป๊อปอัป
         self.result_table.doubleClicked.connect(self.show_row_details_popup)
+
+    def update_length_based_on_stock(self):
+        """Update length_input with minimum stock value from ROLL_SPECS"""
+        current_width = self.width_combo.currentText()
+        materials = [
+            self.sheet_front_input.text().strip(),
+            self.corrugate_c_input.text().strip(),
+            self.sheet_middle_input.text().strip(),
+            self.corrugate_b_input.text().strip(),
+            self.sheet_back_input.text().strip()
+        ]
+        
+        stocks = []
+        for material in materials:
+            if current_width in self.ROLL_SPECS and material in self.ROLL_SPECS[current_width]:
+                stocks.append(self.ROLL_SPECS[current_width][material])
+                
+        if stocks:
+            # ใช้ min(stocks) เพื่อหาค่าที่น้อยที่สุด (ถ้ามี) มิฉะนั้นให้ใช้ค่าเริ่มต้นหากไม่มีสต็อกที่ระบุ
+            min_stock = min(stocks) if stocks else "" 
+            self.length_input.setText(str(min_stock))
+        else:
+            self.length_input.setText("0")
+            
 
     def select_file(self):
         options = QFileDialog.Options()
@@ -483,3 +519,4 @@ if __name__ == "__main__":
     window = CuttingOptimizerUI()
     window.show()
     sys.exit(app.exec_())
+
