@@ -175,7 +175,21 @@ class CuttingOptimizerUI(QMainWindow):
         
         layout.addLayout(material_layout)
 
-        layout.addWidget(QLabel("ความยาวม้วนกระดาษ (m):")) 
+        # เพิ่มช่องกรอกความยาวม้วนกระดาษ พร้อมไอคอน info
+        info_layout = QHBoxLayout()
+        info_label = QLabel("ม้วนกระดาษที่ใช้ได้สูงสุด (m):")
+        info_icon = QLabel()
+        info_icon.setPixmap(self.style().standardIcon(QApplication.style().SP_MessageBoxInformation).pixmap(16, 16))
+        info_icon.setToolTip(
+            "ความยาวม้วนกระดาษสูงสุดในสเปคนี้ที่ใช้ได้โดยไม่เกินม้วนอื่น (หน่วย: เมตร)\n"
+            "ระบบจะใช้ค่านี้เป็นขีดจำกัดในการคำนวณการตัดม้วนกระดาษ\n"
+            "ตัวอย่าง: 111175"
+        )
+        info_layout.addWidget(info_label)
+        info_layout.addWidget(info_icon)
+        info_layout.addStretch()
+        layout.addLayout(info_layout)
+
         self.length_input = QLineEdit("111175")
         self.length_input.setPlaceholderText("ความยาวม้วนกระดาษ (เมตร)")
         layout.addWidget(self.length_input)
@@ -232,8 +246,8 @@ class CuttingOptimizerUI(QMainWindow):
         self.result_table = CustomTableWidget() # ใช้ CustomTableWidget
         self.result_table.setColumnCount(9)
         self.result_table.setHorizontalHeaderLabels([
-            "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", 
-            "ความยาวออเดอร์", "ปริมาณออเดอร์", "จำนวนตัด", "Trim Waste", "ความยาวใช้ไป", "ความยาวคงเหลือ"
+            "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", "จำนวนตัด", "เศษเหลือ",
+            "ความยาวออเดอร์", "ปริมาณออเดอร์",  "กระดาษที่ใช้", "กระดาษคงเหลือ"
         ])
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         # ตั้งค่าตารางให้สามารถเลือกและคัดลอกได้
@@ -245,9 +259,10 @@ class CuttingOptimizerUI(QMainWindow):
         
         # เพิ่มตัวแปรสำหรับเก็บข้อมูลผลลัพธ์ทั้งหมด
         self.results_data = []
-
         # เชื่อมต่อสัญญาณ enterPressed ของตารางไปยังเมธอดที่แสดงป๊อปอัป
         self.result_table.enterPressed.connect(self.show_row_details_popup)
+        # เชื่อมต่อสัญญาณ doubleClicked ของตารางไปยังเมธอดที่แสดงป๊อปอัป
+        self.result_table.doubleClicked.connect(self.show_row_details_popup)
 
     def select_file(self):
         options = QFileDialog.Options()
@@ -338,10 +353,10 @@ class CuttingOptimizerUI(QMainWindow):
                 str(result.get('roll width', '')),
                 str(result.get('order_number', '')),
                 f"{result.get('selected_order_width', ''):.2f}",
+                str(result.get('num_cuts_z', '')),
+                f"{result.get('calculated_trim', ''):.2f}",
                 f"{result.get('selected_order_length', ''):.2f}",
                 f"{result.get('selected_order_quantity', ''):.2f}",
-               str(result.get('num_cuts_z', '')),
-                f"{result.get('calculated_trim', ''):.2f}",
                 f"{result.get('demand', ''):.2f}",
                 f"{result.get('roll length', ''):.2f}"
             ]):
