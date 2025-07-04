@@ -361,15 +361,17 @@ class CuttingOptimizerUI(QMainWindow):
         # เพิ่มข้อมูลวัสดุแบบมีเงื่อนไขเฉพาะที่มีค่าเท่านั้น
         material_details = []
         if result.get('front'):
-            material_details.append(f"แผ่นหน้า: {result['front']}")
+            material_details.append(f"แผ่นหน้า: {result['front']} = {result.get('demand', 0):.2f}")
         if result.get('C'):
-            material_details.append(f"ลอน C: {result['C']}")
+            c_value = result.get('demand', 0) * 1.45
+            material_details.append(f"ลอน C: {result['C']} = {c_value:.2f}")
         if result.get('middle'):
-            material_details.append(f"แผ่นกลาง: {result['middle']}")
+            material_details.append(f"แผ่นกลาง: {result['middle']} = {result.get('demand', 0):.2f}")
         if result.get('B'):
-            material_details.append(f"ลอน B: {result['B']}")
+            b_value = result.get('demand', 0) * 1.35
+            material_details.append(f"ลอน B: {result['B']} = {b_value:.2f}")
         if result.get('back'):
-            material_details.append(f"แผ่นหลัง: {result['back']}")
+            material_details.append(f"แผ่นหลัง: {result['back']} = {result.get('demand', 0):.2f}")
         
         if material_details:
             details.append("\n⚙️ ข้อมูลแผ่นและลอน:")
