@@ -6,7 +6,7 @@ from typing import Callable, Optional
 import polars as pl
 from fastapi import FastAPI
 from pulp import (
-    PULP_CBC_CMD,  # เพิ่มนี่เข้าไป
+    PULP_CBC_CMD,
     LpBinary,
     LpInteger,
     LpMinimize,
@@ -17,12 +17,10 @@ from pulp import (
     value,
 )
 
-import cleaning  # เพิ่ม import cleaning
+import cleaning
 
 app = FastAPI()
 
-# Remove @app.get("/solve_lp") because we will call it directly from main() not via a FastAPI endpoint
-# @app.get("/solve_lp")
 async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, orders_df: pl.DataFrame):
     """
     Solve a simple Linear Programming problem using PuLP for a given roll paper width
@@ -45,6 +43,8 @@ async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, or
     orders_widths = orders_df['width'].to_list()
     orders_lengths = orders_df['length'].to_list()
     orders_quantity = orders_df['quantity'].to_list()
+    orders_types = orders_df['type'].to_list() # ดึงข้อมูลประเภททับเส้น
+    orders_comopnent_types = orders_df['component_type'].to_list() # ดึงข้อมูลประเภททับเส้น
 
     # Binary variable for selecting order width
     # y_order_selection[j] = 1 if orders_widths[j] is selected, 0 otherwise
@@ -53,7 +53,9 @@ async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, or
     # Variable z represents the number of times the selected order is cut
     # Variable z represents the number of times the selected order is cut (across the width)
     # Determine a suitable upper bound for z based on roll_paper_width and minimum order width
-    min_order_width_positive = min(val for val in orders_widths if val > 0) if any(val > 0 for val in orders_widths) else 1
+    # แก้ไขการหา min_order_width_positive ให้เปลี่ยนเปอร์เซ็นต์เป็นจำนวนจริง
+    non_zero_widths = [w for w in orders_widths if w > 0]
+    min_order_width_positive = min(non_zero_widths) if non_zero_widths else 1
     max_possible_cuts_z = int(roll_paper_width / min_order_width_positive) if min_order_width_positive > 0 else 1000
     z = LpVariable("num_cuts", 0, max_possible_cuts_z, LpInteger) # z >= 0, should be an integer
 
@@ -78,6 +80,15 @@ async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, or
         prob += z_effective_cut_width_part[j] >= 0, f"Linearize_Wj_4_{j}" # Ensure it's non-negative
         prob += z_effective_cut_width_part[j] <= 6, f"Linearize_Wj_5_{j}" 
         # prob += (orders_lengths[j]*orders_quantity[j])/z_effective_cut_width_part[j] <= 100, f"Linearize_Wj_5_{j}" 
+
+        # เพิ่มเงื่อนไขการจำกัด z เมื่อประเภททับเส้นเป็น 'X'
+        if orders_types[j] == 'X' or orders_comopnent_types[j] == 'X':
+            # สร้าง constraint: หากเลือกออเดอร์นี้ (y==1) ให้ z <=5
+            # ใช้ Big-M method: z <= 5 + M * (1 - y_order_selection[j])
+            prob += (
+                z <= 5 + M_UPPER_BOUND_Z_FOR_LINEARIZATION * (1 - y_order_selection[j]),
+                f"MaxZConstraint_TypeX_Order_{j}"
+            )
 
     # Define the selected roll paper width and the total length of cut orders
     selected_roll_width = roll_paper_width # Use the roll paper width passed as input directly
