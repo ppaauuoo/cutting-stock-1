@@ -21,7 +21,7 @@ import cleaning
 
 app = FastAPI()
 
-async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, orders_df: pl.DataFrame):
+async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, orders_df: pl.DataFrame, C: Optional[str] = None, B: Optional[str] = None) -> dict:
     """
     Solve a simple Linear Programming problem using PuLP for a given roll paper width
     and available orders DataFrame.
@@ -94,7 +94,17 @@ async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, or
     selected_roll_width = roll_paper_width # Use the roll paper width passed as input directly
     selected_roll_length = roll_paper_length # Use the roll paper length passed as input directly
     effective_order_cut_width = lpSum(orders_widths[j] * z_effective_cut_width_part[j] for j in range(len(orders_widths)))
-    effective_order_cut_length = lpSum((orders_lengths[j]*25.4/100) * orders_quantity[j] * y_order_selection[j] for j in range(len(orders_widths)))
+    effective_order_cut_length = lpSum(
+        (
+            (orders_lengths[j] * 25.4 / 100)
+            * orders_quantity[j]
+            * (
+                (1.45 if C else 1.35 if B else 1.0)
+            )
+            * y_order_selection[j]
+        )
+        for j in range(len(orders_widths))
+    )
 
     # 4. Define objective function
     # Objective: Minimize trim waste
@@ -245,6 +255,9 @@ async def main_algorithm(
     B: Optional[str] = None,
     back: Optional[str] = None,
 ):
+    if progress_callback:
+        progress_callback("⚙️ กำลังเริ่มการคำนวณ")
+
     # โหลดและคลีนข้อมูลทั้งหมดพร้อมเพิ่ม original index column
     full_orders_df = cleaning.clean_data(
         cleaning.load_data(file_path), 
@@ -256,6 +269,9 @@ async def main_algorithm(
         B=B,
         back=back,
     )
+    if progress_callback:
+        progress_callback("📁 โหลดและจัดเรียงข้อมูลเรียบร้อย")
+
     if max_records:
         full_orders_df = full_orders_df.head(max_records)
     full_orders_df = full_orders_df.with_row_index("original_idx")
@@ -267,7 +283,7 @@ async def main_algorithm(
 
     for roll in ROLL_PAPER:
         if progress_callback:
-            progress_callback(f"\n--- Processing for roll paper width: {roll['width']} ---")
+            progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
         
         # Create a copy of the full orders DataFrame for the current roll
         remaining_orders_df = full_orders_df.clone()
@@ -281,7 +297,7 @@ async def main_algorithm(
                 progress_callback(f"  Iteration {iteration}: Remaining orders: {remaining_orders_df.shape[0]} items")
 
             # Call the LP solving function
-            result = await solve_linear_program(roll['width'], roll['length'], remaining_orders_df)
+            result = await solve_linear_program(roll['width'], roll['length'], remaining_orders_df, C, B)
 
             status = result["status"]
             
@@ -305,6 +321,10 @@ async def main_algorithm(
                     # Get the index of the "order_number" column
                     order_number_col_idx = full_orders_df.columns.index("order_number")
                     order_number = full_orders_df.row(int(selected_order_original_index))[order_number_col_idx]
+                
+                # ดึงค่า actual_z_value จาก result["variables"]
+                actual_z_value = result["variables"].get("num_cuts_z")
+
                 cut_info = {
                     "roll width": result["variables"]["selected_roll_width"],
                     "roll length": result["variables"]["selected_roll_length"], # ความยาวคงเหลือของม้วน
@@ -313,7 +333,7 @@ async def main_algorithm(
                     "selected_order_width": result["variables"]["selected_order_width"],
                     "selected_order_length": result["variables"]["selected_order_length"],
                     "selected_order_quantity": result["variables"]["selected_order_quantity"],
-                    "num_cuts_z": result["variables"]["num_cuts_z"],
+                    "num_cuts_z": actual_z_value, # ใช้ actual_z_value ที่ดึงมา
                     "calculated_trim": result["variables"]["calculated_trim"],
                     # เพิ่มข้อมูลวัสดุจาก result
                     "front": result.get("material_specs", {}).get("front"),
@@ -375,7 +395,7 @@ async def main_algorithm(
         final_output_df = pl.DataFrame(all_cut_results)
         final_output_df.write_csv("all_cutting_plan_summary.csv")
         if progress_callback:
-            progress_callback("\n--- Saved summary of all cutting plans to all_cutting_plan_summary.csv ---")
+            progress_callback("💾 บันทึกผลลัพธ์ลงไฟล์ CSV เรียบร้อย")
     
     return all_cut_results
 

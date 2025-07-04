@@ -37,6 +37,7 @@ import main  # Import our modified main module
 
 class WorkerThread(QThread):
     update_signal = pyqtSignal(str)
+    progress_updated = pyqtSignal(int, str)  # เพิ่มสัญญาณใหม่สำหรับอัปเดตโปรเกรสบาร์
     finished = pyqtSignal(list)
     error_signal = pyqtSignal(str)
 
@@ -61,7 +62,17 @@ class WorkerThread(QThread):
         
         def progress_callback(message: str):
             self.update_signal.emit(message)
-        
+            # ส่งสัญญาณพร้อมเปอร์เซ็นต์ความคืบหน้าประมาณการ
+            if "กำลังเริ่มการคำนวณ" in message:
+                self.progress_updated.emit(5, message)
+            elif "โหลดและจัดเรียงข้อมูลเรียบร้อย" in message:
+                self.progress_updated.emit(20, message)
+            elif "กำลังประมวลผลม้วน" in message:
+                # สามารถปรับเปอร์เซ็นต์ได้ละเอียดขึ้นหากมีข้อมูลจำนวนม้วนทั้งหมด
+                self.progress_updated.emit(50, message)
+            elif "บันทึกผลลัพธ์ลงไฟล์ CSV เรียบร้อย" in message:
+                self.progress_updated.emit(95, message)
+            
         try:
             results = loop.run_until_complete(
                 main.main_algorithm(
@@ -78,9 +89,11 @@ class WorkerThread(QThread):
                     back=self.back_material,
                 )
             )
+            self.progress_updated.emit(100, "✅ เสร็จสิ้น")  # สัญญาณเสร็จสมบูรณ์
             self.finished.emit(results)
         except Exception as e:
             self.error_signal.emit(f"Error: {str(e)}")
+            self.progress_updated.emit(0, "❌ เกิดข้อผิดพลาด!") # รีเซ็ตโปรเกรสบาร์เมื่อเกิดข้อผิดพลาด
         finally:
             loop.close()
 
@@ -130,7 +143,7 @@ class CuttingOptimizerUI(QMainWindow):
         layout.addWidget(QLabel("ความกว้างม้วนกระดาษ (inch):")) 
         self.width_combo = QComboBox()
         self.width_combo.addItems([str(w) for w in ROLL_PAPER])
-        self.width_combo.setCurrentText("75")
+        self.width_combo.setCurrentText("66")
         layout.addWidget(self.width_combo)
                 # เพิ่มช่องกรอกข้อมูลแผ่นและลอนในแถวเดียวกัน
         material_layout = QHBoxLayout()
@@ -164,7 +177,7 @@ class CuttingOptimizerUI(QMainWindow):
 
         layout.addWidget(QLabel("ความยาวม้วนกระดาษ (m):")) 
         self.length_input = QLineEdit("111175")
-        self.length_input.setPlaceholderText("เช่น 111175")
+        self.length_input.setPlaceholderText("ความยาวม้วนกระดาษ (เมตร)")
         layout.addWidget(self.length_input)
 
         # เพิ่มช่องกรอกวันที่ด้วย QDateEdit (บังคับให้แสดงเลขอารบิก)
@@ -186,8 +199,10 @@ class CuttingOptimizerUI(QMainWindow):
         
         # Progress bar
         self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)  # ตั้งค่าระยะ 0-100%
+        self.progress_bar.setTextVisible(True)  # แสดงข้อความ
         self.progress_bar.setAlignment(Qt.AlignCenter)
-        self.progress_bar.setFormat("กำลังรอการเริ่มต้น...")
+        self.progress_bar.setFormat("กำลังรอการเริ่มต้น...") # ตั้งค่าข้อความเริ่มต้น
         layout.addWidget(self.progress_bar)
         
         # Run button
@@ -280,6 +295,7 @@ class CuttingOptimizerUI(QMainWindow):
             self.result_table.setRowCount(0)
             self.log_message("⚙️ กำลังเริ่มการคำนวณ...")
             self.run_button.setEnabled(False)
+            self.progress_bar.setValue(0) # รีเซ็ตโปรเกรสบาร์
             self.progress_bar.setFormat("กำลังประมวลผล...")
             
             # Create worker thread
@@ -288,6 +304,7 @@ class CuttingOptimizerUI(QMainWindow):
                 front_material, c_material, middle_material, b_material, back_material # ส่งค่าวัสดุ
             )
             self.worker.update_signal.connect(self.log_message)
+            self.worker.progress_updated.connect(self.update_progress_bar)  # เชื่อมต่อสัญญาณใหม่
             self.worker.finished.connect(self.complete_calculation)
             self.worker.error_signal.connect(self.handle_error)
             self.worker.start()
@@ -295,6 +312,15 @@ class CuttingOptimizerUI(QMainWindow):
         except ValueError:
             QMessageBox.warning(self, "ข้อผิดพลาด", "⚠️ โปรดป้อนค่าความยาวเป็นตัวเลขเท่านั้น!")
             self.log_message("⚠️ โปรดป้อนค่าความยาวเป็นตัวเลขเท่านั้น!")
+            self.run_button.setEnabled(True) # เปิดปุ่มกลับมา
+            self.progress_bar.setFormat("เกิดข้อผิดพลาด!")
+
+    def update_progress_bar(self, value: int, message: str):
+        """อัปเดตแถบความคืบหน้าและข้อความ"""
+        self.progress_bar.setValue(value)
+        self.progress_bar.setFormat(f"{message} ({value}%)")
+        if value == 100:
+            self.run_button.setEnabled(True)
 
     def complete_calculation(self, results):
         self.run_button.setEnabled(True)
@@ -372,17 +398,42 @@ class CuttingOptimizerUI(QMainWindow):
         # เพิ่มข้อมูลวัสดุแบบมีเงื่อนไขเฉพาะที่มีค่าเท่านั้น
         material_details = []
         if result.get('front'):
-            material_details.append(f"แผ่นหน้า: {result['front']} = {result.get('demand', 0):.2f}")
+            # ถ้าเป็นลอน C หรือ B ให้หารด้วย 1.45 หรือ 1.35 ตามลำดับ
+            if result.get('C'):
+                front_value = result.get('demand', 0) / 1.45
+            elif result.get('B'):
+                front_value = result.get('demand', 0) / 1.35
+            else:
+                front_value = result.get('demand', 0)
+            material_details.append(f"แผ่นหน้า: {result['front']} = {front_value:.2f}")
         if result.get('C'):
-            c_value = result.get('demand', 0) * 1.45
+            c_value = result.get('demand', 0)
             material_details.append(f"ลอน C: {result['C']} = {c_value:.2f}")
         if result.get('middle'):
-            material_details.append(f"แผ่นกลาง: {result['middle']} = {result.get('demand', 0):.2f}")
+            # ถ้าเป็นลอน C หรือ B ให้หารด้วย 1.45 หรือ 1.35 ตามลำดับ
+            if result.get('C'):
+                middle_value = result.get('demand', 0) / 1.45
+            elif result.get('B'):
+                middle_value = result.get('demand', 0) / 1.35
+            else:
+                middle_value = result.get('demand', 0)
+            material_details.append(f"แผ่นกลาง: {result['middle']} = {middle_value:.2f}")
         if result.get('B'):
-            b_value = result.get('demand', 0) * 1.35
+            # ถ้ามีลอน C ด้วย ให้คำนวณ (C / 1.45) * 1.35, ถ้าไม่มีก็ใช้ demand * 1.35
+            if result.get('C'):
+                b_value = (result.get('demand', 0) / 1.45) * 1.35
+            else:
+                b_value = result.get('demand', 0) * 1.35
             material_details.append(f"ลอน B: {result['B']} = {b_value:.2f}")
         if result.get('back'):
-            material_details.append(f"แผ่นหลัง: {result['back']} = {result.get('demand', 0):.2f}")
+            # ถ้าเป็นลอน C หรือ B ให้หารด้วย 1.45 หรือ 1.35 ตามลำดับ
+            if result.get('C'):
+                back_value = result.get('demand', 0) / 1.45
+            elif result.get('B'):
+                back_value = result.get('demand', 0) / 1.35
+            else:
+                back_value = result.get('demand', 0)
+            material_details.append(f"แผ่นหลัง: {result['back']} = {back_value:.2f}")
         
         if material_details:
             details.append("\n⚙️ ข้อมูลแผ่นและลอน:")
