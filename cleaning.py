@@ -69,12 +69,13 @@ def clean_data(df: pl.DataFrame,
         normalize_col_name("ยาวผลิต"): "length",
         normalize_col_name("จำนวนสั่งขาย"): "demand",
         normalize_col_name("จำนวนสั่งผลิต"): "quantity",
-        normalize_col_name("ประเภททับเส้น"): "type",
         normalize_col_name("แผ่นหน้า"): "front",
         normalize_col_name("ลอน C"): "C",
         normalize_col_name("แผ่นกลาง"): "middle",
         normalize_col_name("ลอน B"): "B",
-        normalize_col_name("แผ่นหลัง"): "back"
+        normalize_col_name("แผ่นหลัง"): "back",
+        normalize_col_name("ประเภททับเส้น"): "type",
+        normalize_col_name("ชนิดส่วนประกอบ"): "component_type"
     }
     
     # สร้าง dictionary สำหรับเปลี่ยนชื่อคอลัมน์
@@ -88,7 +89,7 @@ def clean_data(df: pl.DataFrame,
     df = df.rename(rename_dict)
     
     # ตรวจสอบว่ามีคอลัมน์จำเป็นครบ
-    required_cols = ["due_date", "order_number", "width", "length", "demand", "quantity", "type", "front", "C", "middle", "B", "back"]
+    required_cols = ["due_date", "order_number", "width", "length", "demand", "quantity", "component_type", "type", "front", "C", "middle", "B", "back"]
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
         raise ValueError(f"⚠️ คอลัมน์หาย: {missing} โปรดตรวจสอบชื่อคอลัมน์ในไฟล์ CSV")
@@ -100,18 +101,19 @@ def clean_data(df: pl.DataFrame,
         pl.col("length").cast(pl.Float64),
         pl.col("demand").cast(pl.Int64),
         pl.col("quantity").cast(pl.Int64),
-        pl.col("type").str.strip_chars()
-    )
+        pl.col("type").str.strip_chars(),
+        pl.col("component_type").str.strip_chars()
+   )
 
-    df = df.drop_nulls(subset=["due_date", "order_number", "width", "length", "demand", "quantity", "type"])
+    df = df.drop_nulls(subset=["due_date", "order_number", "width", "length", "demand", "quantity", "type", "component_type"])
     df = df.filter(pl.col("demand") > 0)
     df = df.filter(pl.col("width") > 0)
     df = df.filter(pl.col("length") > 0)
     df = df.with_columns([
-        (pl.col("width") / 24.5).alias("width"),
-        (pl.col("length") / 24.5).alias("length")
+        (pl.col("width") / 25.4).alias("width"),
+        (pl.col("length") / 25.4).alias("length")
     ]).select([
-        'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type', 'front', 'C', 'middle', 'B', 'back' # เพิ่มคอลัมน์วัสดุ
+        'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type', 'component_type', 'front', 'C', 'middle', 'B', 'back' # เพิ่มคอลัมน์วัสดุ
     ])
 
     # เพิ่มการกรองตามช่วงวันที่หากกำหนดมา
@@ -131,17 +133,32 @@ def clean_data(df: pl.DataFrame,
         
         df = df.filter(pl.all_horizontal(conditions))
 
-    # เพิ่มการกรองตามวัสดุหากกำหนดมา
-    if front:
-        df = df.filter(pl.col("front").str.contains(front, literal=False))
-    if C:
-        df = df.filter(pl.col("C").str.contains(C, literal=False))
-    if middle:
-        df = df.filter(pl.col("middle").str.contains(middle, literal=False))
-    if B:
-        df = df.filter(pl.col("B").str.contains(B, literal=False))
-    if back:
-        df = df.filter(pl.col("back").str.contains(back, literal=False))
+    # เพิ่มการกรองตามวัสดุหากกำหนดมา (รองรับกรณีเป็น None/Null ด้วย)
+    if front is not None:
+        if front == "null":
+            df = df.filter(pl.col("front").is_null())
+        else:
+            df = df.filter(pl.col("front").str.contains(front, literal=False))
+    if C is not None:
+        if C == "null":
+            df = df.filter(pl.col("C").is_null())
+        else:
+            df = df.filter(pl.col("C").str.contains(C, literal=False))
+    if middle is not None:
+        if middle == "null":
+            df = df.filter(pl.col("middle").is_null())
+        else:
+            df = df.filter(pl.col("middle").str.contains(middle, literal=False))
+    if B is not None:
+        if B == "null":
+            df = df.filter(pl.col("B").is_null())
+        else:
+            df = df.filter(pl.col("B").str.contains(B, literal=False))
+    if back is not None:
+        if back == "null":
+            df = df.filter(pl.col("back").is_null())
+        else:
+            df = df.filter(pl.col("back").str.contains(back, literal=False))
 
     print("Data cleaning complete.")
     return df
