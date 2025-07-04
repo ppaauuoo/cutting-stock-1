@@ -177,7 +177,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.sheet_back_input = QLineEdit('CM127')
         self.sheet_back_input.setPlaceholderText("แผ่นหลัง")
         material_layout.addWidget(self.sheet_back_input)
-        
+    
         # Connect material/width changes to stock update
         self.sheet_front_input.textChanged.connect(self.update_length_based_on_stock)
         self.corrugate_c_input.textChanged.connect(self.update_length_based_on_stock)
@@ -203,7 +203,9 @@ class CuttingOptimizerUI(QMainWindow):
         layout.addLayout(info_layout)
 
         self.length_input = QLineEdit("")
+        self.update_length_based_on_stock()  # เรียกใช้ครั้งแรกเพื่อกำหนดความยาวเริ่มต้น
         self.length_input.setPlaceholderText("ความยาวม้วนกระดาษ (เมตร)")
+        self.length_input.setEnabled(False)
         layout.addWidget(self.length_input)
 
         # เพิ่มช่องกรอกวันที่ด้วย QDateEdit (บังคับให้แสดงเลขอารบิก)
@@ -375,6 +377,14 @@ class CuttingOptimizerUI(QMainWindow):
 
     def complete_calculation(self, results):
         self.run_button.setEnabled(True)
+        if not results:
+            self.progress_bar.setFormat("ไม่พบม้วนที่เหมาะสม")
+            self.log_message("❌ ไม่พบม้วนที่เหมาะสม กรุณาเปลี่ยนหน้าม้วน")
+            QMessageBox.warning(self, "ไม่พบม้วนที่เหมาะสม", "❌ ไม่พบม้วนที่เหมาะสม กรุณาเปลี่ยนหน้าม้วน")
+            self.results_data = []
+            self.result_table.setRowCount(0)
+            return
+
         self.progress_bar.setFormat("เสร็จสิ้น!")
         self.log_message(f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
         QMessageBox.information(self, "เสร็จสิ้น", f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
