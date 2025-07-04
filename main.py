@@ -167,7 +167,7 @@ async def _get_lp_solution_details(
 
     # Calculate actual_selected_order_demand from effective_order_cut_length
     # This represents the total length (length * quantity) for the selected order
-    actual_selected_order_total_length = value(effective_order_cut_length) if selected_order_idx != -1 else None
+    actual_selected_order_total_length = value(effective_order_cut_length) if selected_order_idx != -1 else 0
 
     # Calculate the demand per effective cut (as per user's request for calculation)
     # This calculation should only happen if actual_z_value is valid and not zero
@@ -192,11 +192,11 @@ async def _get_lp_solution_details(
         "variables": {
             "selected_roll_width": actual_selected_roll_width,
             "selected_roll_length": actual_remaining_roll_length, # This is the remaining length of the roll
+            "demand": calculated_effective_demand_per_cut, # ความยาวที่ใช้ไปต่อการตัด 1 ครั้ง
             "selected_order_width": actual_selected_order_width,
             "selected_order_length": actual_selected_order_length,
             "selected_order_quantity": actual_selected_order_quantity,
             "num_cuts_z": actual_z_value,
-            "calculated_effective_demand_per_cut": calculated_effective_demand_per_cut, # The user's calculated demand per cut
             "calculated_trim": actual_trim, # Display calculated trim value
             "selected_order_original_index": selected_order_original_index # Add original_idx of the selected order
         },
@@ -211,12 +211,22 @@ async def main_algorithm(
     progress_callback: Optional[Callable[[str], None]] = None,
     start_date: Optional[str] = None,  # เพิ่มพารามิเตอร์นี้
     end_date: Optional[str] = None,    # เพิ่มพารามิเตอร์นี้
+    front: Optional[str] = None,       # เพิ่มพารามิเตอร์สำหรับกรองวัสดุ
+    C: Optional[str] = None,
+    middle: Optional[str] = None,
+    B: Optional[str] = None,
+    back: Optional[str] = None,
 ):
     # โหลดและคลีนข้อมูลทั้งหมดพร้อมเพิ่ม original index column
     full_orders_df = cleaning.clean_data(
         cleaning.load_data(file_path), 
         start_date,
-        end_date
+        end_date,
+        front=front, # ส่งพารามิเตอร์วัสดุไปยัง cleaning.clean_data
+        C=C,
+        middle=middle,
+        B=B,
+        back=back,
     )
     if max_records:
         full_orders_df = full_orders_df.head(max_records)
@@ -270,7 +280,7 @@ async def main_algorithm(
                 cut_info = {
                     "roll width": result["variables"]["selected_roll_width"],
                     "roll length": result["variables"]["selected_roll_length"], # ความยาวคงเหลือของม้วน
-                    "demand": result["variables"]["calculated_effective_demand_per_cut"], # ความยาวที่ใช้ไปต่อการตัด 1 ครั้ง
+                    "demand": result["variables"]["demand"], # ความยาวที่ใช้ไปต่อการตัด 1 ครั้ง
                     "order_number": order_number,
                     "selected_order_width": result["variables"]["selected_order_width"],
                     "selected_order_length": result["variables"]["selected_order_length"],
@@ -341,6 +351,11 @@ if __name__ == "__main__":
     default_max_records = 200
     default_start_date = None # เพิ่มค่าเริ่มต้น
     default_end_date = None   # เพิ่มค่าเริ่มต้น
+    default_front = None      # เพิ่มค่าเริ่มต้นสำหรับวัสดุ
+    default_C = None
+    default_middle = None
+    default_B = None
+    default_back = None
 
     print(f"Running cutting optimization with default parameters:")
     print(f"  Roll Width: {default_roll_width}")
@@ -349,6 +364,11 @@ if __name__ == "__main__":
     print(f"  Max Records: {default_max_records}")
     print(f"  Start Date: {default_start_date}")
     print(f"  End Date: {default_end_date}")
+    print(f"  Front Material: {default_front}") # แสดงค่าเริ่มต้นสำหรับวัสดุ
+    print(f"  C Material: {default_C}")
+    print(f"  Middle Material: {default_middle}")
+    print(f"  B Material: {default_B}")
+    print(f"  Back Material: {default_back}")
 
     asyncio.run(main_algorithm(
         roll_width=default_roll_width,
@@ -357,5 +377,10 @@ if __name__ == "__main__":
         max_records=default_max_records,
         progress_callback=print, # Use print for CLI output
         start_date=default_start_date,
-        end_date=default_end_date
+        end_date=default_end_date,
+        front=default_front, # ส่งค่าเริ่มต้นสำหรับวัสดุ
+        C=default_C,
+        middle=default_middle,
+        B=default_B,
+        back=default_back,
     ))

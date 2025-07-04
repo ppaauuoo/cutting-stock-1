@@ -1,5 +1,5 @@
 import sys
-import unicodedata  # เพิ่มส่วน import
+import unicodedata
 from datetime import date, datetime
 from typing import Optional
 
@@ -29,7 +29,15 @@ def load_data(file_path: str) -> pl.DataFrame:
         print(f"Error loading data from {file_path}: {e}")
         raise
 
-def clean_data(df: pl.DataFrame, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pl.DataFrame:
+def clean_data(df: pl.DataFrame, 
+               start_date: Optional[str] = None, 
+               end_date: Optional[str] = None,
+               front: Optional[str] = None, # เพิ่มพารามิเตอร์สำหรับกรองวัสดุ
+               C: Optional[str] = None,
+               middle: Optional[str] = None,
+               B: Optional[str] = None,
+               back: Optional[str] = None
+               ) -> pl.DataFrame:
     """
     Placeholder function for data cleaning.
     You can add your specific cleaning logic here.
@@ -38,6 +46,11 @@ def clean_data(df: pl.DataFrame, start_date: Optional[str] = None, end_date: Opt
         df (pl.DataFrame): The input DataFrame to clean.
         start_date (Optional[str]): Start date for filtering (YYYY-MM-DD).
         end_date (Optional[str]): End date for filtering (YYYY-MM-DD).
+        front (Optional[str]): Filter for 'front' material.
+        C (Optional[str]): Filter for 'C' material.
+        middle (Optional[str]): Filter for 'middle' material.
+        B (Optional[str]): Filter for 'B' material.
+        back (Optional[str]): Filter for 'back' material.
 
     Returns:
         pl.DataFrame: The cleaned DataFrame.
@@ -98,7 +111,7 @@ def clean_data(df: pl.DataFrame, start_date: Optional[str] = None, end_date: Opt
         (pl.col("width") / 24.5).alias("width"),
         (pl.col("length") / 24.5).alias("length")
     ]).select([
-        'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type'
+        'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type', 'front', 'C', 'middle', 'B', 'back' # เพิ่มคอลัมน์วัสดุ
     ])
 
     # เพิ่มการกรองตามช่วงวันที่หากกำหนดมา
@@ -117,6 +130,18 @@ def clean_data(df: pl.DataFrame, start_date: Optional[str] = None, end_date: Opt
             conditions.append(pl.col("due_date") <= end)
         
         df = df.filter(pl.all_horizontal(conditions))
+
+    # เพิ่มการกรองตามวัสดุหากกำหนดมา
+    if front:
+        df = df.filter(pl.col("front").str.contains(front, literal=False))
+    if C:
+        df = df.filter(pl.col("C").str.contains(C, literal=False))
+    if middle:
+        df = df.filter(pl.col("middle").str.contains(middle, literal=False))
+    if B:
+        df = df.filter(pl.col("B").str.contains(B, literal=False))
+    if back:
+        df = df.filter(pl.col("back").str.contains(back, literal=False))
 
     print("Data cleaning complete.")
     return df
