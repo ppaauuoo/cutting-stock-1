@@ -196,7 +196,7 @@ class CuttingOptimizerUI(QMainWindow):
         layout.addWidget(self.run_button)
         
         # Log display (Collapsible)
-        self.log_group_box = QGroupBox("บันทึกการทำงาน:")
+        self.log_group_box = QGroupBox("Show Logs:")
         self.log_group_box.setCheckable(True) # ทำให้ GroupBox ยุบ/ขยายได้
         self.log_group_box.setChecked(False)  # เริ่มต้นให้ยุบอยู่
 
@@ -228,6 +228,9 @@ class CuttingOptimizerUI(QMainWindow):
         
         self.setCentralWidget(central_widget)
         
+        # เพิ่มตัวแปรสำหรับเก็บข้อมูลผลลัพธ์ทั้งหมด
+        self.results_data = []
+
         # เชื่อมต่อสัญญาณ enterPressed ของตารางไปยังเมธอดที่แสดงป๊อปอัป
         self.result_table.enterPressed.connect(self.show_row_details_popup)
 
@@ -299,7 +302,8 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_message(f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
         QMessageBox.information(self, "เสร็จสิ้น", f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
 
-        # แสดงผลลัพธ์ในตารางด้วยการตั้งค่า Flag เพื่อให้สามารถเลือกคัดลอกได้
+        # เก็บผลลัพธ์ทั้งหมดไว้ในตัวแปรของคลาส
+        self.results_data = results
 
         # แสดงผลลัพธ์ในตารางด้วยการตั้งค่า Flag เพื่อให้สามารถเลือกคัดลอกได้
         self.result_table.setRowCount(len(results))
@@ -335,16 +339,42 @@ class CuttingOptimizerUI(QMainWindow):
             return
 
         row_index = selected_rows[0].row() # รับดัชนีของแถวที่เลือก
+        
+        # พยายามดึงข้อมูลผลลัพธ์เต็มจาก self.results_data
+        try:
+            result = self.results_data[row_index]
+        except (IndexError, TypeError):
+            # Fallback to table data only if full results are not available
+            result = {}
 
         # รับชื่อหัวข้อคอลัมน์เพื่อนำไปแสดง
         headers = [self.result_table.horizontalHeaderItem(col).text() for col in range(self.result_table.columnCount())]
         
+        # แสดงข้อมูลเดิมจากตาราง
         details = []
         for col_idx in range(self.result_table.columnCount()):
             item = self.result_table.item(row_index, col_idx)
             if item:
-                details.append(f"{headers[col_idx]}: {item.text()}")
+                header = self.result_table.horizontalHeaderItem(col_idx).text()
+                details.append(f"{header}: {item.text()}")
+
+        # เพิ่มข้อมูลวัสดุแบบมีเงื่อนไขเฉพาะที่มีค่าเท่านั้น
+        material_details = []
+        if result.get('front'):
+            material_details.append(f"แผ่นหน้า: {result['front']}")
+        if result.get('C'):
+            material_details.append(f"ลอน C: {result['C']}")
+        if result.get('middle'):
+            material_details.append(f"แผ่นกลาง: {result['middle']}")
+        if result.get('B'):
+            material_details.append(f"ลอน B: {result['B']}")
+        if result.get('back'):
+            material_details.append(f"แผ่นหลัง: {result['back']}")
         
+        if material_details:
+            details.append("\n⚙️ ข้อมูลแผ่นและลอน:")
+            details.extend(material_details)
+
         detail_message = "\n".join(details)
         QMessageBox.information(self, "รายละเอียดผลลัพธ์การตัด", detail_message)
 

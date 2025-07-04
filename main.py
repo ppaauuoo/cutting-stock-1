@@ -186,6 +186,15 @@ async def _get_lp_solution_details(
     if actual_selected_roll_width is not None and actual_selected_order_width is not None and actual_z_value is not None:
         actual_trim = round(actual_selected_roll_width - (actual_selected_order_width * actual_z_value), 4)
 
+    # เพิ่มการดึงข้อมูลวัสดุจาก orders_df
+    material_specs = {}
+    if selected_order_idx != -1 and orders_data[selected_order_idx]:
+        for key in ['front', 'C', 'middle', 'B', 'back']:
+            # เปลี่ยนชื่อตัวแปร 'value' เป็น 'material_value' เพื่อหลีกเลี่ยงการชนกับฟังก์ชัน pulp.value
+            material_value = orders_data[selected_order_idx].get(key)
+            if material_value:
+                material_specs[key] = material_value
+
     return {
         "status": status,
         "objective_value": objective_value,
@@ -200,6 +209,8 @@ async def _get_lp_solution_details(
             "calculated_trim": actual_trim, # Display calculated trim value
             "selected_order_original_index": selected_order_original_index # Add original_idx of the selected order
         },
+        # เพิ่มฟิลด์ material_specs
+        "material_specs": material_specs,
         "message": "PuLP problem solved successfully. Note: This is a linearized formulation for a mixed-integer linear program."
     }
 
@@ -287,6 +298,12 @@ async def main_algorithm(
                     "selected_order_quantity": result["variables"]["selected_order_quantity"],
                     "num_cuts_z": result["variables"]["num_cuts_z"],
                     "calculated_trim": result["variables"]["calculated_trim"],
+                    # เพิ่มข้อมูลวัสดุจาก result
+                    "front": result.get("material_specs", {}).get("front"),
+                    "C": result.get("material_specs", {}).get("C"),
+                    "middle": result.get("material_specs", {}).get("middle"),
+                    "B": result.get("material_specs", {}).get("B"),
+                    "back": result.get("material_specs", {}).get("back")
                 }
                 all_cut_results.append(cut_info)
                 current_roll_cuts.append(cut_info)
