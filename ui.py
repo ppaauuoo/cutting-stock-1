@@ -11,13 +11,13 @@ from PyQt5.QtCore import (
     QThread,
     pyqtSignal,
 )
-from PyQt5.QtGui import QFont  # เพิ่ม import QFont
+from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
     QDateEdit,
     QFileDialog,
-    QGroupBox,  # เพิ่ม import QGroupBox
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -40,13 +40,20 @@ class WorkerThread(QThread):
     finished = pyqtSignal(list)
     error_signal = pyqtSignal(str)
 
-    def __init__(self, width, length, start_date, end_date, file_path, parent=None):
+    def __init__(self, width, length, start_date, end_date, file_path,
+                 front_material, c_material, middle_material, b_material, back_material, # เพิ่มพารามิเตอร์วัสดุ
+                 parent=None):
         super().__init__(parent)
         self.width = width
         self.length = length
         self.start_date = start_date
         self.end_date = end_date
         self.file_path = file_path
+        self.front_material = front_material # เก็บค่าพารามิเตอร์วัสดุ
+        self.c_material = c_material
+        self.middle_material = middle_material
+        self.b_material = b_material
+        self.back_material = back_material
 
     def run(self):
         loop = asyncio.new_event_loop()
@@ -64,6 +71,11 @@ class WorkerThread(QThread):
                     start_date=self.start_date,
                     end_date=self.end_date,
                     file_path=self.file_path,
+                    front=self.front_material, # ส่งพารามิเตอร์วัสดุ
+                    C=self.c_material,
+                    middle=self.middle_material,
+                    B=self.b_material,
+                    back=self.back_material,
                 )
             )
             self.finished.emit(results)
@@ -124,27 +136,27 @@ class CuttingOptimizerUI(QMainWindow):
         material_layout = QHBoxLayout()
 
         material_layout.addWidget(QLabel("แผ่นหน้า:"))
-        self.sheet_front_input = QLineEdit()
+        self.sheet_front_input = QLineEdit('CM127')
         self.sheet_front_input.setPlaceholderText("แผ่นหน้า")
         material_layout.addWidget(self.sheet_front_input)
 
         material_layout.addWidget(QLabel("ลอน C:"))
-        self.corrugate_c_input = QLineEdit()
+        self.corrugate_c_input = QLineEdit('CM127')
         self.corrugate_c_input.setPlaceholderText("ลอน C")
         material_layout.addWidget(self.corrugate_c_input)
 
         material_layout.addWidget(QLabel("แผ่นกลาง:"))
-        self.sheet_middle_input = QLineEdit()
+        self.sheet_middle_input = QLineEdit('CM127')
         self.sheet_middle_input.setPlaceholderText("แผ่นกลาง")
         material_layout.addWidget(self.sheet_middle_input)
 
         material_layout.addWidget(QLabel("ลอน B:"))
-        self.corrugate_b_input = QLineEdit()
+        self.corrugate_b_input = QLineEdit('CM127')
         self.corrugate_b_input.setPlaceholderText("ลอน B")
         material_layout.addWidget(self.corrugate_b_input)
 
         material_layout.addWidget(QLabel("แผ่นหลัง:"))
-        self.sheet_back_input = QLineEdit()
+        self.sheet_back_input = QLineEdit('CM127')
         self.sheet_back_input.setPlaceholderText("แผ่นหลัง")
         material_layout.addWidget(self.sheet_back_input)
         
@@ -253,6 +265,13 @@ class CuttingOptimizerUI(QMainWindow):
             # แปลงตัวเลขไทยเป็นอารบิก
             start_date = convert_thai_digits_to_arabic(start_date).strip() or None
             end_date = convert_thai_digits_to_arabic(end_date).strip() or None
+
+            # อ่านค่าจากช่องกรอกวัสดุ
+            front_material = self.sheet_front_input.text().strip() or None
+            c_material = self.corrugate_c_input.text().strip() or None
+            middle_material = self.sheet_middle_input.text().strip() or None
+            b_material = self.corrugate_b_input.text().strip() or None
+            back_material = self.sheet_back_input.text().strip() or None
             
             self.log_display.clear()
             self.result_table.setRowCount(0)
@@ -261,7 +280,10 @@ class CuttingOptimizerUI(QMainWindow):
             self.progress_bar.setFormat("กำลังประมวลผล...")
             
             # Create worker thread
-            self.worker = WorkerThread(width, length, start_date, end_date, file_path)
+            self.worker = WorkerThread(
+                width, length, start_date, end_date, file_path,
+                front_material, c_material, middle_material, b_material, back_material # ส่งค่าวัสดุ
+            )
             self.worker.update_signal.connect(self.log_message)
             self.worker.finished.connect(self.complete_calculation)
             self.worker.error_signal.connect(self.handle_error)
