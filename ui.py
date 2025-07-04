@@ -358,6 +358,17 @@ class CuttingOptimizerUI(QMainWindow):
                 header = self.result_table.horizontalHeaderItem(col_idx).text()
                 details.append(f"{header}: {item.text()}")
 
+        # เพิ่มข้อมูลประเภททับเส้นและชนิดส่วนประกอบ
+        type_details = []
+        if result.get('type'):
+            type_details.append(f"ประเภททับเส้น: {result['type']}")
+        if result.get('component_type'):
+            type_details.append(f"ชนิดส่วนประกอบ: {result['component_type']}")
+        
+        if type_details:
+            details.append("\n📌 ข้อมูลประเภท:")
+            details.extend(type_details)
+
         # เพิ่มข้อมูลวัสดุแบบมีเงื่อนไขเฉพาะที่มีค่าเท่านั้น
         material_details = []
         if result.get('front'):

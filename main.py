@@ -206,6 +206,10 @@ async def _get_lp_solution_details(
             if material_value:
                 material_specs[key] = material_value
 
+    # เพิ่มการดึงข้อมูลประเภททับเส้นและชนิดส่วนประกอบ
+    type_value = orders_data[selected_order_idx].get('type') if selected_order_idx != -1 else None
+    component_type_value = orders_data[selected_order_idx].get('component_type') if selected_order_idx != -1 else None
+
     return {
         "status": status,
         "objective_value": objective_value,
@@ -218,7 +222,9 @@ async def _get_lp_solution_details(
             "selected_order_quantity": actual_selected_order_quantity,
             "num_cuts_z": actual_z_value,
             "calculated_trim": actual_trim, # Display calculated trim value
-            "selected_order_original_index": selected_order_original_index # Add original_idx of the selected order
+            "selected_order_original_index": selected_order_original_index, # Add original_idx of the selected order
+            "type": type_value,  # เพิ่มฟิลด์นี้
+            "component_type": component_type_value  # เพิ่มฟิลด์นี้
         },
         # เพิ่มฟิลด์ material_specs
         "material_specs": material_specs,
@@ -229,7 +235,7 @@ async def main_algorithm(
     roll_width: int,
     roll_length: int,
     file_path: str = "order2024.csv", # เปลี่ยนเป็น order2024.csv เพราะจะโหลดและคลีนเอง
-    max_records: Optional[int] = 200,
+    max_records: Optional[int] = 2000,
     progress_callback: Optional[Callable[[str], None]] = None,
     start_date: Optional[str] = None,  # เพิ่มพารามิเตอร์นี้
     end_date: Optional[str] = None,    # เพิ่มพารามิเตอร์นี้
@@ -314,7 +320,9 @@ async def main_algorithm(
                     "C": result.get("material_specs", {}).get("C"),
                     "middle": result.get("material_specs", {}).get("middle"),
                     "B": result.get("material_specs", {}).get("B"),
-                    "back": result.get("material_specs", {}).get("back")
+                    "back": result.get("material_specs", {}).get("back"),
+                    "type": result["variables"].get("type"),  # เพิ่มฟิลด์นี้
+                    "component_type": result["variables"].get("component_type")  # เพิ่มฟิลด์นี้
                 }
                 all_cut_results.append(cut_info)
                 current_roll_cuts.append(cut_info)
