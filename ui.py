@@ -42,7 +42,11 @@ class WorkerThread(QThread):
     error_signal = pyqtSignal(str)
 
     def __init__(self, width, length, start_date, end_date, file_path,
-                 front_material, c_material, middle_material, b_material, back_material, # เพิ่มพารามิเตอร์วัสดุ
+                 front_material,
+                 corrugate_c_type, corrugate_c_material_name,
+                 middle_material,
+                 corrugate_b_type, corrugate_b_material_name,
+                 back_material,
                  parent=None):
         super().__init__(parent)
         self.width = width
@@ -50,10 +54,12 @@ class WorkerThread(QThread):
         self.start_date = start_date
         self.end_date = end_date
         self.file_path = file_path
-        self.front_material = front_material # เก็บค่าพารามิเตอร์วัสดุ
-        self.c_material = c_material
+        self.front_material = front_material
+        self.corrugate_c_type = corrugate_c_type
+        self.corrugate_c_material_name = corrugate_c_material_name
         self.middle_material = middle_material
-        self.b_material = b_material
+        self.corrugate_b_type = corrugate_b_type
+        self.corrugate_b_material_name = corrugate_b_material_name
         self.back_material = back_material
 
     def run(self):
@@ -82,10 +88,12 @@ class WorkerThread(QThread):
                     start_date=self.start_date,
                     end_date=self.end_date,
                     file_path=self.file_path,
-                    front=self.front_material, # ส่งพารามิเตอร์วัสดุ
-                    C=self.c_material,
+                    front=self.front_material,
+                    c_type=self.corrugate_c_type,
+                    c=self.corrugate_c_material_name,
                     middle=self.middle_material,
-                    B=self.b_material,
+                    b_type=self.corrugate_b_type,
+                    b=self.corrugate_b_material_name,
                     back=self.back_material,
                 )
             )
@@ -126,6 +134,10 @@ class CuttingOptimizerUI(QMainWindow):
     
         self.ROLL_SPECS = {'66': {'CM127': 20000, 'KB120':9000, 'CM100':8000},'75': {'CM127': 1920}}  # Mockup stock specs
 
+        # Constants for material calculations
+        self.E_FACTOR = 1.25
+        self.C_FACTOR = 1.45
+        self.B_FACTOR = 1.35
 
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
@@ -158,20 +170,31 @@ class CuttingOptimizerUI(QMainWindow):
         self.sheet_front_input.setPlaceholderText("แผ่นหน้า")
         material_layout.addWidget(self.sheet_front_input)
 
-        material_layout.addWidget(QLabel("ลอน C:"))
-        self.corrugate_c_input = QLineEdit('CM127')
-        self.corrugate_c_input.setPlaceholderText("ลอน C")
-        material_layout.addWidget(self.corrugate_c_input)
+        material_layout.addWidget(QLabel("ลอน"))
+        self.corrugate_c_type_combo = QComboBox()
+        self.corrugate_c_type_combo.addItems(["C","E"]) # Added "None" option
+        self.corrugate_c_type_combo.setCurrentText("C")
+        material_layout.addWidget(self.corrugate_c_type_combo)
+        material_layout.addWidget(QLabel(":"))
+        self.corrugate_c_material_input = QLineEdit('CM127')
+        self.corrugate_c_material_input.setPlaceholderText("วัสดุลอน")
+        material_layout.addWidget(self.corrugate_c_material_input)
 
+        
         material_layout.addWidget(QLabel("แผ่นกลาง:"))
         self.sheet_middle_input = QLineEdit('CM127')
         self.sheet_middle_input.setPlaceholderText("แผ่นกลาง")
         material_layout.addWidget(self.sheet_middle_input)
 
-        material_layout.addWidget(QLabel("ลอน B:"))
-        self.corrugate_b_input = QLineEdit('CM127')
-        self.corrugate_b_input.setPlaceholderText("ลอน B")
-        material_layout.addWidget(self.corrugate_b_input)
+        material_layout.addWidget(QLabel("ลอน"))
+        self.corrugate_b_type_combo = QComboBox()
+        self.corrugate_b_type_combo.addItems(["B","E"]) # Added "None" option
+        self.corrugate_b_type_combo.setCurrentText("B")
+        material_layout.addWidget(self.corrugate_b_type_combo)
+        material_layout.addWidget(QLabel(":"))
+        self.corrugate_b_material_input = QLineEdit('CM127')
+        self.corrugate_b_material_input.setPlaceholderText("วัสดุลอน")
+        material_layout.addWidget(self.corrugate_b_material_input) 
 
         material_layout.addWidget(QLabel("แผ่นหลัง:"))
         self.sheet_back_input = QLineEdit('CM127')
@@ -180,11 +203,12 @@ class CuttingOptimizerUI(QMainWindow):
     
         # Connect material/width changes to stock update
         self.sheet_front_input.textChanged.connect(self.update_length_based_on_stock)
-        self.corrugate_c_input.textChanged.connect(self.update_length_based_on_stock)
         self.sheet_middle_input.textChanged.connect(self.update_length_based_on_stock)
-        self.corrugate_b_input.textChanged.connect(self.update_length_based_on_stock)
         self.sheet_back_input.textChanged.connect(self.update_length_based_on_stock)
         self.width_combo.currentTextChanged.connect(self.update_length_based_on_stock)
+
+        self.corrugate_c_material_input.textChanged.connect(self.update_length_based_on_stock)
+        self.corrugate_b_material_input.textChanged.connect(self.update_length_based_on_stock)
 
         layout.addLayout(material_layout)
 
@@ -203,7 +227,7 @@ class CuttingOptimizerUI(QMainWindow):
         layout.addLayout(info_layout)
 
         self.length_input = QLineEdit("")
-        self.update_length_based_on_stock()  # เรียกใช้ครั้งแรกเพื่อกำหนดความยาวเริ่มต้น
+        self.update_length_based_on_stock() 
         self.length_input.setPlaceholderText("ความยาวม้วนกระดาษ (เมตร)")
         self.length_input.setEnabled(False)
         layout.addWidget(self.length_input)
@@ -281,27 +305,29 @@ class CuttingOptimizerUI(QMainWindow):
     def update_length_based_on_stock(self):
         """Update length_input with minimum stock value from ROLL_SPECS"""
         current_width = self.width_combo.currentText()
-        materials = [
+
+
+        # Determine the actual material names to check for stock
+        materials_to_check = [
             self.sheet_front_input.text().strip(),
-            self.corrugate_c_input.text().strip(),
             self.sheet_middle_input.text().strip(),
-            self.corrugate_b_input.text().strip(),
             self.sheet_back_input.text().strip()
         ]
-        
+      
+        # Filter out empty strings before checking stocks
+        materials_to_check = [m for m in materials_to_check if m]
+
         stocks = []
-        for material in materials:
+        for material in materials_to_check:
             if current_width in self.ROLL_SPECS and material in self.ROLL_SPECS[current_width]:
                 stocks.append(self.ROLL_SPECS[current_width][material])
                 
         if stocks:
-            # ใช้ min(stocks) เพื่อหาค่าที่น้อยที่สุด (ถ้ามี) มิฉะนั้นให้ใช้ค่าเริ่มต้นหากไม่มีสต็อกที่ระบุ
-            min_stock = min(stocks) if stocks else "" 
+            min_stock = min(stocks)
             self.length_input.setText(str(min_stock))
         else:
             self.length_input.setText("0")
             
-
     def select_file(self):
         options = QFileDialog.Options()
         options |= QFileDialog.DontUseNativeDialog
@@ -339,10 +365,12 @@ class CuttingOptimizerUI(QMainWindow):
 
             # อ่านค่าจากช่องกรอกวัสดุ
             front_material = self.sheet_front_input.text().strip() or None
-            c_material = self.corrugate_c_input.text().strip() or None
             middle_material = self.sheet_middle_input.text().strip() or None
-            b_material = self.corrugate_b_input.text().strip() or None
             back_material = self.sheet_back_input.text().strip() or None
+            corrugate_c_type = self.corrugate_c_type_combo.currentText().strip() or None
+            corrugate_c_material_name = self.corrugate_c_material_input.text().strip() or None
+            corrugate_b_type = self.corrugate_b_type_combo.currentText().strip() or None
+            corrugate_b_material_name = self.corrugate_b_material_input.text().strip() or None
             
             self.log_display.clear()
             self.result_table.setRowCount(0)
@@ -354,10 +382,14 @@ class CuttingOptimizerUI(QMainWindow):
             # Create worker thread
             self.worker = WorkerThread(
                 width, length, start_date, end_date, file_path,
-                front_material, c_material, middle_material, b_material, back_material # ส่งค่าวัสดุ
+                front_material, 
+                corrugate_c_type, corrugate_c_material_name,
+                middle_material, 
+                corrugate_b_type, corrugate_b_material_name,
+                back_material
             )
             self.worker.update_signal.connect(self.log_message)
-            self.worker.progress_updated.connect(self.update_progress_bar)  # เชื่อมต่อสัญญาณใหม่
+            self.worker.progress_updated.connect(self.update_progress_bar)
             self.worker.finished.connect(self.complete_calculation)
             self.worker.error_signal.connect(self.handle_error)
             self.worker.start()
@@ -433,9 +465,6 @@ class CuttingOptimizerUI(QMainWindow):
         except (IndexError, TypeError):
             # Fallback to table data only if full results are not available
             result = {}
-
-        # รับชื่อหัวข้อคอลัมน์เพื่อนำไปแสดง
-        headers = [self.result_table.horizontalHeaderItem(col).text() for col in range(self.result_table.columnCount())]
         
         # แสดงข้อมูลเดิมจากตาราง
         details = []
@@ -458,43 +487,59 @@ class CuttingOptimizerUI(QMainWindow):
 
         # เพิ่มข้อมูลวัสดุแบบมีเงื่อนไขเฉพาะที่มีค่าเท่านั้น
         material_details = []
+
+        # Determine a common divisor based on corrugate types in result for front/middle/back materials
+        c_type = result.get('c_type', '')
+        b_type = result.get('b_type', '')
+
+        common_demand_divisor = 1.0 # Default divisor if no specific C or B corrugate
+        if c_type == 'C':
+            common_demand_divisor = self.C_FACTOR
+        elif b_type == 'B':
+            common_demand_divisor = self.B_FACTOR
+        elif c_type == 'E' or b_type == 'E':
+            common_demand_divisor = self.E_FACTOR
+        else:
+            common_demand_divisor = 1.0
+
         if result.get('front'):
-            # ถ้าเป็นลอน C หรือ B ให้หารด้วย 1.45 หรือ 1.35 ตามลำดับ
-            if result.get('C'):
-                front_value = result.get('demand', 0) / 1.45
-            elif result.get('B'):
-                front_value = result.get('demand', 0) / 1.35
-            else:
-                front_value = result.get('demand', 0)
-            material_details.append(f"แผ่นหน้า: {result['front']} = {front_value:.2f}")
-        if result.get('C'):
+            front_value = result.get('demand', 0) / common_demand_divisor
+            material_details.append(f"แผ่นหน้า: {result.get('front')} = {front_value:.2f}") # Use .get() for consistency
+            
+        print(result.get('c'))
+        # Corrected bitwise '&' to logical 'and'
+        if result.get('c') and c_type == 'C':
             c_value = result.get('demand', 0)
-            material_details.append(f"ลอน C: {result['C']} = {c_value:.2f}")
+            material_details.append(f"ลอน C: {result.get('c')} = {c_value:.2f}") # Use .get() for consistency
+        elif result.get('c') and c_type == 'E':
+            # Removed redundant 'front_value' calculation
+            if b_type == 'B':
+                c_e_value = result.get('demand', 0) / self.B_FACTOR * self.E_FACTOR    # This might need a specific E-type B factor if it exists
+            else:
+                c_e_value = result.get('demand', 0)
+            material_details.append(f"ลอน E: {result.get('c')} = {c_e_value:.2f}") # Use .get() for consistency
+
         if result.get('middle'):
-            # ถ้าเป็นลอน C หรือ B ให้หารด้วย 1.45 หรือ 1.35 ตามลำดับ
-            if result.get('C'):
-                middle_value = result.get('demand', 0) / 1.45
-            elif result.get('B'):
-                middle_value = result.get('demand', 0) / 1.35
+            middle_value = result.get('demand', 0) / common_demand_divisor
+            material_details.append(f"แผ่นกลาง: {result.get('middle')} = {middle_value:.2f}") # Use .get() for consistency
+           
+        #B is value, if B exist and corrugate_b_type is 'B' or 'E', calculate accordingly
+        if result.get('b') and b_type == 'B':
+            if c_type == 'C':
+                b_value = (result.get('demand', 0) / self.C_FACTOR) * self.B_FACTOR
             else:
-                middle_value = result.get('demand', 0)
-            material_details.append(f"แผ่นกลาง: {result['middle']} = {middle_value:.2f}")
-        if result.get('B'):
-            # ถ้ามีลอน C ด้วย ให้คำนวณ (C / 1.45) * 1.35, ถ้าไม่มีก็ใช้ demand * 1.35
-            if result.get('C'):
-                b_value = (result.get('demand', 0) / 1.45) * 1.35
+                b_value = result.get('demand', 0)
+            material_details.append(f"ลอน B: {result.get('b')} = {b_value:.2f}")
+        elif result.get('b') and b_type == 'E':
+            if c_type == 'C':
+                b_e_value = (result.get('demand', 0) / self.C_FACTOR) * self.E_FACTOR
             else:
-                b_value = result.get('demand', 0) * 1.35
-            material_details.append(f"ลอน B: {result['B']} = {b_value:.2f}")
+                b_e_value = result.get('demand', 0)
+            material_details.append(f"ลอน E: {result.get('b')} = {b_e_value:.2f}")
+
         if result.get('back'):
-            # ถ้าเป็นลอน C หรือ B ให้หารด้วย 1.45 หรือ 1.35 ตามลำดับ
-            if result.get('C'):
-                back_value = result.get('demand', 0) / 1.45
-            elif result.get('B'):
-                back_value = result.get('demand', 0) / 1.35
-            else:
-                back_value = result.get('demand', 0)
-            material_details.append(f"แผ่นหลัง: {result['back']} = {back_value:.2f}")
+            back_value = result.get('demand', 0) / common_demand_divisor
+            material_details.append(f"แผ่นหลัง: {result.get('back')} = {back_value:.2f}") # Use .get() for consistency
         
         if material_details:
             details.append("\n⚙️ ข้อมูลแผ่นและลอน:")
