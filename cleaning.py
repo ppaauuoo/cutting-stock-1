@@ -33,9 +33,9 @@ def clean_data(df: pl.DataFrame,
                start_date: Optional[str] = None, 
                end_date: Optional[str] = None,
                front: Optional[str] = None, # เพิ่มพารามิเตอร์สำหรับกรองวัสดุ
-               C: Optional[str] = None,
+               c: Optional[str] = None,
                middle: Optional[str] = None,
-               B: Optional[str] = None,
+               b: Optional[str] = None,
                back: Optional[str] = None
                ) -> pl.DataFrame:
     """
@@ -70,9 +70,9 @@ def clean_data(df: pl.DataFrame,
         normalize_col_name("จำนวนสั่งขาย"): "demand",
         normalize_col_name("จำนวนสั่งผลิต"): "quantity",
         normalize_col_name("แผ่นหน้า"): "front",
-        normalize_col_name("ลอน C"): "C",
+        normalize_col_name("ลอน C"): "c",
         normalize_col_name("แผ่นกลาง"): "middle",
-        normalize_col_name("ลอน B"): "B",
+        normalize_col_name("ลอน B"): "b",
         normalize_col_name("แผ่นหลัง"): "back",
         normalize_col_name("ประเภททับเส้น"): "type",
         normalize_col_name("ชนิดส่วนประกอบ"): "component_type"
@@ -89,7 +89,7 @@ def clean_data(df: pl.DataFrame,
     df = df.rename(rename_dict)
     
     # ตรวจสอบว่ามีคอลัมน์จำเป็นครบ
-    required_cols = ["due_date", "order_number", "width", "length", "demand", "quantity",  "front", "C", "middle", "B", "back", "type", "component_type"]
+    required_cols = ["due_date", "order_number", "width", "length", "demand", "quantity",  "front", "c", "middle", "b", "back", "type", "component_type"]
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
         raise ValueError(f"⚠️ คอลัมน์หาย: {missing} โปรดตรวจสอบชื่อคอลัมน์ในไฟล์ CSV")
@@ -113,7 +113,7 @@ def clean_data(df: pl.DataFrame,
         (pl.col("width") / 25.4).alias("width"),
         (pl.col("length") / 25.4).alias("length")
     ]).select([
-        'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type', 'component_type', 'front', 'C', 'middle', 'B', 'back' # เพิ่มคอลัมน์วัสดุ
+        'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type', 'component_type', 'front', 'c', 'middle', 'b', 'back' # เพิ่มคอลัมน์วัสดุ
     ])
 
     # เพิ่มการกรองตามช่วงวันที่หากกำหนดมา
@@ -135,23 +135,23 @@ def clean_data(df: pl.DataFrame,
 
     # เพิ่มการกรองตามวัสดุหากกำหนดมา (รองรับกรณีเป็น None/Null ด้วย)
     print("Filtering data based on material specifications...")
-    print("Front:", front, "C:", C, "Middle:", middle, "B:", B, "Back:", back)
+    print("Front:", front, "C:", c, "Middle:", middle, "B:", b, "Back:", back)
     if front is None:
         df = df.filter(pl.col("front").is_null())
     else:
         df = df.filter(pl.col("front").str.contains(front, literal=False))
-    if C is None:
-        df = df.filter(pl.col("C").is_null())
+    if c is None:
+        df = df.filter(pl.col("c").is_null())
     else:
-        df = df.filter(pl.col("C").str.contains(C, literal=False))
+        df = df.filter(pl.col("c").str.contains(c, literal=False))
     if middle is None:
         df = df.filter(pl.col("middle").is_null())
     else:
         df = df.filter(pl.col("middle").str.contains(middle, literal=False))
-    if B is None:
-        df = df.filter(pl.col("B").is_null())
+    if b is None:
+        df = df.filter(pl.col("b").is_null())
     else:
-        df = df.filter(pl.col("B").str.contains(B, literal=False))
+        df = df.filter(pl.col("b").str.contains(b, literal=False))
     if back is None:
         df = df.filter(pl.col("back").is_null())
     else:
