@@ -132,7 +132,18 @@ class CuttingOptimizerUI(QMainWindow):
         # กำหนดค่าความกว้างม้วนกระดาษที่ใช้ได้
         ROLL_PAPER = [66, 68, 70, 73, 74, 75, 79, 82, 85, 88, 91, 93, 95, 97]
     
-        self.ROLL_SPECS = {'66': {'CM127': 20000, 'KB120':9000, 'CM100':8000},'75': {'CM127': 1920}}  # Mockup stock specs
+        self.ROLL_SPECS = {
+                            '66': 
+                            {
+                            'CM127': 20000, 
+                            'KB120':9000, 
+                            'CM100':8000
+                            },
+                            '75': 
+                            {
+                            'CM127': 1920
+                            },
+                        }  # Mockup stock specs
 
         # Constants for material calculations
         self.E_FACTOR = 1.25
@@ -159,56 +170,52 @@ class CuttingOptimizerUI(QMainWindow):
 
         layout.addWidget(QLabel("ความกว้างม้วนกระดาษ (inch):")) 
         self.width_combo = QComboBox()
-        self.width_combo.addItems([str(w) for w in ROLL_PAPER])
-        self.width_combo.setCurrentText("66")
+        self.width_combo.addItems(self.ROLL_SPECS.keys())
+        self.width_combo.setCurrentText("ความกว้างม้วนกระดาษ (inch)")
         layout.addWidget(self.width_combo)
                 # เพิ่มช่องกรอกข้อมูลแผ่นและลอนในแถวเดียวกัน
         material_layout = QHBoxLayout()
 
         material_layout.addWidget(QLabel("แผ่นหน้า:"))
-        self.sheet_front_input = QLineEdit('CM127')
-        self.sheet_front_input.setPlaceholderText("แผ่นหน้า")
+        self.sheet_front_input = QComboBox() # Changed to QComboBox
         material_layout.addWidget(self.sheet_front_input)
 
         material_layout.addWidget(QLabel("ลอน"))
         self.corrugate_c_type_combo = QComboBox()
-        self.corrugate_c_type_combo.addItems(["C","E"]) # Added "None" option
+        self.corrugate_c_type_combo.addItems(["C", "E"]) # Added "None" option
         self.corrugate_c_type_combo.setCurrentText("C")
         material_layout.addWidget(self.corrugate_c_type_combo)
         material_layout.addWidget(QLabel(":"))
-        self.corrugate_c_material_input = QLineEdit('CM127')
-        self.corrugate_c_material_input.setPlaceholderText("วัสดุลอน")
+        self.corrugate_c_material_input = QComboBox() # Changed to QComboBox
+        self.corrugate_c_material_input.setPlaceholderText("เลือกลอน")
         material_layout.addWidget(self.corrugate_c_material_input)
 
         
         material_layout.addWidget(QLabel("แผ่นกลาง:"))
-        self.sheet_middle_input = QLineEdit('CM127')
-        self.sheet_middle_input.setPlaceholderText("แผ่นกลาง")
+        self.sheet_middle_input = QComboBox() # Changed to QComboBox
         material_layout.addWidget(self.sheet_middle_input)
 
         material_layout.addWidget(QLabel("ลอน"))
         self.corrugate_b_type_combo = QComboBox()
-        self.corrugate_b_type_combo.addItems(["B","E"]) # Added "None" option
+        self.corrugate_b_type_combo.addItems(["B", "E"]) # Added "None" option
         self.corrugate_b_type_combo.setCurrentText("B")
         material_layout.addWidget(self.corrugate_b_type_combo)
         material_layout.addWidget(QLabel(":"))
-        self.corrugate_b_material_input = QLineEdit('CM127')
-        self.corrugate_b_material_input.setPlaceholderText("วัสดุลอน")
+        self.corrugate_b_material_input = QComboBox() # Changed to QComboBox
         material_layout.addWidget(self.corrugate_b_material_input) 
 
         material_layout.addWidget(QLabel("แผ่นหลัง:"))
-        self.sheet_back_input = QLineEdit('CM127')
-        self.sheet_back_input.setPlaceholderText("แผ่นหลัง")
+        self.sheet_back_input = QComboBox() # Changed to QComboBox
         material_layout.addWidget(self.sheet_back_input)
     
         # Connect material/width changes to stock update
-        self.sheet_front_input.textChanged.connect(self.update_length_based_on_stock)
-        self.sheet_middle_input.textChanged.connect(self.update_length_based_on_stock)
-        self.sheet_back_input.textChanged.connect(self.update_length_based_on_stock)
+        self.sheet_front_input.currentTextChanged.connect(self.update_length_based_on_stock) # Changed from textChanged to currentTextChanged
+        self.sheet_middle_input.currentTextChanged.connect(self.update_length_based_on_stock)
+        self.sheet_back_input.currentTextChanged.connect(self.update_length_based_on_stock)
         self.width_combo.currentTextChanged.connect(self.update_length_based_on_stock)
 
-        self.corrugate_c_material_input.textChanged.connect(self.update_length_based_on_stock)
-        self.corrugate_b_material_input.textChanged.connect(self.update_length_based_on_stock)
+        self.corrugate_c_material_input.currentTextChanged.connect(self.update_length_based_on_stock)
+        self.corrugate_b_material_input.currentTextChanged.connect(self.update_length_based_on_stock)
 
         layout.addLayout(material_layout)
 
@@ -303,25 +310,61 @@ class CuttingOptimizerUI(QMainWindow):
         self.result_table.doubleClicked.connect(self.show_row_details_popup)
 
     def update_length_based_on_stock(self):
-        """Update length_input with minimum stock value from ROLL_SPECS"""
-        current_width = self.width_combo.currentText()
+        """Update length_input and material combobox based on stock, avoiding recursion."""
+        sender = self.sender()
 
-
-        # Determine the actual material names to check for stock
-        materials_to_check = [
-            self.sheet_front_input.text().strip(),
-            self.sheet_middle_input.text().strip(),
-            self.sheet_back_input.text().strip()
+        material_combos = [
+            self.sheet_front_input,
+            self.sheet_middle_input,
+            self.sheet_back_input,
+            self.corrugate_c_material_input,
+            self.corrugate_b_material_input
         ]
-      
-        # Filter out empty strings before checking stocks
-        materials_to_check = [m for m in materials_to_check if m]
+
+        # Only update material lists if width changed or it's the initial call (sender is None)
+        if sender is self.width_combo or sender is None:
+            # Block signals to prevent recursive calls during programmatic updates
+            for combo in material_combos:
+                combo.blockSignals(True)
+
+            # Preserve current selections to restore them after repopulating
+            selections = [combo.currentText() for combo in material_combos]
+            
+            current_width = self.width_combo.currentText()
+            materials = []
+            if current_width and current_width in self.ROLL_SPECS:
+                materials = list(self.ROLL_SPECS[current_width].keys())
+
+            # Add a "None" option (empty string) at the beginning
+            materials.insert(0, "")
+
+            for i, combo in enumerate(material_combos):
+                combo.clear()
+                if materials:
+                    combo.addItems(materials)
+                    # Restore previous selection if it's valid, otherwise default to first item
+                    if selections[i] in materials:
+                        combo.setCurrentText(selections[i])
+                    elif combo.count() > 0:
+                        combo.setCurrentIndex(0)
+            
+            # Re-enable signals
+            for combo in material_combos:
+                combo.blockSignals(False)
+
+        # --- This part always runs to update the length based on current selections ---
+        current_width = self.width_combo.currentText()
+        selected_materials = [combo.currentText().strip() for combo in material_combos]
+        unique_materials = list(set(m for m in selected_materials if m))
 
         stocks = []
-        for material in materials_to_check:
-            if current_width in self.ROLL_SPECS and material in self.ROLL_SPECS[current_width]:
-                stocks.append(self.ROLL_SPECS[current_width][material])
-                
+        if unique_materials and current_width and current_width in self.ROLL_SPECS:
+            stock_data = self.ROLL_SPECS[current_width]
+            for material in unique_materials:
+                stock = stock_data.get(material)
+                if stock is not None:
+                    stocks.append(stock)
+        
         if stocks:
             min_stock = min(stocks)
             self.length_input.setText(str(min_stock))
@@ -364,13 +407,13 @@ class CuttingOptimizerUI(QMainWindow):
             end_date = convert_thai_digits_to_arabic(end_date).strip() or None
 
             # อ่านค่าจากช่องกรอกวัสดุ
-            front_material = self.sheet_front_input.text().strip() or None
-            middle_material = self.sheet_middle_input.text().strip() or None
-            back_material = self.sheet_back_input.text().strip() or None
+            front_material = self.sheet_front_input.currentText().strip() or None # Changed from .text() to .currentText()
+            middle_material = self.sheet_middle_input.currentText().strip() or None
+            back_material = self.sheet_back_input.currentText().strip() or None
             corrugate_c_type = self.corrugate_c_type_combo.currentText().strip() or None
-            corrugate_c_material_name = self.corrugate_c_material_input.text().strip() or None
+            corrugate_c_material_name = self.corrugate_c_material_input.currentText().strip() or None
             corrugate_b_type = self.corrugate_b_type_combo.currentText().strip() or None
-            corrugate_b_material_name = self.corrugate_b_material_input.text().strip() or None
+            corrugate_b_material_name = self.corrugate_b_material_input.currentText().strip() or None
             
             self.log_display.clear()
             self.result_table.setRowCount(0)
@@ -492,18 +535,16 @@ class CuttingOptimizerUI(QMainWindow):
         c_type = result.get('c_type', '')
         b_type = result.get('b_type', '')
 
-        common_demand_divisor = 1.0 # Default divisor if no specific C or B corrugate
+        type_demand = 1.0 # Default divisor if no specific C or B corrugate
         if c_type == 'C':
-            common_demand_divisor = self.C_FACTOR
+            type_demand = self.C_FACTOR
         elif b_type == 'B':
-            common_demand_divisor = self.B_FACTOR
+            type_demand = self.B_FACTOR
         elif c_type == 'E' or b_type == 'E':
-            common_demand_divisor = self.E_FACTOR
-        else:
-            common_demand_divisor = 1.0
+            type_demand = self.E_FACTOR
 
         if result.get('front'):
-            front_value = result.get('demand', 0) / common_demand_divisor
+            front_value = result.get('demand', 0) / type_demand
             material_details.append(f"แผ่นหน้า: {result.get('front')} = {front_value:.2f}") # Use .get() for consistency
             
         print(result.get('c'))
@@ -520,7 +561,7 @@ class CuttingOptimizerUI(QMainWindow):
             material_details.append(f"ลอน E: {result.get('c')} = {c_e_value:.2f}") # Use .get() for consistency
 
         if result.get('middle'):
-            middle_value = result.get('demand', 0) / common_demand_divisor
+            middle_value = result.get('demand', 0) / type_demand
             material_details.append(f"แผ่นกลาง: {result.get('middle')} = {middle_value:.2f}") # Use .get() for consistency
            
         #B is value, if B exist and corrugate_b_type is 'B' or 'E', calculate accordingly
@@ -538,7 +579,7 @@ class CuttingOptimizerUI(QMainWindow):
             material_details.append(f"ลอน E: {result.get('b')} = {b_e_value:.2f}")
 
         if result.get('back'):
-            back_value = result.get('demand', 0) / common_demand_divisor
+            back_value = result.get('demand', 0) / type_demand
             material_details.append(f"แผ่นหลัง: {result.get('back')} = {back_value:.2f}") # Use .get() for consistency
         
         if material_details:
