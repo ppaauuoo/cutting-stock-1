@@ -180,12 +180,11 @@ class CuttingOptimizerUI(QMainWindow):
         self.sheet_front_input = QComboBox() # Changed to QComboBox
         material_layout.addWidget(self.sheet_front_input)
 
-        material_layout.addWidget(QLabel("ลอน"))
+        material_layout.addWidget(QLabel("ลอน:"))
         self.corrugate_c_type_combo = QComboBox()
         self.corrugate_c_type_combo.addItems(["C", "E"]) # Added "None" option
         self.corrugate_c_type_combo.setCurrentText("C")
         material_layout.addWidget(self.corrugate_c_type_combo)
-        material_layout.addWidget(QLabel(":"))
         self.corrugate_c_material_input = QComboBox() # Changed to QComboBox
         self.corrugate_c_material_input.setPlaceholderText("เลือกลอน")
         material_layout.addWidget(self.corrugate_c_material_input)
@@ -195,12 +194,11 @@ class CuttingOptimizerUI(QMainWindow):
         self.sheet_middle_input = QComboBox() # Changed to QComboBox
         material_layout.addWidget(self.sheet_middle_input)
 
-        material_layout.addWidget(QLabel("ลอน"))
+        material_layout.addWidget(QLabel("ลอน:"))
         self.corrugate_b_type_combo = QComboBox()
         self.corrugate_b_type_combo.addItems(["B", "E"]) # Added "None" option
         self.corrugate_b_type_combo.setCurrentText("B")
         material_layout.addWidget(self.corrugate_b_type_combo)
-        material_layout.addWidget(QLabel(":"))
         self.corrugate_b_material_input = QComboBox() # Changed to QComboBox
         material_layout.addWidget(self.corrugate_b_material_input) 
 
@@ -337,6 +335,8 @@ class CuttingOptimizerUI(QMainWindow):
 
             # Add a "None" option (empty string) at the beginning
             materials.insert(0, "")
+            # materials.append("")
+          
 
             for i, combo in enumerate(material_combos):
                 combo.clear()
