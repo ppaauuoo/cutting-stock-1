@@ -174,20 +174,22 @@ class CuttingOptimizerUI(QMainWindow):
         self.width_combo.setCurrentText("ความกว้างม้วนกระดาษ (inch)")
         layout.addWidget(self.width_combo)
                 # เพิ่มช่องกรอกข้อมูลแผ่นและลอนในแถวเดียวกัน
-        material_layout = QHBoxLayout()
+        material_layout = QVBoxLayout()
 
         material_layout.addWidget(QLabel("แผ่นหน้า:"))
         self.sheet_front_input = QComboBox() # Changed to QComboBox
         material_layout.addWidget(self.sheet_front_input)
 
         material_layout.addWidget(QLabel("ลอน:"))
+        corrugate_c_layout = QHBoxLayout()
         self.corrugate_c_type_combo = QComboBox()
         self.corrugate_c_type_combo.addItems(["C", "E"]) # Added "None" option
         self.corrugate_c_type_combo.setCurrentText("C")
-        material_layout.addWidget(self.corrugate_c_type_combo)
+        corrugate_c_layout.addWidget(self.corrugate_c_type_combo)
         self.corrugate_c_material_input = QComboBox() # Changed to QComboBox
         self.corrugate_c_material_input.setPlaceholderText("เลือกลอน")
-        material_layout.addWidget(self.corrugate_c_material_input)
+        corrugate_c_layout.addWidget(self.corrugate_c_material_input)
+        material_layout.addLayout(corrugate_c_layout)
 
         
         material_layout.addWidget(QLabel("แผ่นกลาง:"))
@@ -195,12 +197,14 @@ class CuttingOptimizerUI(QMainWindow):
         material_layout.addWidget(self.sheet_middle_input)
 
         material_layout.addWidget(QLabel("ลอน:"))
+        corrugate_b_layout = QHBoxLayout()
         self.corrugate_b_type_combo = QComboBox()
         self.corrugate_b_type_combo.addItems(["B", "E"]) # Added "None" option
         self.corrugate_b_type_combo.setCurrentText("B")
-        material_layout.addWidget(self.corrugate_b_type_combo)
+        corrugate_b_layout.addWidget(self.corrugate_b_type_combo)
         self.corrugate_b_material_input = QComboBox() # Changed to QComboBox
-        material_layout.addWidget(self.corrugate_b_material_input) 
+        corrugate_b_layout.addWidget(self.corrugate_b_material_input) 
+        material_layout.addLayout(corrugate_b_layout)
 
         material_layout.addWidget(QLabel("แผ่นหลัง:"))
         self.sheet_back_input = QComboBox() # Changed to QComboBox
