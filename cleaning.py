@@ -20,10 +20,19 @@ def load_data(file_path: str) -> pl.DataFrame:
         # เพิ่ม encoding='utf8' และพารามิเตอร์เกี่ยวกับ null values
         df = pl.read_csv(
             file_path,
-            encoding='utf8',  # ระบุ encoding ตรงนี้
-            null_values=["", " ", "NULL", "N/A"]
+            separator=';',  # ระบุตัวคั่นเป็นเซมิโคลอน
+            encoding='TIS-620',  # เปลี่ยน encoding เป็น TIS-620 สำหรับภาษาไทย
+            null_values=["", " ", "NULL", "N/A"],
+            skip_rows=1,            # ข้ามบรรทัดแรกที่ระบุ 'sep=;'
+            has_header=True,        # ระบุว่าบรรทัดที่ 2 เป็นส่วนหัวของคอลัมน์
+            truncate_ragged_lines=True # จัดการกับบรรทัดที่มีจำนวนคอลัมน์ไม่เท่ากัน
         )
         print(f"Successfully loaded data from {file_path}")
+        print(f"Data shape: {df.shape[0]} rows, {df.shape[1]} columns")
+        print("Columns:", df.columns)
+        # แสดงตัวอย่างข้อมูล 5 แถวแรก
+        print("Sample data:")
+        print(df.head(5))
         return df
     except Exception as e:
         print(f"Error loading data from {file_path}: {e}")
@@ -63,20 +72,21 @@ def clean_data(df: pl.DataFrame,
     
     # สร้าง mapping สำหรับคอลัมน์ไทยพร้อมชื่อที่แปลงแล้ว
     thai_col_mapping = {
-        normalize_col_name("กำหนดส่ง"): "due_date",
-        normalize_col_name("เลขที่ใบสั่งขาย"): "order_number",
-        normalize_col_name("กว้างผลิต"): "width",
-        normalize_col_name("ยาวผลิต"): "length",
-        normalize_col_name("จำนวนสั่งขาย"): "demand",
+        normalize_col_name("กำหนดส่ง       "): "due_date",
+        normalize_col_name(" เลขที่ใบสั่งขาย"): "order_number",
+        normalize_col_name("กว้าง"): "width",
+        normalize_col_name("ยาว"): "length",
+        normalize_col_name("จำนวนสั่งส่ง   "): "demand",
         normalize_col_name("จำนวนสั่งผลิต"): "quantity",
-        normalize_col_name("แผ่นหน้า"): "front",
-        normalize_col_name("ลอน C"): "c",
-        normalize_col_name("แผ่นกลาง"): "middle",
-        normalize_col_name("ลอน B"): "b",
-        normalize_col_name("แผ่นหลัง"): "back",
-        normalize_col_name("ประเภททับเส้น"): "type",
-        normalize_col_name("ชนิดส่วนประกอบ"): "component_type"
-    }
+        normalize_col_name("กระดาษหน้า"): "front",
+        normalize_col_name("ลอนC"): "c",
+        normalize_col_name("กระดาษกลาง"): "middle",
+        normalize_col_name("ลอนB"): "b",
+        normalize_col_name("กระดาษหลัง"): "back",
+        normalize_col_name("ทับเส้น"): "type",
+        normalize_col_name("ประเภทกล่อง"): "component_type",
+        normalize_col_name("ผลิตได้"): "die_cut"
+   }
     
     # สร้าง dictionary สำหรับเปลี่ยนชื่อคอลัมน์
     rename_dict = {}
@@ -95,14 +105,16 @@ def clean_data(df: pl.DataFrame,
         raise ValueError(f"⚠️ คอลัมน์หาย: {missing} โปรดตรวจสอบชื่อคอลัมน์ในไฟล์ CSV")
     
     df = df.with_columns(
-        pl.col("due_date").str.strptime(pl.Date, "%Y/%m/%d", strict=False),
-        pl.col("order_number").cast(pl.Int64),
-        pl.col("width").cast(pl.Float64),
-        pl.col("length").cast(pl.Float64),
-        pl.col("demand").cast(pl.Int64),
-        pl.col("quantity").cast(pl.Int64),
+        pl.col("due_date").str.strip_chars().str.strptime(pl.Date, "%d/%m/%y", strict=True), # Changed %Y to %y for 2-digit year, kept strict=True for debugging
+        pl.col("order_number").str.strip_chars().cast(pl.Int64),
+        pl.col("width").str.strip_chars().cast(pl.Float64),
+        pl.col("length").str.strip_chars().cast(pl.Float64),
+        # ทำความสะอาดข้อมูล 'demand' และ 'quantity' โดยการลบคอมม่าและแปลงเป็น Int64
+        pl.col("demand").str.strip_chars().str.replace_all(",", "").cast(pl.Float64).cast(pl.Int64),
+        pl.col("quantity").str.strip_chars().str.replace_all(",", "").cast(pl.Float64).cast(pl.Int64),
         pl.col("type").str.strip_chars(),
-        pl.col("component_type").str.strip_chars()
+        pl.col("component_type").str.strip_chars(),
+        pl.col("die_cut").str.strip_chars().cast(pl.Int64),
    )
 
     df = df.drop_nulls(subset=["due_date", "order_number", "width", "length", "demand", "quantity", "type", "component_type"])
@@ -110,56 +122,71 @@ def clean_data(df: pl.DataFrame,
     df = df.filter(pl.col("width") > 0)
     df = df.filter(pl.col("length") > 0)
     df = df.with_columns([
-        (pl.col("width") / 25.4).alias("width"),
-        (pl.col("length") / 25.4).alias("length")
+        (pl.col("width")).alias("width"),
+        (pl.col("length")).alias("length")
     ]).select([
-        'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type', 'component_type', 'front', 'c', 'middle', 'b', 'back' # เพิ่มคอลัมน์วัสดุ
+        'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type', 'component_type', 'front', 'c', 'middle', 'b', 'back', 'die_cut' # เพิ่มคอลัมน์วัสดุ
     ])
+
+    if df.height > 0:
+        print(f"วันที่กำหนดส่งขั้นต่ำใน DataFrame (หลังการแยกวิเคราะห์และลบค่าว่าง): {df.select(pl.col('due_date').min()).item()}")
+        print(f"วันที่กำหนดส่งสูงสุดใน DataFrame (หลังการแยกวิเคราะห์และลบค่าว่าง): {df.select(pl.col('due_date').max()).item()}")
+    else:
+        print("DataFrame ว่างเปล่าก่อนการกรองวันที่ ไม่มีวันที่กำหนดส่งให้ตรวจสอบ")
 
     # เพิ่มการกรองตามช่วงวันที่หากกำหนดมา
     if start_date or end_date:
         # สร้างฟังก์ชันแปลงสตริงเป็น datetime.date
         def parse_date(date_str: str) -> date:
-            return datetime.strptime(date_str, "%Y-%m-%d").date()
+            try:
+                return datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                raise ValueError(f"Invalid date format for filter: '{date_str}'. Expected YYYY-MM-DD.")
         
         conditions = []
         
         if start_date:
             start = parse_date(start_date)
             conditions.append(pl.col("due_date") >= start)
+            print(f"พารามิเตอร์ตัวกรอง 'start_date' แยกวิเคราะห์ได้เป็น: {start}")
         if end_date:
             end = parse_date(end_date)
             conditions.append(pl.col("due_date") <= end)
+            print(f"พารามิเตอร์ตัวกรอง 'end_date' แยกวิเคราะห์ได้เป็น: {end}")
         
         df = df.filter(pl.all_horizontal(conditions))
+
+    print("Data after date filtering:")
+    print(df.head(5))  
 
     # เพิ่มการกรองตามวัสดุหากกำหนดมา (รองรับกรณีเป็น None/Null ด้วย)
     print("Filtering data based on material specifications...")
     print("Front:", front, "C:", c, "Middle:", middle, "B:", b, "Back:", back)
-    if front is None:
-        df = df.filter(pl.col("front").is_null())
-    else:
-        df = df.filter(pl.col("front").str.contains(front, literal=False))
-    if c is None:
-        df = df.filter(pl.col("c").is_null())
-    else:
-        df = df.filter(pl.col("c").str.contains(c, literal=False))
-    if middle is None:
-        df = df.filter(pl.col("middle").is_null())
-    else:
-        df = df.filter(pl.col("middle").str.contains(middle, literal=False))
-    if b is None:
-        df = df.filter(pl.col("b").is_null())
-    else:
-        df = df.filter(pl.col("b").str.contains(b, literal=False))
-    if back is None:
-        df = df.filter(pl.col("back").is_null())
-    else:
-        df = df.filter(pl.col("back").str.contains(back, literal=False))
+
+    material_conditions = []
+    if front is not None:
+        material_conditions.append(pl.col("front").str.contains(front, literal=False))
+    if c is not None:
+        material_conditions.append(pl.col("c").str.contains(c, literal=False))
+    if middle is not None:
+        material_conditions.append(pl.col("middle").str.contains(middle, literal=False))
+    if b is not None:
+        material_conditions.append(pl.col("b").str.contains(b, literal=False))
+    if back is not None:
+        material_conditions.append(pl.col("back").str.contains(back, literal=False))
+
+    # ใช้ pl.all_horizontal เพื่อรวมเงื่อนไขทั้งหมดด้วย AND logic หากมีเงื่อนไข
+    if material_conditions:
+        df = df.filter(pl.all_horizontal(material_conditions))
 
     print("Data cleaning complete.")
+    print(f"Cleaned data shape: {df.shape[0]} rows, {df.shape[1]} columns")
+    print("Columns after cleaning:", df.columns)    
+    print("Sample cleaned data:")
+    print(df.head(5))
     return df
 
+#depracted
 if __name__ == "__main__":
     input_file = "order2024.csv"  # Assuming this file is in the same directory
     
@@ -180,5 +207,4 @@ if __name__ == "__main__":
         cleaned_df.write_csv(
             "clean_order2024.csv", 
             include_header=True,
-            encoding='utf8'
         )
