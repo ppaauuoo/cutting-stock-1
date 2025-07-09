@@ -22,7 +22,7 @@ def load_data(file_path: str) -> pl.DataFrame:
             file_path,
             separator=';',  # ระบุตัวคั่นเป็นเซมิโคลอน
             encoding='TIS-620',  # เปลี่ยน encoding เป็น TIS-620 สำหรับภาษาไทย
-            null_values=["", " ", "NULL", "N/A"],
+            null_values=["", "      ", "NULL", "N/A", "null", "None", "\t"],
             skip_rows=1,            # ข้ามบรรทัดแรกที่ระบุ 'sep=;'
             has_header=True,        # ระบุว่าบรรทัดที่ 2 เป็นส่วนหัวของคอลัมน์
             truncate_ragged_lines=True # จัดการกับบรรทัดที่มีจำนวนคอลัมน์ไม่เท่ากัน
@@ -117,7 +117,7 @@ def clean_data(df: pl.DataFrame,
         pl.col("die_cut").str.strip_chars().cast(pl.Int64),
    )
 
-    df = df.drop_nulls(subset=["due_date", "order_number", "width", "length", "demand", "quantity", "type", "component_type"])
+    df = df.drop_nulls(subset=["due_date", "order_number", "width", "length", "demand", "quantity", "component_type"])
     df = df.filter(pl.col("demand") > 0)
     df = df.filter(pl.col("width") > 0)
     df = df.filter(pl.col("length") > 0)
@@ -166,14 +166,24 @@ def clean_data(df: pl.DataFrame,
     material_conditions = []
     if front is not None:
         material_conditions.append(pl.col("front").str.contains(front, literal=False))
+    else:
+        material_conditions.append(pl.col("front").is_null())
     if c is not None:
         material_conditions.append(pl.col("c").str.contains(c, literal=False))
+    else:
+        material_conditions.append(pl.col("c").is_null())
     if middle is not None:
         material_conditions.append(pl.col("middle").str.contains(middle, literal=False))
+    else:
+        material_conditions.append(pl.col("middle").is_null())
     if b is not None:
         material_conditions.append(pl.col("b").str.contains(b, literal=False))
+    else:
+        material_conditions.append(pl.col("b").is_null())
     if back is not None:
         material_conditions.append(pl.col("back").str.contains(back, literal=False))
+    else:
+        material_conditions.append(pl.col("back").is_null())
 
     # ใช้ pl.all_horizontal เพื่อรวมเงื่อนไขทั้งหมดด้วย AND logic หากมีเงื่อนไข
     if material_conditions:
