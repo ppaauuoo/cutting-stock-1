@@ -248,7 +248,7 @@ async def _get_lp_solution_details(
     # เพิ่มการดึงข้อมูลวัสดุจาก orders_df และข้อมูล corrugate type/material ใหม่
     material_specs = {}
     if selected_order_idx != -1 and orders_data[selected_order_idx]:
-        for key in ['front', 'middle', 'back', 'c', 'b']: # These are still material names
+        for key in ['demand','front', 'middle', 'back', 'c', 'b', 'die_cut']: # These are still material names
             material_value = orders_data[selected_order_idx].get(key)
             if material_value:
                 material_specs[key] = material_value
@@ -386,6 +386,7 @@ async def main_algorithm(
                     "num_cuts_z": actual_z_value, # ใช้ actual_z_value ที่ดึงมา
                     "calculated_trim": result["variables"]["calculated_trim"],
                     # เพิ่มข้อมูลวัสดุจาก result (รวมถึงประเภทลอนใหม่)
+                    "order_demand": result.get("material_specs", {}).get("demand"), # This is the die cut information
                     "front": result.get("material_specs", {}).get("front"),
                     "c_type": result.get("material_specs", {}).get("c_type"), # This is the corrugate type, not just type C
                     "c": result.get("material_specs", {}).get("c"), # This is the material name, not just type C
@@ -393,6 +394,7 @@ async def main_algorithm(
                     "b_type": result.get("material_specs", {}).get("b_type"),
                     "b": result.get("material_specs", {}).get("b"), # This is the material name, not just type B
                     "back": result.get("material_specs", {}).get("back"),
+                    "die_cut": result.get("material_specs", {}).get("die_cut"), # This is the die cut information
                     "type": result["variables"].get("type"),
                     "component_type": result["variables"].get("component_type")
                 }
@@ -451,6 +453,7 @@ async def main_algorithm(
     
     return all_cut_results
 
+#depracted
 if __name__ == "__main__":
     # Default values for CLI execution
     default_roll_width = 75

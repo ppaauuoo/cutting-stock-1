@@ -135,9 +135,11 @@ class CuttingOptimizerUI(QMainWindow):
         self.ROLL_SPECS = {
                             '66': 
                             {
-                            'CM127': 20000, 
-                            'KB120':9000, 
-                            'CM100':8000
+                            'CM127': 200000, 
+                            'KB120': 120000, 
+                            'CM100': 120000,
+                            'KB160': 120000,
+                            'KS231': 120000,
                             },
                             '75': 
                             {
@@ -242,7 +244,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.start_date_input = QDateEdit()
         self.start_date_input.setDisplayFormat("yyyy-MM-dd")
         self.start_date_input.setCalendarPopup(True)
-        self.start_date_input.setDate(QDate.currentDate())
+        self.start_date_input.setDate(QDate(2023, 1, 1)) # ตั้งค่าเริ่มต้นเป็นวันที่ 1 มกราคม 2023
         self.start_date_input.setLocale(QLocale(QLocale.English, QLocale.Thailand))
         layout.addWidget(self.start_date_input)
 
@@ -250,7 +252,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.end_date_input = QDateEdit()
         self.end_date_input.setDisplayFormat("yyyy-MM-dd")
         self.end_date_input.setCalendarPopup(True)
-        self.end_date_input.setDate(QDate.currentDate().addDays(3))
+        self.end_date_input.setDate(QDate.currentDate().addYears(1)) # ตั้งค่าเริ่มต้นเป็น 1 ปีข้างหน้า
         self.end_date_input.setLocale(QLocale(QLocale.English, QLocale.Thailand))
         layout.addWidget(self.end_date_input)
         
@@ -287,10 +289,10 @@ class CuttingOptimizerUI(QMainWindow):
         # เพิ่มตารางแสดงผล
         layout.addWidget(QLabel("ผลลัพธ์การตัด:"))
         self.result_table = CustomTableWidget() # ใช้ CustomTableWidget
-        self.result_table.setColumnCount(9)
+        self.result_table.setColumnCount(12)
         self.result_table.setHorizontalHeaderLabels([
-            "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", "จำนวนตัด", "เศษเหลือ",
-            "ความยาวออเดอร์", "ปริมาณออเดอร์",  "กระดาษที่ใช้", "กระดาษคงเหลือ"
+            "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", "จำนวนออก", "เศษเหลือ",
+            "ความยาวออเดอร์", "จำนวนสั่งส่ง", "ผลิตได้", "จำนวนสั่งผลิต", "ปริมาณตัด",  "กระดาษที่ใช้", "กระดาษคงเหลือ"
         ])
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         # ตั้งค่าตารางให้สามารถเลือกและคัดลอกได้
@@ -473,13 +475,16 @@ class CuttingOptimizerUI(QMainWindow):
             for col_idx, value in enumerate([
                 str(result.get('roll width', '')),
                 str(result.get('order_number', '')),
-                f"{result.get('selected_order_width', ''):.2f}",
+                f"{result.get('selected_order_width', ''):.4f}",
                 str(result.get('num_cuts_z', '')),
                 f"{result.get('calculated_trim', ''):.2f}",
-                f"{result.get('selected_order_length', ''):.2f}",
-                f"{result.get('selected_order_quantity', ''):.2f}",
-                f"{result.get('demand', ''):.2f}",
-                f"{result.get('roll length', ''):.2f}"
+                f"{result.get('selected_order_length', ''):.4f}",
+                f"{result.get('selected_order_quantity', '')}",
+                str(result.get('die_cut', '')),
+                f"{result.get('order_demand', '')}",
+                f"{result.get('selected_order_quantity', '')/result.get('num_cuts_z', ''):.2f}",
+                f"{result.get('demand', ''):.4f}",
+                f"{result.get('roll length', ''):.4f}"
             ]):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled)
