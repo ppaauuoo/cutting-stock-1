@@ -473,18 +473,18 @@ class CuttingOptimizerUI(QMainWindow):
         self.result_table.setRowCount(len(results))
         for row_idx, result in enumerate(results):
             for col_idx, value in enumerate([
-                str(result.get('roll width', '')),
+                str(result.get('roll_w', '')),
                 str(result.get('order_number', '')),
-                f"{result.get('selected_order_width', ''):.4f}",
-                str(result.get('num_cuts_z', '')),
-                f"{result.get('calculated_trim', ''):.2f}",
-                f"{result.get('selected_order_length', ''):.4f}",
-                f"{result.get('selected_order_quantity', '')}",
+                f"{result.get('order_w', ''):.4f}",
+                str(result.get('cuts', '')),
+                f"{result.get('trim', ''):.2f}",
+                f"{result.get('order_l', ''):.4f}",
+                f"{result.get('order_dmd', '')}",
                 str(result.get('die_cut', '')),
-                f"{result.get('order_demand', '')}",
-                f"{result.get('selected_order_quantity', '')/result.get('num_cuts_z', ''):.2f}",
-                f"{result.get('demand', ''):.4f}",
-                f"{result.get('roll length', ''):.4f}"
+                f"{result.get('order_qty', '')}",
+                f"{result.get('order_qty', '')/result.get('cuts', ''):.2f}",
+                f"{result.get('demand_per_cut', ''):.4f}",
+                f"{result.get('rem_roll_l', ''):.4f}"
             ]):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled)
