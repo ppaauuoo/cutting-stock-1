@@ -196,6 +196,55 @@ def clean_data(df: pl.DataFrame,
     print(df.head(5))
     return df
 
+def clean_stock(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Placeholder function for stock data cleaning.
+    You can add your specific cleaning logic here.
+
+    Args:
+        df (pl.DataFrame): The input DataFrame to clean.
+
+    Returns:
+        pl.DataFrame: The cleaned DataFrame.
+    """
+    print("Starting stock data cleaning...")
+    
+    # แปลงชื่อคอลัมน์ให้เป็นรูปแบบ Unicode มาตรฐานและตัดช่องว่าง
+    def normalize_col_name(col: str) -> str:
+        return unicodedata.normalize('NFC', col.strip())
+    
+    # สร้าง mapping สำหรับคอลัมน์ไทยพร้อมชื่อที่แปลงแล้ว
+    thai_col_mapping = {
+        normalize_col_name("โรงงาน  "): "factory",
+        normalize_col_name("  หมายเลขม้วนกระดาษ   "): "roll_number",
+        normalize_col_name("   ชนิดกระดาษ "): "roll_type",
+        normalize_col_name("     ขนาด (นิ้ว) "): "roll_size",
+        normalize_col_name("     น้ำหนัก (กิโลกรัม) "): "roll_weight",
+        normalize_col_name("        ความหนา "): "thickness",
+         normalize_col_name("      ความยาว "): "length",
+  }
+    
+    # สร้าง dictionary สำหรับเปลี่ยนชื่อคอลัมน์
+    rename_dict = {}
+    for orig_col in df.columns:
+        normalized = normalize_col_name(orig_col)
+        if normalized in thai_col_mapping:
+            rename_dict[orig_col] = thai_col_mapping[normalized]
+    
+    # เปลี่ยนชื่อคอลัมน์
+    df = df.rename(rename_dict)
+
+    # Example cleaning logic for stock data
+    df = df.with_columns(
+        pl.col("length").floor().cast(pl.Int64),  # แปลงความยาวเป็น Int64
+        pl.col("roll_size").floor().cast(pl.Int64), 
+    )
+    
+    # df = df.drop_nulls(subset=["stock_date", "stock_quantity"])
+  
+    print("Stock data cleaning complete.")
+    return df
+
 #depracted
 if __name__ == "__main__":
     input_file = "order2024.csv"  # Assuming this file is in the same directory
