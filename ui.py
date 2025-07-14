@@ -3,6 +3,7 @@ import collections
 import os
 import re
 import sys
+from math import floor
 
 import polars as pl
 from PyQt5.QtCore import (
@@ -240,6 +241,27 @@ class CuttingOptimizerUI(QMainWindow):
         self.length_input.setEnabled(False)
         layout.addWidget(self.length_input)
 
+        # เพิ่มช่องกรอกปริมาณม้วนกระดาษ พร้อมไอคอน info
+        info_layout = QHBoxLayout()
+        info_label = QLabel("ปริมาณม้วนกระดาษที่ใช้ได้สูงสุด (ม้วน):")
+        info_icon = QLabel()
+        info_icon.setPixmap(self.style().standardIcon(QApplication.style().SP_MessageBoxInformation).pixmap(16, 16))
+        info_icon.setToolTip(
+            "ความยาวม้วนกระดาษสูงสุดในสเปคนี้ที่ใช้ได้โดยไม่เกินม้วนอื่น (หน่วย: เมตร)\n"
+            "ระบบจะใช้ค่านี้เป็นขีดจำกัดในการคำนวณการตัดม้วนกระดาษ\n"
+        )
+        info_layout.addWidget(info_label)
+        info_layout.addWidget(info_icon)
+        info_layout.addStretch()
+        layout.addLayout(info_layout)
+
+        self.roll_qty = QLineEdit("")
+        self.update_length_based_on_stock() 
+        self.roll_qty.setPlaceholderText("ปริมาณม้วนกระดาษ (เมตร)")
+        self.roll_qty.setEnabled(False)
+        layout.addWidget(self.roll_qty)
+
+
         # เพิ่มช่องกรอกวันที่ด้วย QDateEdit (บังคับให้แสดงเลขอารบิก)
         layout.addWidget(QLabel("วันที่เริ่มต้น (YYYY-MM-DD):"))
         self.start_date_input = QDateEdit()
@@ -396,9 +418,7 @@ class CuttingOptimizerUI(QMainWindow):
         if self.ROLL_SPECS != new_roll_specs:
             self.ROLL_SPECS = new_roll_specs
             self.log_message("🔄 อัปเดตข้อมูลสต็อกเรียบร้อยแล้ว")
-
-            print(self.ROLL_SPECS)  # Debugging: print the updated stock specs
-            
+          
             # รีเฟรชองค์ประกอบ UI ที่ขึ้นอยู่กับข้อมูลสต็อก
             self.update_length_based_on_stock()
 
@@ -456,6 +476,7 @@ class CuttingOptimizerUI(QMainWindow):
         unique_materials = list(material_counts.keys())
 
         effective_lengths = []
+        rolls_used = 0 
         if unique_materials and current_width:
             if current_width not in self.ROLL_SPECS:
                 self.ROLL_SPECS[current_width] = {}
@@ -465,19 +486,25 @@ class CuttingOptimizerUI(QMainWindow):
                 if material_rolls:
                     # 1. หาความยาวม้วนที่น้อยที่สุดของวัสดุชนิดนั้น แล้วคูณด้วยจำนวนม้วน
                     min_length = min(roll['length'] for roll in material_rolls.values())
-                    total_length_for_material = min_length * len(material_rolls)
-                    
+
                     # 2. หารด้วยจำนวนครั้งที่ใช้วัสดุนั้น
                     usage_count = material_counts[material]
-                    effective_length = total_length_for_material / usage_count
+                    # เอาม้วนที่มีมาหารกับจำนวนครั้งที่ใช้วัสดุว่าใช้ได้กี่รอบ
+                    roll_used = floor(len(material_rolls)/usage_count)
+                    rolls_used += roll_used
+  
+                    # คำนวณความยาวที่ใช้ได้จริง
+                    effective_length = min_length * roll_used
                     effective_lengths.append(effective_length)
         
         if effective_lengths:
             # 3. ใช้ค่าที่น้อยที่สุดเป็นขีดจำกัด
             min_effective_length = min(effective_lengths)
             self.length_input.setText(str(int(min_effective_length))) # แสดงเป็นจำนวนเต็ม
-        else:
-            self.length_input.setText("0")
+            self.roll_qty.setText(str(int(rolls_used))) # แสดงเป็นจำนวนเต็ม
+
+        # else:
+            # self.length_input.setText("0")
             
     def select_file(self):
         options = QFileDialog.Options()
