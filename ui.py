@@ -148,7 +148,7 @@ class CuttingOptimizerUI(QMainWindow):
         layout.addWidget(QLabel("เลือกไฟล์ออเดอร์:"))
         
         file_layout = QHBoxLayout()
-        self.file_path_input = QLineEdit("order2024.csv")
+        self.file_path_input = QLineEdit("order.csv")
         self.file_path_input.setPlaceholderText("เลือกไฟล์ CSV...")
         file_layout.addWidget(self.file_path_input)
         
