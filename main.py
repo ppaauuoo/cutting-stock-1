@@ -22,7 +22,7 @@ app = FastAPI()
 CORRUGATE_MULTIPLIERS = {
     "C": 1.45,
     "B": 1.35,
-    "E": 1.25,  # TODO: User, please confirm the multiplier for 'E' corrugate.
+    "E": 1.25,
 }
 
 async def solve_linear_program(
@@ -227,6 +227,11 @@ async def main_algorithm(
             iteration += 1
             if progress_callback:
                 progress_callback(f"  Iteration {iteration}: Remaining orders: {rem_orders_df.shape[0]} items")
+
+            if c is None : 
+                c_type = None
+            if b is None : 
+                b_type = None         
 
             result = await solve_linear_program(
                 roll['width'],
