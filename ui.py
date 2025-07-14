@@ -1,8 +1,10 @@
 import asyncio
+import collections
 import os
 import re
 import sys
 
+import polars as pl
 from PyQt5.QtCore import (
     QDate,
     QLocale,
@@ -33,6 +35,7 @@ from PyQt5.QtWidgets import (
 )
 
 import main  # Import our modified main module
+from stock import StockManager
 
 
 class WorkerThread(QThread):
@@ -127,25 +130,10 @@ class CuttingOptimizerUI(QMainWindow):
         super().__init__()
         self.setWindowTitle("กระดาษม้วนตัด Optimizer")
         self.setGeometry(100, 100, 800, 700)
-        
-        # Input fields
-        # กำหนดค่าความกว้างม้วนกระดาษที่ใช้ได้
         ROLL_PAPER = [66, 68, 70, 73, 74, 75, 79, 82, 85, 88, 91, 93, 95, 97]
-    
-        self.ROLL_SPECS = {
-                            '66': 
-                            {
-                            'CM127': 200000, 
-                            'KB120': 120000, 
-                            'CM100': 120000,
-                            'KB160': 120000,
-                            'KS231': 120000,
-                            },
-                            '75': 
-                            {
-                            'CM127': 1920
-                            },
-                        }  # Mockup stock specs
+
+           
+        self.ROLL_SPECS = { '66':{}, '68':{}, '70':{}, '73': {}, '74': {},'75': {}, '79': {}, '82': {} }
 
         # Constants for material calculations
         self.E_FACTOR = 1.25
@@ -168,6 +156,19 @@ class CuttingOptimizerUI(QMainWindow):
         file_layout.addWidget(browse_button)
         
         layout.addLayout(file_layout)
+
+
+        # เพิ่มส่วนเลือกไฟล์สต็อก
+        layout.addWidget(QLabel("เลือกไฟล์สต็อก:"))
+        stock_file_layout = QHBoxLayout()
+        self.stock_file_path_input = QLineEdit("stock.csv")
+        self.stock_file_path_input.setPlaceholderText("เลือกไฟล์ CSV สต็อก...")
+        stock_file_layout.addWidget(self.stock_file_path_input)
+
+        browse_stock_button = QPushButton("Browse...")
+        browse_stock_button.clicked.connect(self.select_stock_file)
+        stock_file_layout.addWidget(browse_stock_button)
+        layout.addLayout(stock_file_layout)
 
 
         layout.addWidget(QLabel("ความกว้างม้วนกระดาษ (inch):")) 
@@ -309,6 +310,98 @@ class CuttingOptimizerUI(QMainWindow):
         # เชื่อมต่อสัญญาณ doubleClicked ของตารางไปยังเมธอดที่แสดงป๊อปอัป
         self.result_table.doubleClicked.connect(self.show_row_details_popup)
 
+        self.setup_stock_manager()
+
+    def closeEvent(self, event):
+        """หยุดการทำงานของ worker threads อย่างถูกต้องเมื่อปิดโปรแกรม"""
+        self.log_message("กำลังปิดโปรแกรม...")
+        if hasattr(self, 'stock_manager'):
+            self.stock_manager.stop()
+        if hasattr(self, 'stock_thread'):
+            self.stock_thread.quit()
+            self.stock_thread.wait(5000) # รอสูงสุด 5 วินาที
+
+        if hasattr(self, 'worker') and self.worker.isRunning():
+            self.worker.quit()
+            self.worker.wait(5000)
+        
+        event.accept()
+
+    def setup_stock_manager(self):
+        """เริ่มต้นและเริ่มการทำงานของเธรดจัดการสต็อก"""
+        stock_file_path = self.stock_file_path_input.text()
+        self.stock_thread = QThread()
+        self.stock_manager = StockManager(stock_file_path)
+        self.stock_manager.moveToThread(self.stock_thread)
+
+        # เชื่อมต่อสัญญาณจาก manager ไปยัง slots ของ UI
+        self.stock_manager.stock_updated.connect(self.update_stock_data)
+        self.stock_manager.error_signal.connect(self.handle_stock_error)
+        self.stock_manager.file_not_found_signal.connect(self.handle_stock_file_not_found)
+        
+        # เชื่อมต่อสัญญาณของเธรด
+        self.stock_thread.started.connect(self.stock_manager.run)
+        
+        # เริ่มการทำงานของเธรด
+        self.stock_thread.start()
+
+    def handle_stock_file_not_found(self, file_path):
+        """แสดงกล่องคำเตือนแบบ modal เมื่อไม่พบไฟล์สต็อก"""
+        self.log_message(f"⚠️ ไม่พบไฟล์สต็อก: {file_path}. กรุณาตรวจสอบตำแหน่งไฟล์.")
+        QMessageBox.warning(
+            self, 
+            "ไม่พบไฟล์", 
+            f"ไม่พบไฟล์สต็อกที่ระบุ:\n{file_path}\n\nโปรแกรมจะพยายามโหลดไฟล์อีกครั้งในภายหลัง"
+        )
+
+    def handle_stock_error(self, error_message):
+        """บันทึกข้อผิดพลาดจาก stock manager"""
+        self.log_message(f"❌ เกิดข้อผิดพลาดกับ Stock Manager: {error_message}")
+
+    def update_stock_data(self, stock_df):
+        """อัปเดต ROLL_SPECS จาก DataFrame สต็อกที่ทำความสะอาดแล้ว ให้มีโครงสร้างตาม mock-up"""
+        new_roll_specs = {}
+        if stock_df is not None and not stock_df.is_empty():
+            try:
+                required_cols = ["roll_size", "roll_type", "length", "roll_number"]
+                # ตรวจสอบว่ามีคอลัมน์ที่จำเป็นอยู่
+                if all(col in stock_df.columns for col in required_cols):
+                    # วนลูปตามข้อมูลสต็อกแต่ละม้วนโดยไม่มีการรวมกลุ่ม
+                    for row in stock_df.iter_rows(named=True):
+                        roll_number = str(row['roll_number']).strip()  # ใช้ strip() เพื่อเอา whitespace ออก
+                        width = str(row['roll_size']).strip()
+                        material = str(row['roll_type']).strip()
+                        length = row['length']
+                        
+                        if width not in new_roll_specs:
+                            new_roll_specs[width] = {}
+                        if material not in new_roll_specs[width]:
+                            new_roll_specs[width][material] = {}
+                        
+                        # ใช้ key ที่เพิ่มขึ้นเรื่อยๆ สำหรับแต่ละม้วนภายใต้ width/material เดียวกัน
+                        roll_key = len(new_roll_specs[width][material]) + 1
+                        
+                        new_roll_specs[width][material][roll_key] = {
+                            'id': roll_number, # ตาม mock-up
+                            'length': length
+                        }
+                else:
+                    missing_cols = [col for col in required_cols if col not in stock_df.columns]
+                    self.log_message(f"⚠️ ไฟล์สต็อกไม่มีคอลัมน์ที่ต้องการ: {', '.join(missing_cols)}")
+
+            except Exception as e:
+                self.handle_stock_error(f"ไม่สามารถประมวลผลข้อมูลสต็อกได้: {e}")
+                return
+
+        if self.ROLL_SPECS != new_roll_specs:
+            self.ROLL_SPECS = new_roll_specs
+            self.log_message("🔄 อัปเดตข้อมูลสต็อกเรียบร้อยแล้ว")
+
+            print(self.ROLL_SPECS)  # Debugging: print the updated stock specs
+            
+            # รีเฟรชองค์ประกอบ UI ที่ขึ้นอยู่กับข้อมูลสต็อก
+            self.update_length_based_on_stock()
+
     def update_length_based_on_stock(self):
         """Update length_input and material combobox based on stock, avoiding recursion."""
         sender = self.sender()
@@ -357,19 +450,32 @@ class CuttingOptimizerUI(QMainWindow):
         # --- This part always runs to update the length based on current selections ---
         current_width = self.width_combo.currentText()
         selected_materials = [combo.currentText().strip() for combo in material_combos]
-        unique_materials = list(set(m for m in selected_materials if m))
-
-        stocks = []
-        if unique_materials and current_width and current_width in self.ROLL_SPECS:
-            stock_data = self.ROLL_SPECS[current_width]
-            for material in unique_materials:
-                stock = stock_data.get(material)
-                if stock is not None:
-                    stocks.append(stock)
         
-        if stocks:
-            min_stock = min(stocks)
-            self.length_input.setText(str(min_stock))
+        # นับจำนวนครั้งที่ใช้วัสดุแต่ละชนิด
+        material_counts = collections.Counter(m for m in selected_materials if m)
+        unique_materials = list(material_counts.keys())
+
+        effective_lengths = []
+        if unique_materials and current_width:
+            if current_width not in self.ROLL_SPECS:
+                self.ROLL_SPECS[current_width] = {}
+            stock_data_for_width = self.ROLL_SPECS[current_width]
+            for material in unique_materials:
+                material_rolls = stock_data_for_width.get(material)
+                if material_rolls:
+                    # 1. หาความยาวม้วนที่น้อยที่สุดของวัสดุชนิดนั้น แล้วคูณด้วยจำนวนม้วน
+                    min_length = min(roll['length'] for roll in material_rolls.values())
+                    total_length_for_material = min_length * len(material_rolls)
+                    
+                    # 2. หารด้วยจำนวนครั้งที่ใช้วัสดุนั้น
+                    usage_count = material_counts[material]
+                    effective_length = total_length_for_material / usage_count
+                    effective_lengths.append(effective_length)
+        
+        if effective_lengths:
+            # 3. ใช้ค่าที่น้อยที่สุดเป็นขีดจำกัด
+            min_effective_length = min(effective_lengths)
+            self.length_input.setText(str(int(min_effective_length))) # แสดงเป็นจำนวนเต็ม
         else:
             self.length_input.setText("0")
             
@@ -385,6 +491,22 @@ class CuttingOptimizerUI(QMainWindow):
         )
         if file_path:
             self.file_path_input.setText(file_path)
+
+    def select_stock_file(self):
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "เลือกไฟล์สต็อก",
+            "",
+            "CSV Files (*.csv);;All Files (*)",
+            options=options
+        )
+        if file_path:
+            self.stock_file_path_input.setText(file_path)
+            # แจ้ง Stock Manager เกี่ยวกับเส้นทางไฟล์ใหม่
+            if hasattr(self, 'stock_manager'):
+                self.stock_manager.set_file_path(file_path)
 
     def log_message(self, message: str):
         self.log_display.append(message)

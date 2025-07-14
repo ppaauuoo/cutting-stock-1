@@ -9,6 +9,8 @@ import polars as pl
 def load_data(file_path: str) -> pl.DataFrame:
     """
     Loads data from a CSV file into a Polars DataFrame.
+    It can handle both semicolon-separated TIS-620 files (for orders)
+    and standard comma-separated UTF-8 files (for stock).
 
     Args:
         file_path (str): The path to the CSV file.
@@ -17,16 +19,34 @@ def load_data(file_path: str) -> pl.DataFrame:
         pl.DataFrame: The loaded DataFrame.
     """
     try:
-        # เพิ่ม encoding='utf8' และพารามิเตอร์เกี่ยวกับ null values
-        df = pl.read_csv(
-            file_path,
-            separator=';',  # ระบุตัวคั่นเป็นเซมิโคลอน
-            encoding='TIS-620',  # เปลี่ยน encoding เป็น TIS-620 สำหรับภาษาไทย
-            null_values=["", "      ", "NULL", "N/A", "null", "None", "\t"],
-            skip_rows=1,            # ข้ามบรรทัดแรกที่ระบุ 'sep=;'
-            has_header=True,        # ระบุว่าบรรทัดที่ 2 เป็นส่วนหัวของคอลัมน์
-            truncate_ragged_lines=True # จัดการกับบรรทัดที่มีจำนวนคอลัมน์ไม่เท่ากัน
-        )
+        # พยายามอ่านบรรทัดแรกเพื่อตรวจสอบว่าเป็นไฟล์ชนิดใด
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            first_line = f.readline()
+
+        if 'sep=;' in first_line:
+            print(f"Detected semicolon-separated file: {file_path}")
+            # This is the order file format with 'sep=;'
+            df = pl.read_csv(
+                file_path,
+                separator=';',
+                encoding='TIS-620',
+                null_values=["", "      ", "NULL", "N/A", "null", "None", "\t"],
+                skip_rows=1,
+                has_header=True,
+                truncate_ragged_lines=True
+            )
+        else:
+            print(f"Detected standard CSV file: {file_path}")
+            # Assume it's a standard CSV (like stock.csv)
+            df = pl.read_csv(
+                file_path,
+                separator=',',  # Standard comma
+                encoding='utf-8', # Standard encoding, can be changed if needed
+                null_values=["", "      ", "NULL", "N/A", "null", "None", "\t"],
+                has_header=True, # Assume header is on the first line
+                truncate_ragged_lines=True
+            )
+            
         print(f"Successfully loaded data from {file_path}")
         print(f"Data shape: {df.shape[0]} rows, {df.shape[1]} columns")
         print("Columns:", df.columns)
@@ -198,14 +218,16 @@ def clean_data(df: pl.DataFrame,
 
 def clean_stock(df: pl.DataFrame) -> pl.DataFrame:
     """
-    Placeholder function for stock data cleaning.
-    You can add your specific cleaning logic here.
+    ทำความสะอาดข้อมูลสต็อก
+    - เปลี่ยนชื่อคอลัมน์จากภาษาไทยเป็นภาษาอังกฤษ
+    - ทำความสะอาดและแปลงชนิดข้อมูล
+    - กรองแถวที่ไม่ถูกต้องออก
 
     Args:
-        df (pl.DataFrame): The input DataFrame to clean.
+        df (pl.DataFrame): DataFrame ของข้อมูลดิบที่ต้องการทำความสะอาด
 
     Returns:
-        pl.DataFrame: The cleaned DataFrame.
+        pl.DataFrame: DataFrame ที่ทำความสะอาดแล้ว
     """
     print("Starting stock data cleaning...")
     
@@ -234,16 +256,30 @@ def clean_stock(df: pl.DataFrame) -> pl.DataFrame:
     # เปลี่ยนชื่อคอลัมน์
     df = df.rename(rename_dict)
 
-    # Example cleaning logic for stock data
+    # ตรวจสอบว่ามีคอลัมน์ที่จำเป็นหลังจากเปลี่ยนชื่อแล้วหรือไม่
+    required_cols = ["roll_number", "roll_type", "roll_size", "length"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        # หากคอลัมน์ที่จำเป็นหายไป ให้โยนข้อผิดพลาดพร้อมแจ้งชื่อคอลัมน์ที่หายไป
+        raise ValueError(f"⚠️ Stock file is missing required columns after renaming: {missing_cols}. Please check the original file's headers.")
+
+    # ทำความสะอาดและแปลงชนิดข้อมูล
     df = df.with_columns(
-        pl.col("length").floor().cast(pl.Int64),  # แปลงความยาวเป็น Int64
-        pl.col("roll_size").floor().cast(pl.Int64), 
+        pl.col("roll_number").str.strip_chars().cast(pl.Utf8), # ทำให้แน่ใจว่าเป็นสตริงและตัดช่องว่าง
+        pl.col("roll_type").str.strip_chars().cast(pl.Utf8),   # ทำให้แน่ใจว่าเป็นสตริงและตัดช่องว่าง
+        # จัดการกับข้อมูลที่อาจเป็นทศนิยมหรือมีคอมม่าก่อนแล้วจึงแปลงเป็นจำนวนเต็ม
+        pl.col("length").cast(pl.Utf8).str.replace_all(",", "").str.strip_chars().cast(pl.Float64, strict=False).floor().cast(pl.Int64, strict=False),
+        pl.col("roll_size").cast(pl.Utf8).str.replace_all(",", "").str.strip_chars().cast(pl.Float64, strict=False).floor().cast(pl.Int64, strict=False),
     )
     
-    # df = df.drop_nulls(subset=["stock_date", "stock_quantity"])
+    # กรองแถวที่มีค่า null หรือไม่ถูกต้องในคอลัมน์หลักออก
+    df = df.drop_nulls(subset=required_cols)
+    df = df.filter(pl.col("length") > 0)
+    df = df.filter(pl.col("roll_size") > 0)
   
-    print("Stock data cleaning complete.")
-    return df
+    print(f"Stock data cleaning complete. Shape after cleaning: {df.shape}")
+    # เลือกเฉพาะคอลัมน์ที่จำเป็นสำหรับแอปพลิเคชัน
+    return df.select(required_cols)
 
 #depracted
 if __name__ == "__main__":
