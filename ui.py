@@ -671,42 +671,42 @@ class CuttingOptimizerUI(QMainWindow):
             type_demand = self.E_FACTOR
 
         if result.get('front'):
-            front_value = result.get('demand', 0) / type_demand
+            front_value = result.get('demand_per_cut', 0) / type_demand
             material_details.append(f"แผ่นหน้า: {result.get('front')} = {front_value:.2f}") # Use .get() for consistency
             
         print(result.get('c'))
         # Corrected bitwise '&' to logical 'and'
         if result.get('c') and c_type == 'C':
-            c_value = result.get('demand', 0)
+            c_value = result.get('demand_per_cut', 0)
             material_details.append(f"ลอน C: {result.get('c')} = {c_value:.2f}") # Use .get() for consistency
         elif result.get('c') and c_type == 'E':
             # Removed redundant 'front_value' calculation
             if b_type == 'B':
-                c_e_value = result.get('demand', 0) / self.B_FACTOR * self.E_FACTOR    # This might need a specific E-type B factor if it exists
+                c_e_value = result.get('demand_per_cut', 0) / self.B_FACTOR * self.E_FACTOR    # This might need a specific E-type B factor if it exists
             else:
-                c_e_value = result.get('demand', 0)
+                c_e_value = result.get('demand_per_cut', 0)
             material_details.append(f"ลอน E: {result.get('c')} = {c_e_value:.2f}") # Use .get() for consistency
 
         if result.get('middle'):
-            middle_value = result.get('demand', 0) / type_demand
+            middle_value = result.get('demand_per_cut', 0) / type_demand
             material_details.append(f"แผ่นกลาง: {result.get('middle')} = {middle_value:.2f}") # Use .get() for consistency
            
         #B is value, if B exist and corrugate_b_type is 'B' or 'E', calculate accordingly
         if result.get('b') and b_type == 'B':
             if c_type == 'C':
-                b_value = (result.get('demand', 0) / self.C_FACTOR) * self.B_FACTOR
+                b_value = (result.get('demand_per_cut', 0) / self.C_FACTOR) * self.B_FACTOR
             else:
-                b_value = result.get('demand', 0)
+                b_value = result.get('demand_per_cut', 0)
             material_details.append(f"ลอน B: {result.get('b')} = {b_value:.2f}")
         elif result.get('b') and b_type == 'E':
             if c_type == 'C':
-                b_e_value = (result.get('demand', 0) / self.C_FACTOR) * self.E_FACTOR
+                b_e_value = (result.get('demand_per_cut', 0) / self.C_FACTOR) * self.E_FACTOR
             else:
-                b_e_value = result.get('demand', 0)
+                b_e_value = result.get('demand_per_cut', 0)
             material_details.append(f"ลอน E: {result.get('b')} = {b_e_value:.2f}")
 
         if result.get('back'):
-            back_value = result.get('demand', 0) / type_demand
+            back_value = result.get('demand_per_cut', 0) / type_demand
             material_details.append(f"แผ่นหลัง: {result.get('back')} = {back_value:.2f}") # Use .get() for consistency
         
         if material_details:
