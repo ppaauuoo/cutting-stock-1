@@ -14,7 +14,7 @@ from PyQt5.QtCore import (
     QThread,
     pyqtSignal,
 )
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -131,10 +131,8 @@ class CuttingOptimizerUI(QMainWindow):
         super().__init__()
         self.setWindowTitle("กระดาษม้วนตัด Optimizer")
         self.setGeometry(100, 100, 800, 700)
-        ROLL_PAPER = [66, 68, 70, 73, 74, 75, 79, 82, 85, 88, 91, 93, 95, 97]
 
-           
-        self.ROLL_SPECS = { '66':{}, '68':{}, '70':{}, '73': {}, '74': {},'75': {}, '79': {}, '82': {} }
+        self.ROLL_SPECS = {}
 
         # Constants for material calculations
         self.E_FACTOR = 1.25
@@ -174,8 +172,8 @@ class CuttingOptimizerUI(QMainWindow):
 
         layout.addWidget(QLabel("ความกว้างม้วนกระดาษ (inch):")) 
         self.width_combo = QComboBox()
-        self.width_combo.addItems(self.ROLL_SPECS.keys())
-        self.width_combo.setCurrentText("ความกว้างม้วนกระดาษ (inch)")
+        # self.width_combo.addItems(self.ROLL_SPECS.keys()) # จะถูกเติมค่าจากไฟล์สต็อก
+        self.width_combo.setPlaceholderText("รอข้อมูลสต็อก...")
         layout.addWidget(self.width_combo)
                 # เพิ่มช่องกรอกข้อมูลแผ่นและลอนในแถวเดียวกัน
         material_layout = QHBoxLayout()
@@ -247,7 +245,7 @@ class CuttingOptimizerUI(QMainWindow):
         info_icon = QLabel()
         info_icon.setPixmap(self.style().standardIcon(QApplication.style().SP_MessageBoxInformation).pixmap(16, 16))
         info_icon.setToolTip(
-            "ความยาวม้วนกระดาษสูงสุดในสเปคนี้ที่ใช้ได้โดยไม่เกินม้วนอื่น (หน่วย: เมตร)\n"
+            "ปริมาณม้วนกระดาษสูงสุดในสเปคนี้ที่ใช้ได้โดยไม่เกินม้วนอื่น (หน่วย: ม้วน)\n"
             "ระบบจะใช้ค่านี้เป็นขีดจำกัดในการคำนวณการตัดม้วนกระดาษ\n"
         )
         info_layout.addWidget(info_label)
@@ -390,7 +388,11 @@ class CuttingOptimizerUI(QMainWindow):
                 if all(col in stock_df.columns for col in required_cols):
                     # วนลูปตามข้อมูลสต็อกแต่ละม้วนโดยไม่มีการรวมกลุ่ม
                     for row in stock_df.iter_rows(named=True):
-                        roll_number = str(row['roll_number']).strip()  # ใช้ strip() เพื่อเอา whitespace ออก
+                        roll_number = str(row['roll_number']).strip()
+                        if not roll_number or roll_number.isspace():
+                            self.log_message(f"⚠️ คำเตือน: พบม้วนที่ไม่มี 'roll_number' ในไฟล์สต็อก, ข้อมูลแถว: {row}")
+                            continue # ข้ามม้วนที่ไม่มี ID ที่ถูกต้อง
+
                         width = str(row['roll_size']).strip()
                         material = str(row['roll_type']).strip()
                         length = row['length']
@@ -404,7 +406,7 @@ class CuttingOptimizerUI(QMainWindow):
                         roll_key = len(new_roll_specs[width][material]) + 1
                         
                         new_roll_specs[width][material][roll_key] = {
-                            'id': roll_number, # ตาม mock-up
+                            'id': roll_number,
                             'length': length
                         }
                 else:
@@ -418,6 +420,20 @@ class CuttingOptimizerUI(QMainWindow):
         if self.ROLL_SPECS != new_roll_specs:
             self.ROLL_SPECS = new_roll_specs
             self.log_message("🔄 อัปเดตข้อมูลสต็อกเรียบร้อยแล้ว")
+
+            # อัปเดต QComboBox ของความกว้างม้วนด้วยข้อมูลใหม่จากสต็อก
+            current_width = self.width_combo.currentText()
+            self.width_combo.blockSignals(True)
+            self.width_combo.clear()
+            if self.ROLL_SPECS:
+                # เรียงลำดับความกว้างตามตัวเลข
+                sorted_widths = sorted(self.ROLL_SPECS.keys(), key=lambda x: int(re.sub(r'\D', '', x) or 0))
+                self.width_combo.addItems(sorted_widths)
+                if current_width in sorted_widths:
+                    self.width_combo.setCurrentText(current_width)
+                elif sorted_widths:
+                    self.width_combo.setCurrentIndex(0) # เลือกอันแรกถ้าอันเดิมไม่มี
+            self.width_combo.blockSignals(False)
           
             # รีเฟรชองค์ประกอบ UI ที่ขึ้นอยู่กับข้อมูลสต็อก
             self.update_length_based_on_stock()
@@ -615,12 +631,68 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_message(f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
         QMessageBox.information(self, "เสร็จสิ้น", f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
 
+        # กำหนดม้วนกระดาษสำหรับผลลัพธ์แต่ละรายการล่วงหน้าเพื่อหลีกเลี่ยงการซ้ำซ้อน
+        master_used_roll_ids = set()
+        for result in results:
+            current_width = str(result.get('roll_w', '')).strip()
+            c_type = result.get('c_type', '')
+            b_type = result.get('b_type', '')
+
+            type_demand = 1.0
+            if c_type == 'C': type_demand = self.C_FACTOR
+            elif b_type == 'B': type_demand = self.B_FACTOR
+            elif c_type == 'E' or b_type == 'E': type_demand = self.E_FACTOR
+
+            if result.get('front'):
+                material = str(result.get('front')).strip()
+                value = result.get('demand_per_cut', 0) / type_demand
+                result['front_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
+
+            if result.get('c') and c_type == 'C':
+                material = str(result.get('c')).strip()
+                value = result.get('demand_per_cut', 0)
+                result['c_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
+            elif result.get('c') and c_type == 'E':
+                material = str(result.get('c')).strip()
+                value = result.get('demand_per_cut', 0)
+                if b_type == 'B': value = value / self.B_FACTOR * self.E_FACTOR
+                result['c_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
+
+            if result.get('middle'):
+                material = str(result.get('middle')).strip()
+                value = result.get('demand_per_cut', 0) / type_demand
+                result['middle_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
+
+            if result.get('b') and b_type == 'B':
+                material = str(result.get('b')).strip()
+                value = result.get('demand_per_cut', 0)
+                if c_type == 'C': value = (value / self.C_FACTOR) * self.B_FACTOR
+                result['b_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
+            elif result.get('b') and b_type == 'E':
+                material = str(result.get('b')).strip()
+                value = result.get('demand_per_cut', 0)
+                if c_type == 'C': value = (value / self.C_FACTOR) * self.E_FACTOR
+                result['b_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
+
+            if result.get('back'):
+                material = str(result.get('back')).strip()
+                value = result.get('demand_per_cut', 0) / type_demand
+                result['back_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
+
         # เก็บผลลัพธ์ทั้งหมดไว้ในตัวแปรของคลาส
         self.results_data = results
 
         # แสดงผลลัพธ์ในตารางด้วยการตั้งค่า Flag เพื่อให้สามารถเลือกคัดลอกได้
         self.result_table.setRowCount(len(results))
         for row_idx, result in enumerate(results):
+            # ตรวจสอบว่ามีม้วนที่ไม่เหมาะสมหรือไม่ เพื่อเปลี่ยนสีแถว
+            has_no_suitable_roll = False
+            roll_info_keys = ['front_roll_info', 'c_roll_info', 'middle_roll_info', 'b_roll_info', 'back_roll_info']
+            for key in roll_info_keys:
+                if "ไม่มี" in result.get(key, ''):
+                    has_no_suitable_roll = True
+                    break
+
             for col_idx, value in enumerate([
                 str(result.get('roll_w', '')),
                 str(result.get('order_number', '')),
@@ -637,6 +709,9 @@ class CuttingOptimizerUI(QMainWindow):
             ]):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                if has_no_suitable_roll:
+                    item.setBackground(QColor(255, 224, 224)) # สีแดงอ่อน
+
                 self.result_table.setItem(row_idx, col_idx, item)
         self.result_table.resizeColumnsToContents()
 
@@ -645,6 +720,28 @@ class CuttingOptimizerUI(QMainWindow):
         self.progress_bar.setFormat("เกิดข้อผิดพลาด!")
         self.log_message(f"❌ {error_message}")
         QMessageBox.critical(self, "ข้อผิดพลาด", f"❌ เกิดข้อผิดพลาดในการคำนวณ:\n{error_message}")
+
+    def _find_suitable_roll(self, material: str, required_length: float, width: str, used_roll_ids: set) -> str:
+        """ค้นหาม้วนที่เหมาะสมและส่งคืนสตริงที่จัดรูปแบบพร้อมรายละเอียด"""
+        if not material or not width:
+            return ""
+
+        material_rolls_dict = self.ROLL_SPECS.get(width, {}).get(material, {})
+        if not material_rolls_dict:
+            return "-> (ไม่มีข้อมูลสต็อก)"
+
+        # เรียงลำดับม้วนตามความยาวจากน้อยไปมากเพื่อหาขนาดที่พอดีที่สุดก่อน
+        available_rolls = sorted(material_rolls_dict.values(), key=lambda r: r['length'])
+
+        for roll in available_rolls:
+            roll_id = roll.get('id')
+            roll_length = roll.get('length', 0)
+            if roll_id and roll_length >= required_length and roll_id not in used_roll_ids:
+                used_roll_ids.add(roll_id)
+                # ส่งคืนสตริงที่จัดรูปแบบเพื่อแสดงผล
+                return f"-> ใช้ม้วน: {roll_id} (ยาว {int(roll_length)} ม.)"
+        
+        return "-> (ไม่มีสต็อกที่พอ)"
 
     def show_row_details_popup(self):
         """
@@ -698,43 +795,55 @@ class CuttingOptimizerUI(QMainWindow):
             type_demand = self.E_FACTOR
 
         if result.get('front'):
+            front_material = result.get('front')
             front_value = result.get('demand_per_cut', 0) / type_demand
-            material_details.append(f"แผ่นหน้า: {result.get('front')} = {front_value:.2f}") # Use .get() for consistency
+            roll_info_str = result.get('front_roll_info', '')
+            material_details.append(f"แผ่นหน้า: {front_material} = {front_value:.2f} {roll_info_str}")
             
-        print(result.get('c'))
-        # Corrected bitwise '&' to logical 'and'
         if result.get('c') and c_type == 'C':
+            c_material = result.get('c')
             c_value = result.get('demand_per_cut', 0)
-            material_details.append(f"ลอน C: {result.get('c')} = {c_value:.2f}") # Use .get() for consistency
+            roll_info_str = result.get('c_roll_info', '')
+            material_details.append(f"ลอน C: {c_material} = {c_value:.2f} {roll_info_str}")
         elif result.get('c') and c_type == 'E':
+            c_material = result.get('c')
             # Removed redundant 'front_value' calculation
             if b_type == 'B':
                 c_e_value = result.get('demand_per_cut', 0) / self.B_FACTOR * self.E_FACTOR    # This might need a specific E-type B factor if it exists
             else:
                 c_e_value = result.get('demand_per_cut', 0)
-            material_details.append(f"ลอน E: {result.get('c')} = {c_e_value:.2f}") # Use .get() for consistency
+            roll_info_str = result.get('c_roll_info', '')
+            material_details.append(f"ลอน E: {c_material} = {c_e_value:.2f} {roll_info_str}")
 
         if result.get('middle'):
+            middle_material = result.get('middle')
             middle_value = result.get('demand_per_cut', 0) / type_demand
-            material_details.append(f"แผ่นกลาง: {result.get('middle')} = {middle_value:.2f}") # Use .get() for consistency
+            roll_info_str = result.get('middle_roll_info', '')
+            material_details.append(f"แผ่นกลาง: {middle_material} = {middle_value:.2f} {roll_info_str}")
            
         #B is value, if B exist and corrugate_b_type is 'B' or 'E', calculate accordingly
         if result.get('b') and b_type == 'B':
+            b_material = result.get('b')
             if c_type == 'C':
                 b_value = (result.get('demand_per_cut', 0) / self.C_FACTOR) * self.B_FACTOR
             else:
                 b_value = result.get('demand_per_cut', 0)
-            material_details.append(f"ลอน B: {result.get('b')} = {b_value:.2f}")
+            roll_info_str = result.get('b_roll_info', '')
+            material_details.append(f"ลอน B: {b_material} = {b_value:.2f} {roll_info_str}")
         elif result.get('b') and b_type == 'E':
+            b_material = result.get('b')
             if c_type == 'C':
                 b_e_value = (result.get('demand_per_cut', 0) / self.C_FACTOR) * self.E_FACTOR
             else:
                 b_e_value = result.get('demand_per_cut', 0)
-            material_details.append(f"ลอน E: {result.get('b')} = {b_e_value:.2f}")
+            roll_info_str = result.get('b_roll_info', '')
+            material_details.append(f"ลอน E: {b_material} = {b_e_value:.2f} {roll_info_str}")
 
         if result.get('back'):
+            back_material = result.get('back')
             back_value = result.get('demand_per_cut', 0) / type_demand
-            material_details.append(f"แผ่นหลัง: {result.get('back')} = {back_value:.2f}") # Use .get() for consistency
+            roll_info_str = result.get('back_roll_info', '')
+            material_details.append(f"แผ่นหลัง: {back_material} = {back_value:.2f} {roll_info_str}")
         
         if material_details:
             details.append("\n⚙️ ข้อมูลแผ่นและลอน:")
