@@ -17,6 +17,34 @@ from pulp import (
 
 import cleaning
 
+
+def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set) -> str:
+    """Finds a suitable roll, updates its length, and returns a formatted string."""
+    if not material or not width:
+        return ""
+
+    # roll_specs is nested dict, so .get() with default is safer.
+    material_rolls_dict = roll_specs.get(str(width), {}).get(material, {})
+    if not material_rolls_dict:
+        return "-> (ไม่มีข้อมูลสต็อก)"
+
+    # Sort rolls by length to find the best fit (smallest one that's large enough)
+    # The items are (key, dict_value) so item[1] is the roll dictionary.
+    available_rolls = sorted(material_rolls_dict.items(), key=lambda item: item[1]['length'])
+
+    for roll_key, roll in available_rolls:
+        roll_id = roll.get('id')
+        roll_length = roll.get('length', 0)
+        if roll_id and roll_length >= required_length and roll_id not in used_roll_ids:
+            # Update the roll's length in the original roll_specs dictionary
+            roll['length'] -= required_length
+            used_roll_ids.add(roll_id)
+            # Return a formatted string for the results
+            return f"-> ใช้ม้วน: {roll_id} (ยาว {int(roll_length)} ม., เหลือ {int(roll['length'])} ม.)"
+    
+    return "-> (ไม่มีสต็อกที่พอ)"
+
+
 app = FastAPI()
 
 CORRUGATE_MULTIPLIERS = {
@@ -190,6 +218,7 @@ async def main_algorithm(
     b_type: Optional[str] = None,
     b: Optional[str] = None,
     back: Optional[str] = None,
+    roll_specs: Optional[dict] = None,
 ):
     if progress_callback:
         progress_callback("⚙️ กำลังเริ่มการคำนวณ")
@@ -257,6 +286,62 @@ async def main_algorithm(
             order_number = orders_df.row(int(order_idx))[order_num_col_idx] if order_idx is not None else None
             
             material_specs = result.get("material_specs", {})
+            variables = result.get("variables", {})
+            roll_info = {}
+            if roll_specs:
+                used_roll_ids_for_cut = set()
+                roll_w_str = str(variables.get("roll_w", "")).strip()
+                demand_per_cut = variables.get("demand_per_cut", 0)
+                c_type_spec = material_specs.get('c_type')
+                b_type_spec = material_specs.get('b_type')
+
+                type_demand_divisor = 1.0
+                if c_type_spec == 'C':
+                    type_demand_divisor = CORRUGATE_MULTIPLIERS['C']
+                elif b_type_spec == 'B':
+                    type_demand_divisor = CORRUGATE_MULTIPLIERS['B']
+                elif c_type_spec == 'E' or b_type_spec == 'E':
+                    type_demand_divisor = CORRUGATE_MULTIPLIERS['E']
+
+                if material_specs.get('front'):
+                    material = str(material_specs.get('front')).strip()
+                    value = demand_per_cut / type_demand_divisor
+                    roll_info['front_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+
+                if material_specs.get('c') and c_type_spec == 'C':
+                    material = str(material_specs.get('c')).strip()
+                    value = demand_per_cut
+                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+                elif material_specs.get('c') and c_type_spec == 'E':
+                    material = str(material_specs.get('c')).strip()
+                    value = demand_per_cut
+                    if b_type_spec == 'B':
+                        value = value / CORRUGATE_MULTIPLIERS['B'] * CORRUGATE_MULTIPLIERS['E']
+                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+
+                if material_specs.get('middle'):
+                    material = str(material_specs.get('middle')).strip()
+                    value = demand_per_cut / type_demand_divisor
+                    roll_info['middle_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+
+                if material_specs.get('b') and b_type_spec == 'B':
+                    material = str(material_specs.get('b')).strip()
+                    value = demand_per_cut
+                    if c_type_spec == 'C':
+                        value = (value / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['B']
+                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+                elif material_specs.get('b') and b_type_spec == 'E':
+                    material = str(material_specs.get('b')).strip()
+                    value = demand_per_cut
+                    if c_type_spec == 'C':
+                        value = (value / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['E']
+                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+
+                if material_specs.get('back'):
+                    material = str(material_specs.get('back')).strip()
+                    value = demand_per_cut / type_demand_divisor
+                    roll_info['back_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+
             cut_info = {
                 "roll_w": variables.get("roll_w"),
                 "rem_roll_l": variables.get("rem_roll_l"),
@@ -272,6 +357,7 @@ async def main_algorithm(
                 "component_type": variables.get("component_type"),
             }
             cut_info.update(material_specs)  # Add all material specs
+            cut_info.update(roll_info)
             all_results.append(cut_info)
             roll_cuts.append(cut_info)
 

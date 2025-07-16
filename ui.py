@@ -1,5 +1,6 @@
 import asyncio
 import collections
+import copy
 import os
 import re
 import sys
@@ -51,6 +52,7 @@ class WorkerThread(QThread):
                  middle_material,
                  corrugate_b_type, corrugate_b_material_name,
                  back_material,
+                 roll_specs,
                  parent=None):
         super().__init__(parent)
         self.width = width
@@ -65,6 +67,7 @@ class WorkerThread(QThread):
         self.corrugate_b_type = corrugate_b_type
         self.corrugate_b_material_name = corrugate_b_material_name
         self.back_material = back_material
+        self.roll_specs = roll_specs
 
     def run(self):
         loop = asyncio.new_event_loop()
@@ -99,6 +102,7 @@ class WorkerThread(QThread):
                     b_type=self.corrugate_b_type,
                     b=self.corrugate_b_material_name,
                     back=self.back_material,
+                    roll_specs=self.roll_specs,
                 )
             )
             self.progress_updated.emit(100, "✅ เสร็จสิ้น")  # สัญญาณเสร็จสมบูรณ์
@@ -133,11 +137,6 @@ class CuttingOptimizerUI(QMainWindow):
         self.setGeometry(100, 100, 800, 700)
 
         self.ROLL_SPECS = {}
-
-        # Constants for material calculations
-        self.E_FACTOR = 1.25
-        self.C_FACTOR = 1.45
-        self.B_FACTOR = 1.35
 
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
@@ -582,6 +581,8 @@ class CuttingOptimizerUI(QMainWindow):
             corrugate_b_type = self.corrugate_b_type_combo.currentText().strip() or None
             corrugate_b_material_name = self.corrugate_b_material_input.currentText().strip() or None
             
+            roll_specs_copy = copy.deepcopy(self.ROLL_SPECS)
+            
             self.log_display.clear()
             self.result_table.setRowCount(0)
             self.log_message("⚙️ กำลังเริ่มการคำนวณ...")
@@ -596,7 +597,8 @@ class CuttingOptimizerUI(QMainWindow):
                 corrugate_c_type, corrugate_c_material_name,
                 middle_material, 
                 corrugate_b_type, corrugate_b_material_name,
-                back_material
+                back_material,
+                roll_specs_copy
             )
             self.worker.update_signal.connect(self.log_message)
             self.worker.progress_updated.connect(self.update_progress_bar)
@@ -630,54 +632,6 @@ class CuttingOptimizerUI(QMainWindow):
         self.progress_bar.setFormat("เสร็จสิ้น!")
         self.log_message(f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
         QMessageBox.information(self, "เสร็จสิ้น", f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
-
-        # กำหนดม้วนกระดาษสำหรับผลลัพธ์แต่ละรายการล่วงหน้าเพื่อหลีกเลี่ยงการซ้ำซ้อน
-        master_used_roll_ids = set()
-        for result in results:
-            current_width = str(result.get('roll_w', '')).strip()
-            c_type = result.get('c_type', '')
-            b_type = result.get('b_type', '')
-
-            type_demand = 1.0
-            if c_type == 'C': type_demand = self.C_FACTOR
-            elif b_type == 'B': type_demand = self.B_FACTOR
-            elif c_type == 'E' or b_type == 'E': type_demand = self.E_FACTOR
-
-            if result.get('front'):
-                material = str(result.get('front')).strip()
-                value = result.get('demand_per_cut', 0) / type_demand
-                result['front_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
-
-            if result.get('c') and c_type == 'C':
-                material = str(result.get('c')).strip()
-                value = result.get('demand_per_cut', 0)
-                result['c_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
-            elif result.get('c') and c_type == 'E':
-                material = str(result.get('c')).strip()
-                value = result.get('demand_per_cut', 0)
-                if b_type == 'B': value = value / self.B_FACTOR * self.E_FACTOR
-                result['c_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
-
-            if result.get('middle'):
-                material = str(result.get('middle')).strip()
-                value = result.get('demand_per_cut', 0) / type_demand
-                result['middle_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
-
-            if result.get('b') and b_type == 'B':
-                material = str(result.get('b')).strip()
-                value = result.get('demand_per_cut', 0)
-                if c_type == 'C': value = (value / self.C_FACTOR) * self.B_FACTOR
-                result['b_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
-            elif result.get('b') and b_type == 'E':
-                material = str(result.get('b')).strip()
-                value = result.get('demand_per_cut', 0)
-                if c_type == 'C': value = (value / self.C_FACTOR) * self.E_FACTOR
-                result['b_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
-
-            if result.get('back'):
-                material = str(result.get('back')).strip()
-                value = result.get('demand_per_cut', 0) / type_demand
-                result['back_roll_info'] = self._find_suitable_roll(material, value, current_width, master_used_roll_ids)
 
         # เก็บผลลัพธ์ทั้งหมดไว้ในตัวแปรของคลาส
         self.results_data = results
@@ -720,28 +674,6 @@ class CuttingOptimizerUI(QMainWindow):
         self.progress_bar.setFormat("เกิดข้อผิดพลาด!")
         self.log_message(f"❌ {error_message}")
         QMessageBox.critical(self, "ข้อผิดพลาด", f"❌ เกิดข้อผิดพลาดในการคำนวณ:\n{error_message}")
-
-    def _find_suitable_roll(self, material: str, required_length: float, width: str, used_roll_ids: set) -> str:
-        """ค้นหาม้วนที่เหมาะสมและส่งคืนสตริงที่จัดรูปแบบพร้อมรายละเอียด"""
-        if not material or not width:
-            return ""
-
-        material_rolls_dict = self.ROLL_SPECS.get(width, {}).get(material, {})
-        if not material_rolls_dict:
-            return "-> (ไม่มีข้อมูลสต็อก)"
-
-        # เรียงลำดับม้วนตามความยาวจากน้อยไปมากเพื่อหาขนาดที่พอดีที่สุดก่อน
-        available_rolls = sorted(material_rolls_dict.values(), key=lambda r: r['length'])
-
-        for roll in available_rolls:
-            roll_id = roll.get('id')
-            roll_length = roll.get('length', 0)
-            if roll_id and roll_length >= required_length and roll_id not in used_roll_ids:
-                used_roll_ids.add(roll_id)
-                # ส่งคืนสตริงที่จัดรูปแบบเพื่อแสดงผล
-                return f"-> ใช้ม้วน: {roll_id} (ยาว {int(roll_length)} ม.)"
-        
-        return "-> (ไม่มีสต็อกที่พอ)"
 
     def show_row_details_popup(self):
         """
@@ -788,11 +720,11 @@ class CuttingOptimizerUI(QMainWindow):
 
         type_demand = 1.0 # Default divisor if no specific C or B corrugate
         if c_type == 'C':
-            type_demand = self.C_FACTOR
+            type_demand = 1.45
         elif b_type == 'B':
-            type_demand = self.B_FACTOR
+            type_demand = 1.35
         elif c_type == 'E' or b_type == 'E':
-            type_demand = self.E_FACTOR
+            type_demand = 1.25
 
         if result.get('front'):
             front_material = result.get('front')
@@ -809,7 +741,7 @@ class CuttingOptimizerUI(QMainWindow):
             c_material = result.get('c')
             # Removed redundant 'front_value' calculation
             if b_type == 'B':
-                c_e_value = result.get('demand_per_cut', 0) / self.B_FACTOR * self.E_FACTOR    # This might need a specific E-type B factor if it exists
+                c_e_value = result.get('demand_per_cut', 0) / 1.35 * 1.25    # This might need a specific E-type B factor if it exists
             else:
                 c_e_value = result.get('demand_per_cut', 0)
             roll_info_str = result.get('c_roll_info', '')
@@ -825,7 +757,7 @@ class CuttingOptimizerUI(QMainWindow):
         if result.get('b') and b_type == 'B':
             b_material = result.get('b')
             if c_type == 'C':
-                b_value = (result.get('demand_per_cut', 0) / self.C_FACTOR) * self.B_FACTOR
+                b_value = (result.get('demand_per_cut', 0) / 1.45) * 1.35
             else:
                 b_value = result.get('demand_per_cut', 0)
             roll_info_str = result.get('b_roll_info', '')
@@ -833,7 +765,7 @@ class CuttingOptimizerUI(QMainWindow):
         elif result.get('b') and b_type == 'E':
             b_material = result.get('b')
             if c_type == 'C':
-                b_e_value = (result.get('demand_per_cut', 0) / self.C_FACTOR) * self.E_FACTOR
+                b_e_value = (result.get('demand_per_cut', 0) / 1.45) * 1.25
             else:
                 b_e_value = result.get('demand_per_cut', 0)
             roll_info_str = result.get('b_roll_info', '')
