@@ -18,8 +18,11 @@ from pulp import (
 import cleaning
 
 
-def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set) -> str:
-    """Finds a suitable roll, updates its length, and returns a formatted string. If one roll is not enough, it tries to combine with the next available roll."""
+def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict) -> str:
+    """
+    Finds a suitable roll, prioritizing the last used roll for the same material to ensure sequential use.
+    If one roll is not enough, it tries to combine with another available roll.
+    """
     if not material or not width:
         return ""
 
@@ -30,24 +33,70 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     # Get available rolls, sorted by length.
     all_available_rolls = sorted(material_rolls_dict.items(), key=lambda item: item[1]['length'])
     
-    # Filter out already used rolls for this cut.
+    # Filter out already used rolls for this specific cut.
     unused_rolls = [
         (k, r) for k, r in all_available_rolls if r.get('id') not in used_roll_ids
     ]
-    
-    # 1. Try to find a single roll that is sufficient.
+
+    # --- New Logic: Prioritize last used roll for this material ---
+    last_roll_id = last_used_roll_ids.get((width, material))
+    if last_roll_id:
+        # Find the last roll in the list of all rolls for this material.
+        last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
+
+        if last_roll_data and last_roll_data[1]['length'] > 0 and last_roll_id not in used_roll_ids:
+            _last_roll_key, last_roll = last_roll_data
+            
+            # Case 1: The last used roll is sufficient by itself.
+            if last_roll['length'] >= required_length:
+                original_length = last_roll['length']
+                last_roll['length'] -= required_length
+                used_roll_ids.add(last_roll_id)
+                # The last used roll remains the same.
+                return f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_length)} ม., เหลือ {int(last_roll['length'])} ม.)"
+            
+            # Case 2: The last used roll is not sufficient, try to combine it with another.
+            else:
+                needed_from_another = required_length - last_roll['length']
+                original_len_roll1 = last_roll['length']
+                
+                # Find a supplementary roll from the unused rolls (excluding the last_roll itself).
+                supplement_rolls = [(k, r) for k, r in unused_rolls if r.get('id') != last_roll_id]
+                
+                # Find the smallest roll that can cover the remaining requirement.
+                best_supplement = next(( (k, r) for k, r in sorted(supplement_rolls, key=lambda item: item[1]['length']) if r['length'] >= needed_from_another), None)
+
+                if best_supplement:
+                    _supp_key, supp_roll = best_supplement
+                    original_len_roll2 = supp_roll['length']
+                    supp_roll_id = supp_roll['id']
+
+                    # Update rolls: use last_roll completely, take remainder from supplement.
+                    last_roll['length'] = 0
+                    supp_roll['length'] -= needed_from_another
+                    
+                    used_roll_ids.add(last_roll_id)
+                    used_roll_ids.add(supp_roll_id)
+                    
+                    # The new active roll is the supplement roll.
+                    last_used_roll_ids[(width, material)] = supp_roll_id
+                    
+                    return (f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_len_roll1)} ม., ใช้หมด) "
+                            f"+ {supp_roll_id} (ยาว {int(original_len_roll2)} ม., เหลือ {int(supp_roll['length'])} ม.)")
+
+    # --- Fallback to original logic if last used roll wasn't applicable ---
+    # 1. Try to find a single new roll that is sufficient.
     for roll_key, roll in unused_rolls:
         roll_id = roll.get('id')
         roll_length = roll.get('length', 0)
         if roll_id and roll_length >= required_length:
-            # Update the roll's length.
             roll['length'] -= required_length
             used_roll_ids.add(roll_id)
-            # Return a formatted string.
-            return f"-> ใช้ม้วน: {roll_id} (ยาว {int(roll_length)} ม., เหลือ {int(roll['length'])} ม.)"
+            # Set this as the new last used roll for this material.
+            last_used_roll_ids[(width, material)] = roll_id
+            return f"-> เปิดม้วนใหม่: {roll_id} (ยาว {int(roll_length)} ม., เหลือ {int(roll['length'])} ม.)"
 
-    # 2. If no single roll is sufficient, try to combine two rolls.
-    # We iterate through adjacent pairs in the list sorted by length.
+    # 2. If no single roll is sufficient, try to combine two new rolls.
     if len(unused_rolls) >= 2:
         for i in range(len(unused_rolls) - 1):
             roll1_key, roll1 = unused_rolls[i]
@@ -61,16 +110,18 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
             if roll1_id and roll2_id:
                 combined_length = roll1_length + roll2_length
                 if combined_length >= required_length:
-                    # Use roll1 completely, and take the rest from roll2.
                     needed_from_roll2 = required_length - roll1_length
                     
                     roll1['length'] = 0
                     roll2['length'] -= needed_from_roll2
                     
-                    # used_roll_ids.add(roll1_id)
-                    # used_roll_ids.add(roll2_id)
+                    # The second roll in the combination becomes the new active roll.
+                    last_used_roll_ids[(width, material)] = roll2_id
                     
-                    return (f"-> ใช้ม้วน: {roll1_id} (ยาว {int(roll1_length)} ม., ใช้หมด) "
+                    used_roll_ids.add(roll1_id)
+                    used_roll_ids.add(roll2_id)
+                    
+                    return (f"-> เปิดม้วนใหม่: {roll1_id} (ยาว {int(roll1_length)} ม., ใช้หมด) "
                             f"+ {roll2_id} (ยาว {int(roll2_length)} ม., เหลือ {int(roll2['length'])} ม.)")
 
     return "-> (ไม่มีสต็อกที่พอ)"
@@ -273,6 +324,7 @@ async def main_algorithm(
     
     rolls = [{"width": roll_width, "length": roll_length}]
     all_results = []
+    last_used_roll_ids = {}
 
     order_num_col_idx = orders_df.columns.index("order_number")
 
@@ -337,41 +389,41 @@ async def main_algorithm(
                 if material_specs.get('front'):
                     material = str(material_specs.get('front')).strip()
                     value = demand_per_cut / type_demand_divisor
-                    roll_info['front_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+                    roll_info['front_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
 
                 if material_specs.get('c') and c_type_spec == 'C':
                     material = str(material_specs.get('c')).strip()
                     value = demand_per_cut
-                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
                 elif material_specs.get('c') and c_type_spec == 'E':
                     material = str(material_specs.get('c')).strip()
                     value = demand_per_cut
                     if b_type_spec == 'B':
                         value = value / CORRUGATE_MULTIPLIERS['B'] * CORRUGATE_MULTIPLIERS['E']
-                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
 
                 if material_specs.get('middle'):
                     material = str(material_specs.get('middle')).strip()
                     value = demand_per_cut / type_demand_divisor
-                    roll_info['middle_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+                    roll_info['middle_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
 
                 if material_specs.get('b') and b_type_spec == 'B':
                     material = str(material_specs.get('b')).strip()
                     value = demand_per_cut
                     if c_type_spec == 'C':
                         value = (value / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['B']
-                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
                 elif material_specs.get('b') and b_type_spec == 'E':
                     material = str(material_specs.get('b')).strip()
                     value = demand_per_cut
                     if c_type_spec == 'C':
                         value = (value / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['E']
-                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
 
                 if material_specs.get('back'):
                     material = str(material_specs.get('back')).strip()
                     value = demand_per_cut / type_demand_divisor
-                    roll_info['back_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut)
+                    roll_info['back_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
 
             cut_info = {
                 "roll_w": variables.get("roll_w"),
