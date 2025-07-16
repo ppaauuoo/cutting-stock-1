@@ -782,7 +782,12 @@ class CuttingOptimizerUI(QMainWindow):
             details.extend(material_details)
 
         detail_message = "\n".join(details)
-        QMessageBox.information(self, "รายละเอียดผลลัพธ์การตัด", detail_message)
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Information)
+        msg_box.setText(detail_message)
+        msg_box.setWindowTitle("รายละเอียดผลลัพธ์การตัด")
+        msg_box.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        msg_box.exec_()
 
 def convert_thai_digits_to_arabic(text: str) -> str:
     """Convert Thai digits to Arabic digits"""
