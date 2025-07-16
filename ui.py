@@ -549,7 +549,7 @@ class CuttingOptimizerUI(QMainWindow):
         
     def suggest_settings(self):
         """
-        Suggests optimal width and material based on order frequency and stock availability.
+        Suggests optimal width and material spec based on order frequency and stock availability.
         """
         order_file_path = self.file_path_input.text()
         if not os.path.exists(order_file_path):
@@ -558,11 +558,8 @@ class CuttingOptimizerUI(QMainWindow):
 
         self.log_message("🤔 กำลังวิเคราะห์เพื่อแนะนำการตั้งค่า...")
         try:
-            # Load and clean data just enough to get material columns
+            # Load data. In suggestion mode, clean_data just normalizes column names.
             orders_df = cleaning.load_data(order_file_path)
-            # We need normalized column names. clean_data does this.
-            # We call it in suggestion_mode to only normalize column names
-            # without performing strict validation that might fail.
             cleaned_orders_df = cleaning.clean_data(orders_df, suggestion_mode=True)
 
             material_cols = ['front', 'c', 'middle', 'b', 'back']
@@ -573,67 +570,74 @@ class CuttingOptimizerUI(QMainWindow):
                 self.log_message("⚠️ ไม่พบคอลัมน์วัสดุ (front, c, middle, b, back) ในไฟล์ออเดอร์")
                 return
 
-            # Combine all material values into a single series
-            all_materials_series = pl.concat(
-                [cleaned_orders_df[col] for col in existing_cols]
-            ).drop_nulls()
-            all_materials_series = all_materials_series.filter(all_materials_series != "")
+            # Pre-process material columns: fill nulls and strip whitespace for accurate grouping.
+            spec_df = cleaned_orders_df.with_columns(
+                [pl.col(c).fill_null("").str.strip_chars() for c in existing_cols]
+            )
 
-            if all_materials_series.is_empty():
-                QMessageBox.information(self, "ไม่มีข้อมูล", "ไม่พบข้อมูลวัสดุในไฟล์ออเดอร์")
-                self.log_message("ℹ️ ไม่พบข้อมูลวัสดุในไฟล์ออเดอร์")
-                return
+            # Group by the combination of materials to find the most frequent spec
+            most_frequent_spec_df = spec_df.group_by(existing_cols).count().sort("count", descending=True)
             
-            # Find the most frequent material
-            value_counts_df = all_materials_series.value_counts().sort("count", descending=True)
-            if value_counts_df.is_empty():
-                QMessageBox.information(self, "ไม่มีข้อมูล", "ไม่สามารถนับจำนวนวัสดุได้")
-                self.log_message("ℹ️ ไม่สามารถนับจำนวนวัสดุได้")
+            if most_frequent_spec_df.is_empty():
+                QMessageBox.information(self, "ไม่มีข้อมูล", "ไม่พบข้อมูลสเปควัสดุในไฟล์ออเดอร์")
+                self.log_message("ℹ️ ไม่พบข้อมูลสเปควัสดุที่สามารถจัดกลุ่มได้ในไฟล์ออเดอร์")
                 return
 
-            # Column name of values is the name of the first series concatenated
-            most_frequent_material = value_counts_df.row(0)[0].strip()
-            self.log_message(f"💡 วัสดุที่พบบ่อยที่สุด: {most_frequent_material}")
+            # The most frequent spec is the first row
+            most_frequent_spec = most_frequent_spec_df.row(0, named=True)
+            del most_frequent_spec['count']  # Remove the count column
 
-            # Find widths in stock for this material
+            self.log_message(f"💡 สเปคที่พบบ่อยที่สุด: {most_frequent_spec}")
+
+            # Get the unique, non-empty materials from the spec
+            spec_materials = {m for m in most_frequent_spec.values() if m}
+
+            if not spec_materials:
+                QMessageBox.information(self, "ไม่มีข้อมูล", "สเปคที่พบบ่อยที่สุดไม่มีการระบุวัสดุ")
+                self.log_message("ℹ️ สเปคที่พบบ่อยที่สุดไม่มีการระบุวัสดุ")
+                return
+
+            # Find widths in stock that have ALL materials for the spec
             available_widths = []
             if self.ROLL_SPECS:
-                for width, materials in self.ROLL_SPECS.items():
-                    if most_frequent_material in materials:
+                for width, materials_in_stock in self.ROLL_SPECS.items():
+                    # Check if all materials required by the spec are available for this width
+                    if spec_materials.issubset(materials_in_stock.keys()):
                         available_widths.append(width)
-            
+
             if not available_widths:
-                QMessageBox.warning(self, "ไม่พบสต็อก", f"ไม่พบสต็อกสำหรับวัสดุ '{most_frequent_material}'")
-                self.log_message(f"⚠️ ไม่พบสต็อกสำหรับวัสดุ '{most_frequent_material}'")
+                display_spec_str = ', '.join(sorted(list(spec_materials)))
+                QMessageBox.warning(self, "ไม่พบสต็อก", f"ไม่พบสต็อกสำหรับสเปค: '{display_spec_str}'")
+                self.log_message(f"⚠️ ไม่พบสต็อกที่รองรับวัสดุทั้งหมดในสเปค: {display_spec_str}")
                 return
 
-            # Suggest the first available width, sorted numerically
-            suggested_width = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))[0]
-            self.log_message(f"💡 แนะนำความกว้าง: {suggested_width} นิ้ว")
+            # Sort available widths and select the first one as the default suggestion
+            sorted_available_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
+            suggested_width = sorted_available_widths[0]
+            self.log_message(f"💡 ความกว้างที่แนะนำ: {suggested_width} นิ้ว (ความกว้างอื่นที่ใช้ได้: {', '.join(sorted_available_widths)})")
 
-            # Update UI
+            # Update UI with the suggested settings
             self.width_combo.setCurrentText(suggested_width)
             
             # Setting width triggers `update_length_based_on_stock`, which repopulates material combos.
-            # After that, we can set the material.
-            material_combos = [
-                self.sheet_front_input, self.corrugate_c_material_input,
-                self.sheet_middle_input, self.corrugate_b_material_input,
-                self.sheet_back_input
-            ]
+            # After that, we can set the materials from the spec.
+            self.sheet_front_input.setCurrentText(most_frequent_spec.get('front', ''))
+            self.corrugate_c_material_input.setCurrentText(most_frequent_spec.get('c', ''))
+            self.sheet_middle_input.setCurrentText(most_frequent_spec.get('middle', ''))
+            self.corrugate_b_material_input.setCurrentText(most_frequent_spec.get('b', ''))
+            self.sheet_back_input.setCurrentText(most_frequent_spec.get('back', ''))
             
-            for combo in material_combos:
-                if combo.findText(most_frequent_material) != -1:
-                    combo.setCurrentText(most_frequent_material)
-                else: # if not available, set to None ("")
-                    if combo.count() > 0:
-                        combo.setCurrentIndex(0) # Assuming index 0 is "" (None)
+            # Format spec for display in the message box, showing all available widths
+            available_widths_str = ', '.join(sorted_available_widths)
+            display_list = [f"- ความกว้างที่ใช้ได้ (นิ้ว): {available_widths_str}"]
+            material_display_list = [f"- {k.capitalize()}: {v}" for k, v in most_frequent_spec.items() if v]
+            display_list.extend(material_display_list)
+            display_str = "\n".join(display_list)
 
             QMessageBox.information(self, "แนะนำการตั้งค่า",
                                     f"แนะนำให้ใช้:\n\n"
-                                    f"วัสดุ: {most_frequent_material}\n"
-                                    f"ความกว้าง: {suggested_width}\n\n"
-                                    "ได้ทำการตั้งค่าให้แล้ว")
+                                    f"สเปคที่แนะนำ:\n{display_str}\n\n"
+                                    f"ได้ตั้งค่าความกว้างเป็น {suggested_width} นิ้วให้แล้ว (เป็นค่าเริ่มต้น)")
 
         except Exception as e:
             QMessageBox.critical(self, "เกิดข้อผิดพลาด", f"เกิดข้อผิดพลาดระหว่างการแนะนำ: {e}")
@@ -645,7 +649,7 @@ class CuttingOptimizerUI(QMainWindow):
             length = self.calculated_length
             
             # อ่านค่าเส้นทางไฟล์จาก UI
-            file_path = self.file_path_input.text().strip() or "order2024.csv"
+            file_path = self.file_path_input.text().strip() or "order.csv"
 
             # อ่านค่าจาก QDateEdit และแปลงเป็นสตริง
             start_date = self.start_date_input.date().toString("yyyy-MM-dd") 
