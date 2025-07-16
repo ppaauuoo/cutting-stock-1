@@ -65,7 +65,8 @@ def clean_data(df: pl.DataFrame,
                c: Optional[str] = None,
                middle: Optional[str] = None,
                b: Optional[str] = None,
-               back: Optional[str] = None
+               back: Optional[str] = None,
+               suggestion_mode: bool = False
                ) -> pl.DataFrame:
     """
     Placeholder function for data cleaning.
@@ -147,6 +148,12 @@ def clean_data(df: pl.DataFrame,
     ]).select([
         'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type', 'component_type', 'front', 'c', 'middle', 'b', 'back', 'die_cut' # เพิ่มคอลัมน์วัสดุ
     ])
+
+    if suggestion_mode:
+        print("Running clean_data in suggestion mode.")
+        # For suggestions, we only need the column names to be normalized.
+        # We can skip the rest of the strict cleaning and filtering.
+        return df
 
     if df.height > 0:
         print(f"วันที่กำหนดส่งขั้นต่ำใน DataFrame (หลังการแยกวิเคราะห์และลบค่าว่าง): {df.select(pl.col('due_date').min()).item()}")
