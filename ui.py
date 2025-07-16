@@ -137,6 +137,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.setGeometry(100, 100, 800, 700)
 
         self.ROLL_SPECS = {}
+        self.calculated_length = 0
 
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
@@ -218,45 +219,25 @@ class CuttingOptimizerUI(QMainWindow):
 
         layout.addLayout(material_layout)
 
-        # เพิ่มช่องกรอกความยาวม้วนกระดาษ พร้อมไอคอน info
-        info_layout = QHBoxLayout()
-        info_label = QLabel("ม้วนกระดาษที่ใช้ได้สูงสุด (m):")
-        info_icon = QLabel()
-        info_icon.setPixmap(self.style().standardIcon(QApplication.style().SP_MessageBoxInformation).pixmap(16, 16))
-        info_icon.setToolTip(
-            "ความยาวม้วนกระดาษสูงสุดในสเปคนี้ที่ใช้ได้โดยไม่เกินม้วนอื่น (หน่วย: เมตร)\n"
-            "ระบบจะใช้ค่านี้เป็นขีดจำกัดในการคำนวณการตัดม้วนกระดาษ\n"
-        )
-        info_layout.addWidget(info_label)
-        info_layout.addWidget(info_icon)
-        info_layout.addStretch()
-        layout.addLayout(info_layout)
-
-        self.length_input = QLineEdit("")
-        self.update_length_based_on_stock() 
-        self.length_input.setPlaceholderText("ความยาวม้วนกระดาษ (เมตร)")
-        self.length_input.setEnabled(False)
-        layout.addWidget(self.length_input)
-
         # เพิ่มช่องกรอกปริมาณม้วนกระดาษ พร้อมไอคอน info
-        info_layout = QHBoxLayout()
-        info_label = QLabel("ปริมาณม้วนกระดาษที่ใช้ได้สูงสุด (ม้วน):")
-        info_icon = QLabel()
-        info_icon.setPixmap(self.style().standardIcon(QApplication.style().SP_MessageBoxInformation).pixmap(16, 16))
-        info_icon.setToolTip(
-            "ปริมาณม้วนกระดาษสูงสุดในสเปคนี้ที่ใช้ได้โดยไม่เกินม้วนอื่น (หน่วย: ม้วน)\n"
-            "ระบบจะใช้ค่านี้เป็นขีดจำกัดในการคำนวณการตัดม้วนกระดาษ\n"
-        )
-        info_layout.addWidget(info_label)
-        info_layout.addWidget(info_icon)
-        info_layout.addStretch()
-        layout.addLayout(info_layout)
+        # info_layout = QHBoxLayout()
+        # info_label = QLabel("ปริมาณม้วนกระดาษที่ใช้ได้สูงสุด (ม้วน):")
+        # info_icon = QLabel()
+        # info_icon.setPixmap(self.style().standardIcon(QApplication.style().SP_MessageBoxInformation).pixmap(16, 16))
+        # info_icon.setToolTip(
+        #     "ปริมาณม้วนกระดาษสูงสุดในสเปคนี้ที่ใช้ได้โดยไม่เกินม้วนอื่น (หน่วย: ม้วน)\n"
+        #     "ระบบจะใช้ค่านี้เป็นขีดจำกัดในการคำนวณการตัดม้วนกระดาษ\n"
+        # )
+        # info_layout.addWidget(info_label)
+        # info_layout.addWidget(info_icon)
+        # info_layout.addStretch()
+        # layout.addLayout(info_layout)
 
-        self.roll_qty = QLineEdit("")
-        self.update_length_based_on_stock() 
-        self.roll_qty.setPlaceholderText("ปริมาณม้วนกระดาษ (เมตร)")
-        self.roll_qty.setEnabled(False)
-        layout.addWidget(self.roll_qty)
+        # self.roll_qty = QLineEdit("")
+        # self.update_length_based_on_stock() 
+        # self.roll_qty.setPlaceholderText("ปริมาณม้วนกระดาษ (เมตร)")
+        # self.roll_qty.setEnabled(False)
+        # layout.addWidget(self.roll_qty)
 
 
         # เพิ่มช่องกรอกวันที่ด้วย QDateEdit (บังคับให้แสดงเลขอารบิก)
@@ -309,10 +290,11 @@ class CuttingOptimizerUI(QMainWindow):
         # เพิ่มตารางแสดงผล
         layout.addWidget(QLabel("ผลลัพธ์การตัด:"))
         self.result_table = CustomTableWidget() # ใช้ CustomTableWidget
-        self.result_table.setColumnCount(12)
+        self.result_table.setColumnCount(10)
         self.result_table.setHorizontalHeaderLabels([
             "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", "จำนวนออก", "เศษเหลือ",
-            "ความยาวออเดอร์", "จำนวนสั่งส่ง", "ผลิตได้", "จำนวนสั่งผลิต", "ปริมาณตัด",  "กระดาษที่ใช้", "กระดาษคงเหลือ"
+            "ความยาวออเดอร์", "จำนวนสั่งส่ง", "ผลิตได้", "จำนวนสั่งผลิต", "ปริมาณตัด"  
+            #, "กระดาษที่ใช้", "กระดาษคงเหลือ"
         ])
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         # ตั้งค่าตารางให้สามารถเลือกและคัดลอกได้
@@ -438,7 +420,7 @@ class CuttingOptimizerUI(QMainWindow):
             self.update_length_based_on_stock()
 
     def update_length_based_on_stock(self):
-        """Update length_input and material combobox based on stock, avoiding recursion."""
+        """Update material combobox and roll quantity based on stock, avoiding recursion."""
         sender = self.sender()
 
         material_combos = [
@@ -515,11 +497,11 @@ class CuttingOptimizerUI(QMainWindow):
         if effective_lengths:
             # 3. ใช้ค่าที่น้อยที่สุดเป็นขีดจำกัด
             min_effective_length = min(effective_lengths)
-            self.length_input.setText(str(int(min_effective_length))) # แสดงเป็นจำนวนเต็ม
-            self.roll_qty.setText(str(int(rolls_used))) # แสดงเป็นจำนวนเต็ม
-
-        # else:
-            # self.length_input.setText("0")
+            self.calculated_length = int(min_effective_length)
+            # self.roll_qty.setText(str(int(rolls_used))) # แสดงเป็นจำนวนเต็ม
+        else:
+            self.calculated_length = 0
+            # self.roll_qty.clear()
             
     def select_file(self):
         options = QFileDialog.Options()
@@ -559,7 +541,7 @@ class CuttingOptimizerUI(QMainWindow):
     def run_calculation(self):
         try:
             width = int(self.width_combo.currentText())
-            length = int(self.length_input.text())
+            length = self.calculated_length
             
             # อ่านค่าเส้นทางไฟล์จาก UI
             file_path = self.file_path_input.text().strip() or "order2024.csv"
@@ -607,8 +589,8 @@ class CuttingOptimizerUI(QMainWindow):
             self.worker.start()
             
         except ValueError:
-            QMessageBox.warning(self, "ข้อผิดพลาด", "⚠️ โปรดป้อนค่าความยาวเป็นตัวเลขเท่านั้น!")
-            self.log_message("⚠️ โปรดป้อนค่าความยาวเป็นตัวเลขเท่านั้น!")
+            QMessageBox.warning(self, "ข้อผิดพลาด", "⚠️ ไม่สามารถแปลงค่าความกว้างเป็นตัวเลขได้ โปรดตรวจสอบข้อมูลสต็อก")
+            self.log_message("⚠️ ไม่สามารถแปลงค่าความกว้างเป็นตัวเลขได้ โปรดตรวจสอบข้อมูลสต็อก")
             self.run_button.setEnabled(True) # เปิดปุ่มกลับมา
             self.progress_bar.setFormat("เกิดข้อผิดพลาด!")
 
@@ -658,8 +640,8 @@ class CuttingOptimizerUI(QMainWindow):
                 str(result.get('die_cut', '')),
                 f"{result.get('order_qty', '')}",
                 f"{result.get('order_qty', '')/result.get('cuts', ''):.2f}",
-                f"{result.get('demand_per_cut', ''):.4f}",
-                f"{result.get('rem_roll_l', ''):.4f}"
+                # f"{result.get('demand_per_cut', ''):.4f}",
+                # f"{result.get('rem_roll_l', ''):.4f}"
             ]):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled)
