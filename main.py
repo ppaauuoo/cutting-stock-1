@@ -19,29 +19,60 @@ import cleaning
 
 
 def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set) -> str:
-    """Finds a suitable roll, updates its length, and returns a formatted string."""
+    """Finds a suitable roll, updates its length, and returns a formatted string. If one roll is not enough, it tries to combine with the next available roll."""
     if not material or not width:
         return ""
 
-    # roll_specs is nested dict, so .get() with default is safer.
     material_rolls_dict = roll_specs.get(str(width), {}).get(material, {})
     if not material_rolls_dict:
         return "-> (ไม่มีข้อมูลสต็อก)"
 
-    # Sort rolls by length to find the best fit (smallest one that's large enough)
-    # The items are (key, dict_value) so item[1] is the roll dictionary.
-    available_rolls = sorted(material_rolls_dict.items(), key=lambda item: item[1]['length'])
-
-    for roll_key, roll in available_rolls:
+    # Get available rolls, sorted by length.
+    all_available_rolls = sorted(material_rolls_dict.items(), key=lambda item: item[1]['length'])
+    
+    # Filter out already used rolls for this cut.
+    unused_rolls = [
+        (k, r) for k, r in all_available_rolls if r.get('id') not in used_roll_ids
+    ]
+    
+    # 1. Try to find a single roll that is sufficient.
+    for roll_key, roll in unused_rolls:
         roll_id = roll.get('id')
         roll_length = roll.get('length', 0)
-        if roll_id and roll_length >= required_length and roll_id not in used_roll_ids:
-            # Update the roll's length in the original roll_specs dictionary
+        if roll_id and roll_length >= required_length:
+            # Update the roll's length.
             roll['length'] -= required_length
             used_roll_ids.add(roll_id)
-            # Return a formatted string for the results
+            # Return a formatted string.
             return f"-> ใช้ม้วน: {roll_id} (ยาว {int(roll_length)} ม., เหลือ {int(roll['length'])} ม.)"
-    
+
+    # 2. If no single roll is sufficient, try to combine two rolls.
+    # We iterate through adjacent pairs in the list sorted by length.
+    if len(unused_rolls) >= 2:
+        for i in range(len(unused_rolls) - 1):
+            roll1_key, roll1 = unused_rolls[i]
+            roll2_key, roll2 = unused_rolls[i+1]
+            
+            roll1_id = roll1.get('id')
+            roll1_length = roll1.get('length', 0)
+            roll2_id = roll2.get('id')
+            roll2_length = roll2.get('length', 0)
+
+            if roll1_id and roll2_id:
+                combined_length = roll1_length + roll2_length
+                if combined_length >= required_length:
+                    # Use roll1 completely, and take the rest from roll2.
+                    needed_from_roll2 = required_length - roll1_length
+                    
+                    roll1['length'] = 0
+                    roll2['length'] -= needed_from_roll2
+                    
+                    # used_roll_ids.add(roll1_id)
+                    # used_roll_ids.add(roll2_id)
+                    
+                    return (f"-> ใช้ม้วน: {roll1_id} (ยาว {int(roll1_length)} ม., ใช้หมด) "
+                            f"+ {roll2_id} (ยาว {int(roll2_length)} ม., เหลือ {int(roll2['length'])} ม.)")
+
     return "-> (ไม่มีสต็อกที่พอ)"
 
 
