@@ -68,6 +68,7 @@ class WorkerThread(QThread):
         self.corrugate_b_material_name = corrugate_b_material_name
         self.back_material = back_material
         self.roll_specs = roll_specs
+        self.current_iteration_step = 0 # เพิ่มตัวแปรสำหรับติดตามความคืบหน้าการวนซ้ำ
 
     def run(self):
         loop = asyncio.new_event_loop()
@@ -80,9 +81,26 @@ class WorkerThread(QThread):
                 self.progress_updated.emit(5, message)
             elif "โหลดและจัดเรียงข้อมูลเรียบร้อย" in message:
                 self.progress_updated.emit(20, message)
-            elif "กำลังประมวลผลม้วน" in message:
-                # สามารถปรับเปอร์เซ็นต์ได้ละเอียดขึ้นหากมีข้อมูลจำนวนม้วนทั้งหมด
-                self.progress_updated.emit(50, message)
+            elif "Iteration" in message:
+                # พยายามดึงตัวเลขการวนซ้ำทั้งหมด (X/Y)
+                match = re.search(r'Iteration (\d+)(?:/| of )(\d+)', message)
+                if match:
+                    current_iter = int(match.group(1))
+                    total_iters = int(match.group(2))
+                    if total_iters > 0:
+                        # คำนวณเปอร์เซ็นต์ความคืบหน้าในช่วง 50-95%
+                        progress_percentage = 50 + (current_iter / total_iters) * 45
+                        self.progress_updated.emit(int(progress_percentage), message)
+                    else:
+                        # หากไม่มีตัวเลขรวมหรือเป็น 0 ให้ใช้การเพิ่มค่าทีละน้อย
+                        self.current_iteration_step += 1
+                        estimated_progress = min(95, 50 + self.current_iteration_step) # เพิ่มทีละ 1%
+                        self.progress_updated.emit(estimated_progress, message)
+                else:
+                    # หากไม่พบรูปแบบตัวเลข ให้เพิ่มค่าทีละน้อย
+                    self.current_iteration_step += 1
+                    estimated_progress = min(95, 50 + self.current_iteration_step) # เพิ่มทีละ 1%
+                    self.progress_updated.emit(estimated_progress, message)
             elif "บันทึกผลลัพธ์ลงไฟล์ CSV เรียบร้อย" in message:
                 self.progress_updated.emit(95, message)
             
