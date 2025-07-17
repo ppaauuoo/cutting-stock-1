@@ -1,6 +1,7 @@
 import asyncio
 import collections
 import copy
+import csv
 import os
 import re
 import sys
@@ -13,6 +14,7 @@ from PyQt5.QtCore import (
     Qt,
     QTextCodec,
     QThread,
+    QTimer,
     pyqtSignal,
 )
 from PyQt5.QtGui import QColor, QFont
@@ -45,7 +47,7 @@ from stock import StockManager
 class WorkerThread(QThread):
     update_signal = pyqtSignal(str)
     progress_updated = pyqtSignal(int, str)  # เพิ่มสัญญาณใหม่สำหรับอัปเดตโปรเกรสบาร์
-    finished = pyqtSignal(list)
+    calculation_succeeded = pyqtSignal(list)
     error_signal = pyqtSignal(str)
 
     def __init__(self, width, length, start_date, end_date, file_path,
@@ -126,12 +128,12 @@ class WorkerThread(QThread):
                     b_type=self.corrugate_b_type,
                     b=self.corrugate_b_material_name,
                     back=self.back_material,
-                    roll_specs=self.roll_specs,
+                   roll_specs=self.roll_specs,
                 )
             )
             if not self.isInterruptionRequested():
                 self.progress_updated.emit(100, "✅ เสร็จสิ้น")  # สัญญาณเสร็จสมบูรณ์
-                self.finished.emit(results)
+                self.calculation_succeeded.emit(results)
         except InterruptedError:
             self.update_signal.emit("⏹️ การคำนวณถูกหยุดโดยผู้ใช้")
         except Exception as e:
@@ -142,8 +144,7 @@ class WorkerThread(QThread):
             loop.close()
 
 class CustomTableWidget(QTableWidget):
-    """
-    QTableWidget ที่กำหนดเองเพื่อส่งสัญญาณเมื่อกดปุ่ม Enter
+    """    QTableWidget ที่กำหนดเองเพื่อส่งสัญญาณเมื่อกดปุ่ม Enter
     """
     enterPressed = pyqtSignal() # สัญญาณที่กำหนดเอง
 
@@ -161,6 +162,9 @@ class CuttingOptimizerUI(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self.qtapp = QApplication.instance()
+        if self.qtapp:
+            self.qtapp.setQuitOnLastWindowClosed(False)
         self.setWindowTitle("กระดาษม้วนตัด Optimizer")
         self.setGeometry(100, 100, 800, 700)
 
@@ -197,6 +201,10 @@ class CuttingOptimizerUI(QMainWindow):
         self.run_button = QPushButton("เริ่มการคำนวณอัตโนมัติ")
         self.run_button.clicked.connect(self.start_main_loop)
         buttons_layout.addWidget(self.run_button)
+
+        self.export_button = QPushButton("ส่งออกเป็น CSV")
+        self.export_button.clicked.connect(self.export_results_to_csv)
+        buttons_layout.addWidget(self.export_button)
         
         layout.addLayout(buttons_layout)
         
@@ -318,6 +326,45 @@ class CuttingOptimizerUI(QMainWindow):
 
         self.log_message("ปิดโปรแกรมเรียบร้อยแล้ว")
         event.accept()
+
+    def _pause_background_threads(self):
+        """Stops and cleans up the background file monitoring threads gracefully."""
+        self.log_message("ℹ️ Pausing background file monitoring...")
+        if hasattr(self, 'order_thread') and self.order_thread and self.order_thread.isRunning():
+            self.order_manager.stop()
+            self.order_thread.quit()  # Request normal exit
+            if not self.order_thread.wait(5000):  # Extended timeout
+                self.order_manager.stop()  # Ensure worker stops
+                self.order_thread.terminate()  # Force exit if needed
+                self.order_thread.wait()  # Block until thread finishes
+            # Add state verification
+            if self.order_thread.isRunning():
+                self.log_message("❌ Thread still running after termination")
+                return  # Block deletion until thread is fully stopped 
+            self.order_manager.deleteLater()
+            self.order_thread.deleteLater()
+            self.order_manager = None
+            self.order_thread = None
+
+        if hasattr(self, 'stock_thread') and self.stock_thread and self.stock_thread.isRunning():
+            self.stock_manager.stop()
+            self.stock_thread.quit()
+            if not self.stock_thread.wait(3000):
+                self.log_message("⚠️ Stock manager thread did not stop gracefully. Terminating.")
+                self.stock_thread.terminate()
+                self.stock_thread.wait()
+            self.stock_manager.deleteLater()
+            self.stock_thread.deleteLater()
+            self.stock_manager = None
+            self.stock_thread = None
+
+    def _resume_background_threads(self):
+        """Resumes the background file monitoring by creating new threads."""
+        self.log_message("ℹ️ Resuming background file monitoring...")
+        if not (hasattr(self, 'order_thread') and self.order_thread and self.order_thread.isRunning()):
+             self.setup_order_manager()
+        if not (hasattr(self, 'stock_thread') and self.stock_thread and self.stock_thread.isRunning()):
+             self.setup_stock_manager()
 
     def setup_stock_manager(self):
         """เริ่มต้นและเริ่มการทำงานของเธรดจัดการสต็อก"""
@@ -503,10 +550,13 @@ class CuttingOptimizerUI(QMainWindow):
         self.result_table.setRowCount(0)
         self.results_data = []
 
+        self._pause_background_threads()
+
         self.suggestions_list = self.get_all_suggestions()
         if not self.suggestions_list:
             self.log_message("⏹️ No suggestions found. Process finished.")
             self.run_button.setEnabled(True)
+            self._resume_background_threads()
             QMessageBox.information(self, "No Suggestions", "No valid settings could be suggested from the order data.")
             return
 
@@ -519,6 +569,7 @@ class CuttingOptimizerUI(QMainWindow):
             self.log_message("✅ All suggestions processed. Automated calculation finished.")
             self.run_button.setEnabled(True)
             self.progress_bar.setFormat("✅ Finished all tasks!")
+            self._resume_background_threads()
             QMessageBox.information(self, "Finished", "All suggested settings have been processed.")
             return
 
@@ -536,7 +587,12 @@ class CuttingOptimizerUI(QMainWindow):
         length = self.calculate_length_for_suggestion(width_str, spec)
         if length <= 0:
             self.log_message(f"ℹ️ Skipping suggestion {self.current_suggestion_index + 1} due to zero calculated length (insufficient stock).")
-            self.on_calculation_error("Zero calculated length (insufficient stock).")
+            # Manually advance to the next suggestion.
+            # We can't call on_calculation_error() directly as there is no sender thread.
+            self.current_suggestion_index += 1
+            # Since no worker was created, the 'destroyed' signal won't fire,
+            # so we trigger the next calculation manually.
+            QTimer.singleShot(0, self.run_next_calculation)
             return
 
         front_material = spec.get('front') or None
@@ -567,10 +623,11 @@ class CuttingOptimizerUI(QMainWindow):
         )
         self.worker.update_signal.connect(self.log_message)
         self.worker.progress_updated.connect(self.update_progress_bar)
-        self.worker.finished.connect(self.on_calculation_finished)
+        self.worker.calculation_succeeded.connect(self.on_calculation_finished)
         self.worker.error_signal.connect(self.on_calculation_error)
-        # ตั้งเวลาให้ worker ถูกลบออกไปหลังจากทำงานเสร็จอย่างปลอดภัย
-        self.worker.finished.connect(self.worker.deleteLater)
+        # เชื่อมต่อสัญญาณ destroyed เพื่อให้แน่ใจว่าเธรดเก่าถูกลบอย่างสมบูรณ์
+        # ก่อนที่จะเริ่มการคำนวณครั้งถัดไปโดยอัตโนมัติ
+        self.worker.destroyed.connect(self.run_next_calculation)
         self.worker.start()
 
     def update_progress_bar(self, value: int, message: str):
@@ -592,16 +649,46 @@ class CuttingOptimizerUI(QMainWindow):
             self.append_results_to_table(results)
         
         self.current_suggestion_index += 1
-        self.run_next_calculation()
+        sender_thread = self.sender()
+        if sender_thread:
+            # The thread has finished its work. We just need to wait for it to
+            # fully exit and then schedule it for deletion. The 'destroyed'
+            # signal will then trigger the next calculation.
+            if not sender_thread.wait(5000):
+                self.log_message("⚠️ Worker thread did not exit cleanly. Terminating.")
+                sender_thread.terminate()
+                sender_thread.wait()
+            sender_thread.deleteLater()
 
     def append_results_to_table(self, results):
-        """Appends a list of result dicts to the results table."""
-        start_row = self.result_table.rowCount()
-        self.result_table.setRowCount(start_row + len(results))
+        """
+        Adds new results and filters the entire dataset to keep only the best entry
+        (lowest trim) for each unique order number, then repopulates the table.
+        """
+        # Add new results to the master list
         self.results_data.extend(results)
 
-        for row_offset, result in enumerate(results):
-            row_idx = start_row + row_offset
+        # Filter for the best result (lowest trim) for each order number
+        best_results_map = {}
+        for result in self.results_data:
+            order_number = result.get('order_number')
+            if not order_number:
+                continue # Skip results without an order number
+            
+            current_trim = result.get('trim', float('inf'))
+            
+            # If order is new, or this result has a smaller trim, update the map
+            if order_number not in best_results_map or current_trim < best_results_map[order_number].get('trim', float('inf')):
+                best_results_map[order_number] = result
+        
+        # Update the master data list with the filtered unique results, sorted for consistency
+        self.results_data = sorted(list(best_results_map.values()), key=lambda r: r.get('order_number', ''))
+
+        # Repopulate the entire table with the filtered and sorted data
+        self.result_table.setRowCount(0)
+        self.result_table.setRowCount(len(self.results_data))
+
+        for row_idx, result in enumerate(self.results_data):
             has_no_suitable_roll = False
             roll_info_keys = ['front_roll_info', 'c_roll_info', 'middle_roll_info', 'b_roll_info', 'back_roll_info']
             for key in roll_info_keys:
@@ -640,7 +727,57 @@ class CuttingOptimizerUI(QMainWindow):
     def on_calculation_error(self, error_message: str):
         self.log_message(f"❌ Error or infeasible on suggestion {self.current_suggestion_index + 1}: {error_message}")
         self.current_suggestion_index += 1
-        self.run_next_calculation()
+        sender_thread = self.sender()
+        if sender_thread:
+            # The thread has finished its work. We just need to wait for it to
+            # fully exit and then schedule it for deletion. The 'destroyed'
+            # signal will then trigger the next calculation.
+            if not sender_thread.wait(5000):
+                self.log_message("⚠️ Worker thread did not exit cleanly after error. Terminating.")
+                sender_thread.terminate()
+                sender_thread.wait()
+            sender_thread.deleteLater()
+
+    def export_results_to_csv(self):
+        """ส่งออกข้อมูลในตารางผลลัพธ์ไปยังไฟล์ CSV"""
+        if self.result_table.rowCount() == 0:
+            QMessageBox.information(self, "ไม่มีข้อมูล", "ไม่มีข้อมูลสำหรับส่งออก")
+            return
+
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "บันทึกผลลัพธ์เป็น CSV",
+            "cutting_results.csv",
+            "CSV Files (*.csv);;All Files (*)",
+            options=options,
+        )
+
+        if file_path:
+            try:
+                # ใช้ utf-8-sig เพื่อให้ Excel เปิดไฟล์ภาษาไทยได้ถูกต้อง
+                with open(file_path, 'w', newline='', encoding='utf-8-sig') as csv_file:
+                    writer = csv.writer(csv_file)
+
+                    # เขียนส่วนหัวของตาราง
+                    headers = [self.result_table.horizontalHeaderItem(i).text() for i in range(self.result_table.columnCount())]
+                    writer.writerow(headers)
+
+                    # เขียนข้อมูลแต่ละแถว
+                    for row in range(self.result_table.rowCount()):
+                        row_data = []
+                        for column in range(self.result_table.columnCount()):
+                            item = self.result_table.item(row, column)
+                            row_data.append(item.text() if item else "")
+                        writer.writerow(row_data)
+                
+                self.log_message(f"✅ ส่งออกผลลัพธ์ไปยัง {file_path} เรียบร้อยแล้ว")
+                QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกผลลัพธ์ไปยัง:\n{file_path} เรียบร้อยแล้ว")
+
+            except Exception as e:
+                self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออกเป็น CSV: {e}")
+                QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", f"เกิดข้อผิดพลาดขณะส่งออกไฟล์:\n{e}")
 
     def show_row_details_popup(self):
         """
