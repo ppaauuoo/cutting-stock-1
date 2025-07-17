@@ -301,6 +301,7 @@ async def main_algorithm(
     b: Optional[str] = None,
     back: Optional[str] = None,
     roll_specs: Optional[dict] = None,
+    processed_orders: Optional[set] = None,
 ):
     if progress_callback:
         progress_callback("⚙️ กำลังเริ่มการคำนวณ")
@@ -315,6 +316,12 @@ async def main_algorithm(
         b=b if b_type in ["B", "E"] else None,
         back=back,
     )
+
+    if processed_orders:
+        orders_df = orders_df.filter(
+            ~pl.col("order_number").is_in(list(processed_orders))
+        )
+
     if progress_callback:
         progress_callback("📁 โหลดและจัดเรียงข้อมูลเรียบร้อย")
 

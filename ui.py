@@ -57,6 +57,7 @@ class WorkerThread(QThread):
                  corrugate_b_type, corrugate_b_material_name,
                  back_material,
                  roll_specs,
+                 processed_orders,
                  parent=None):
         super().__init__(parent)
         self.width = width
@@ -72,6 +73,7 @@ class WorkerThread(QThread):
         self.corrugate_b_material_name = corrugate_b_material_name
         self.back_material = back_material
         self.roll_specs = roll_specs
+        self.processed_orders = processed_orders
         self.current_iteration_step = 0 # เพิ่มตัวแปรสำหรับติดตามความคืบหน้าการวนซ้ำ
 
     def run(self):
@@ -129,6 +131,7 @@ class WorkerThread(QThread):
                     b=self.corrugate_b_material_name,
                     back=self.back_material,
                    roll_specs=self.roll_specs,
+                   processed_orders=self.processed_orders,
                 )
             )
             if not self.isInterruptionRequested():
@@ -173,6 +176,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.calculated_length = 0
         self.suggestions_list = []
         self.current_suggestion_index = 0
+        self.processed_order_numbers = set()
 
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
@@ -617,7 +621,8 @@ class CuttingOptimizerUI(QMainWindow):
             middle_material, 
             b_type, b_material,
             back_material,
-            roll_specs_copy
+            roll_specs_copy,
+            self.processed_order_numbers.copy()
         )
         self.worker.update_signal.connect(self.log_message)
         self.worker.progress_updated.connect(self.update_progress_bar)
@@ -645,6 +650,9 @@ class CuttingOptimizerUI(QMainWindow):
         else:
             self.log_message(f"✅ Suggestion {self.current_suggestion_index + 1} finished with {len(results)} results.")
             self.append_results_to_table(results)
+            for result in results:
+                if order_num := result.get('order_number'):
+                    self.processed_order_numbers.add(order_num)
         
         self.current_suggestion_index += 1
         sender_thread = self.sender()
