@@ -38,6 +38,7 @@ from PyQt5.QtWidgets import (
 
 import cleaning
 import main  # Import our modified main module
+from order import OrderManager
 from stock import StockManager
 
 
@@ -156,6 +157,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.setGeometry(100, 100, 800, 700)
 
         self.ROLL_SPECS = {}
+        self.cleaned_orders_df = None
         self.calculated_length = 0
 
         central_widget = QWidget()
@@ -338,11 +340,58 @@ class CuttingOptimizerUI(QMainWindow):
         # เชื่อมต่อสัญญาณ doubleClicked ของตารางไปยังเมธอดที่แสดงป๊อปอัป
         self.result_table.doubleClicked.connect(self.show_row_details_popup)
 
+        self.setup_order_manager()
         self.setup_stock_manager()
+
+    def setup_order_manager(self):
+        """เริ่มต้นและเริ่มการทำงานของเธรดจัดการออเดอร์"""
+        order_file_path = self.file_path_input.text()
+        self.order_thread = QThread()
+        self.order_manager = OrderManager(order_file_path)
+        self.order_manager.moveToThread(self.order_thread)
+
+        # เชื่อมต่อสัญญาณจาก manager ไปยัง slots ของ UI
+        self.order_manager.order_updated.connect(self.update_order_data)
+        self.order_manager.error_signal.connect(self.handle_order_error)
+        self.order_manager.file_not_found_signal.connect(self.handle_order_file_not_found)
+        
+        # เชื่อมต่อสัญญาณของเธรด
+        self.order_thread.started.connect(self.order_manager.run)
+        
+        # เริ่มการทำงานของเธรด
+        self.order_thread.start()
+
+    def handle_order_file_not_found(self, file_path):
+        """แสดงกล่องคำเตือนแบบ modal เมื่อไม่พบไฟล์ออเดอร์"""
+        self.log_message(f"⚠️ ไม่พบไฟล์ออเดอร์: {file_path}. กรุณาตรวจสอบตำแหน่งไฟล์.")
+        QMessageBox.warning(
+            self, 
+            "ไม่พบไฟล์", 
+            f"ไม่พบไฟล์ออเดอร์ที่ระบุ:\n{file_path}\n\nโปรแกรมจะพยายามโหลดไฟล์อีกครั้งในภายหลัง"
+        )
+
+    def handle_order_error(self, error_message):
+        """บันทึกข้อผิดพลาดจาก order manager"""
+        self.log_message(f"❌ เกิดข้อผิดพลาดกับ Order Manager: {error_message}")
+
+    def update_order_data(self, order_df):
+        """อัปเดต DataFrame ออเดอร์ที่ทำความสะอาดแล้ว"""
+        if order_df is not None:
+            self.cleaned_orders_df = order_df
+            self.log_message("🔄 อัปเดตข้อมูลออเดอร์เรียบร้อยแล้ว")
+        else:
+            self.cleaned_orders_df = None # หรือ pl.DataFrame()
+            self.log_message("ℹ️ ข้อมูลออเดอร์ว่างเปล่าหรือไม่สามารถโหลดได้")
 
     def closeEvent(self, event):
         """หยุดการทำงานของ worker threads อย่างถูกต้องเมื่อปิดโปรแกรม"""
         self.log_message("กำลังปิดโปรแกรม...")
+        if hasattr(self, 'order_manager'):
+            self.order_manager.stop()
+        if hasattr(self, 'order_thread'):
+            self.order_thread.quit()
+            self.order_thread.wait(5000)
+
         if hasattr(self, 'stock_manager'):
             self.stock_manager.stop()
         if hasattr(self, 'stock_thread'):
@@ -542,6 +591,9 @@ class CuttingOptimizerUI(QMainWindow):
         )
         if file_path:
             self.file_path_input.setText(file_path)
+            # แจ้ง Order Manager เกี่ยวกับเส้นทางไฟล์ใหม่
+            if hasattr(self, 'order_manager'):
+                self.order_manager.set_file_path(file_path)
 
     def select_stock_file(self):
         options = QFileDialog.Options()
@@ -569,17 +621,15 @@ class CuttingOptimizerUI(QMainWindow):
         """
         Suggests optimal width and material spec based on order frequency and stock availability.
         """
-        order_file_path = self.file_path_input.text()
-        if not os.path.exists(order_file_path):
-            QMessageBox.warning(self, "ไม่พบไฟล์", f"ไม่พบไฟล์ออเดอร์ที่: {order_file_path}")
+        if self.cleaned_orders_df is None or self.cleaned_orders_df.is_empty():
+            QMessageBox.warning(self, "ไม่มีข้อมูลออเดอร์", "ไม่สามารถให้คำแนะนำได้เนื่องจากไม่มีข้อมูลออเดอร์\nกรุณาตรวจสอบไฟล์ออเดอร์และรอการอัปเดต")
+            self.log_message("⚠️ ไม่สามารถแนะนำการตั้งค่าได้: ไม่มีข้อมูลออเดอร์")
             return
 
         self.log_message("🤔 กำลังวิเคราะห์เพื่อแนะนำการตั้งค่า...")
         try:
-            # Load data. In suggestion mode, clean_data just normalizes column names.
-            orders_df = cleaning.load_data(order_file_path)
-            cleaned_orders_df = cleaning.clean_data(orders_df, suggestion_mode=True)
-
+            cleaned_orders_df = self.cleaned_orders_df
+            
             material_cols = ['front', 'c', 'middle', 'b', 'back']
             existing_cols = [col for col in material_cols if col in cleaned_orders_df.columns]
 
