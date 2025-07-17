@@ -762,7 +762,7 @@ class CuttingOptimizerUI(QMainWindow):
 
     def export_results_to_csv(self):
         """ส่งออกข้อมูลในตารางผลลัพธ์ไปยังไฟล์ CSV"""
-        if self.result_table.rowCount() == 0:
+        if not self.results_data:
             QMessageBox.information(self, "ไม่มีข้อมูล", "ไม่มีข้อมูลสำหรับส่งออก")
             return
 
@@ -784,15 +784,126 @@ class CuttingOptimizerUI(QMainWindow):
 
                     # เขียนส่วนหัวของตาราง
                     headers = [self.result_table.horizontalHeaderItem(i).text() for i in range(self.result_table.columnCount())]
-                    writer.writerow(headers)
+                    detail_headers = [
+                        "แผ่นหน้า (วัสดุ)", "แผ่นหน้า (ใช้)", "แผ่นหน้า (ID ม้วน)",
+                        "ลอน C (วัสดุ)", "ลอน C (ใช้)", "ลอน C (ID ม้วน)",
+                        "แผ่นกลาง (วัสดุ)", "แผ่นกลาง (ใช้)", "แผ่นกลาง (ID ม้วน)",
+                        "ลอน B (วัสดุ)", "ลอน B (ใช้)", "ลอน B (ID ม้วน)",
+                        "แผ่นหลัง (วัสดุ)", "แผ่นหลัง (ใช้)", "แผ่นหลัง (ID ม้วน)",
+                        "ประเภททับเส้น", "ชนิดส่วนประกอบ"
+                    ]
+                    writer.writerow(headers + detail_headers)
 
                     # เขียนข้อมูลแต่ละแถว
-                    for row in range(self.result_table.rowCount()):
-                        row_data = []
-                        for column in range(self.result_table.columnCount()):
-                            item = self.result_table.item(row, column)
-                            row_data.append(item.text() if item else "")
-                        writer.writerow(row_data)
+                    for result in self.results_data:
+                        # ข้อมูลจากคอลัมน์เดิม
+                        cuts = result.get('cuts')
+                        order_qty = result.get('order_qty')
+                        demand_per_cut_val = ""
+                        if cuts is not None and cuts > 0 and order_qty is not None:
+                            demand_per_cut_val = f"{order_qty / cuts:.2f}"
+                        else:
+                            demand_per_cut_val = "N/A"
+
+                        row_data = [
+                            str(result.get('roll_w', '')),
+                            str(result.get('order_number', '')),
+                            f"{result.get('order_w', ''):.4f}",
+                            str(result.get('cuts', '')),
+                            f"{result.get('trim', ''):.2f}",
+                            f"{result.get('order_l', ''):.4f}",
+                            f"{result.get('order_dmd', '')}",
+                            str(result.get('die_cut', '')),
+                            f"{result.get('order_qty', '')}",
+                            demand_per_cut_val,
+                        ]
+
+                        # คำนวณข้อมูลเพิ่มเติมเหมือนใน popup
+                        c_type = result.get('c_type', '')
+                        b_type = result.get('b_type', '')
+
+                        type_demand = 1.0
+                        if c_type == 'C':
+                            type_demand = 1.45
+                        elif b_type == 'B':
+                            type_demand = 1.35
+                        elif c_type == 'E' or b_type == 'E':
+                            type_demand = 1.25
+
+                        # แยกวัสดุและค่าการใช้งานเป็นสตริงที่ต่างกันสำหรับแต่ละชนิดของวัสดุ
+                        front_str, front_value, front_roll_info = "", "", ""
+                        if result.get('front'):
+                            front_material = result.get('front')
+                            demand_per_cut = result.get('demand_per_cut', 0)
+                            if type_demand > 0:
+                                front_value = f"{demand_per_cut / type_demand:.2f}"
+                            front_str = front_material
+                            front_roll_info = result.get('front_roll_info', '')
+
+                        # ลอน C
+                        c_str, c_value, c_roll_info = "", "", ""
+                        if result.get('c'):
+                            c_material = result.get('c')
+                            demand_per_cut = result.get('demand_per_cut', 0)
+                            if c_type == 'C':
+                                c_value = f"{demand_per_cut:.2f}"
+                            elif c_type == 'E':
+                                if b_type == 'B':
+                                    c_value = f"{(demand_per_cut / 1.35 * 1.25):.2f}"
+                                else:
+                                    c_value = f"{demand_per_cut:.2f}"
+                            c_str = c_material
+                            c_roll_info = result.get('c_roll_info', '')
+                        
+                        # แผ่นกลาง
+                        middle_str, middle_value, middle_roll_info = "", "", ""
+                        if result.get('middle'):
+                            middle_material = result.get('middle')
+                            demand_per_cut = result.get('demand_per_cut', 0)
+                            if type_demand > 0:
+                                middle_value = f"{demand_per_cut / type_demand:.2f}"
+                            middle_str = middle_material
+                            middle_roll_info = result.get('middle_roll_info', '')
+                        
+                        # ลอน B
+                        b_str, b_value, b_roll_info = "", "", ""
+                        if result.get('b'):
+                            b_material = result.get('b')
+                            demand_per_cut = result.get('demand_per_cut', 0)
+                            if b_type == 'B':
+                                if c_type == 'C':
+                                    b_value = f"{(demand_per_cut / 1.45 * 1.35):.2f}"
+                                else:
+                                    b_value = f"{demand_per_cut:.2f}"
+                            elif b_type == 'E':
+                                if c_type == 'C':
+                                    b_value = f"{(demand_per_cut / 1.45 * 1.25):.2f}"
+                                else:
+                                    b_value = f"{demand_per_cut:.2f}"
+                            b_str = b_material
+                            b_roll_info = result.get('b_roll_info', '')
+                        
+                        # แผ่นหลัง
+                        back_str, back_value, back_roll_info = "", "", ""
+                        if result.get('back'):
+                            back_material = result.get('back')
+                            demand_per_cut = result.get('demand_per_cut', 0)
+                            if type_demand > 0:
+                                back_value = f"{demand_per_cut / type_demand:.2f}"
+                            back_str = back_material
+                            back_roll_info = result.get('back_roll_info', '')
+
+                        detail_data = [
+                            front_str, front_value, front_roll_info,
+                            c_str, c_value, c_roll_info,
+                            middle_str, middle_value, middle_roll_info,
+                            b_str, b_value, b_roll_info,
+                            back_str, back_value, back_roll_info,
+                            result.get('type', ''),
+                            result.get('component_type', '')
+                        ]
+                        
+                        writer.writerow(row_data + detail_data)
                 
                 self.log_message(f"✅ ส่งออกผลลัพธ์ไปยัง {file_path} เรียบร้อยแล้ว")
                 QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกผลลัพธ์ไปยัง:\n{file_path} เรียบร้อยแล้ว")
@@ -856,7 +967,8 @@ class CuttingOptimizerUI(QMainWindow):
             front_material = result.get('front')
             front_value = result.get('demand_per_cut', 0) / type_demand
             roll_info_str = result.get('front_roll_info', '')
-            material_details.append(f"แผ่นหน้า: {front_material} = {front_value:.2f} {roll_info_str}")
+            if front_material:
+                material_details.append(f"แผ่นหน้า: {front_material} = {front_value:.2f} {roll_info_str}")
             
         if result.get('c') and c_type == 'C':
             c_material = result.get('c')
@@ -865,13 +977,13 @@ class CuttingOptimizerUI(QMainWindow):
             material_details.append(f"ลอน C: {c_material} = {c_value:.2f} {roll_info_str}")
         elif result.get('c') and c_type == 'E':
             c_material = result.get('c')
-            # Removed redundant 'front_value' calculation
+            demand_per_cut = result.get('demand_per_cut', 0)
             if b_type == 'B':
-                c_e_value = result.get('demand_per_cut', 0) / 1.35 * 1.25    # This might need a specific E-type B factor if it exists
+                c_value = demand_per_cut / 1.35 * 1.25
             else:
-                c_e_value = result.get('demand_per_cut', 0)
+                c_value = demand_per_cut
             roll_info_str = result.get('c_roll_info', '')
-            material_details.append(f"ลอน E: {c_material} = {c_e_value:.2f} {roll_info_str}")
+            material_details.append(f"ลอน E: {c_material} = {c_value:.2f} {roll_info_str}")
 
         if result.get('middle'):
             middle_material = result.get('middle')
@@ -882,20 +994,22 @@ class CuttingOptimizerUI(QMainWindow):
         #B is value, if B exist and corrugate_b_type is 'B' or 'E', calculate accordingly
         if result.get('b') and b_type == 'B':
             b_material = result.get('b')
+            demand_per_cut = result.get('demand_per_cut', 0)
             if c_type == 'C':
-                b_value = (result.get('demand_per_cut', 0) / 1.45) * 1.35
+                b_value = (demand_per_cut / 1.45) * 1.35
             else:
-                b_value = result.get('demand_per_cut', 0)
+                b_value = demand_per_cut
             roll_info_str = result.get('b_roll_info', '')
             material_details.append(f"ลอน B: {b_material} = {b_value:.2f} {roll_info_str}")
         elif result.get('b') and b_type == 'E':
             b_material = result.get('b')
+            demand_per_cut = result.get('demand_per_cut', 0)
             if c_type == 'C':
-                b_e_value = (result.get('demand_per_cut', 0) / 1.45) * 1.25
+                b_value = (demand_per_cut / 1.45) * 1.25
             else:
-                b_e_value = result.get('demand_per_cut', 0)
+                b_value = demand_per_cut
             roll_info_str = result.get('b_roll_info', '')
-            material_details.append(f"ลอน E: {b_material} = {b_e_value:.2f} {roll_info_str}")
+            material_details.append(f"ลอน E: {b_material} = {b_value:.2f} {roll_info_str}")
 
         if result.get('back'):
             back_material = result.get('back')
