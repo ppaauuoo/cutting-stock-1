@@ -547,8 +547,6 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_message("🚀 Starting automated calculation process...")
         self.run_button.setEnabled(False)
         self.log_display.clear()
-        self.result_table.setRowCount(0)
-        self.results_data = []
 
         self._pause_background_threads()
 
@@ -662,40 +660,52 @@ class CuttingOptimizerUI(QMainWindow):
 
     def append_results_to_table(self, results):
         """
-        Adds new results and filters the entire dataset to keep only the best entry
-        (lowest trim) for each unique order number, then repopulates the table.
+        Adds new results, identifies the best entry (lowest trim) for each order,
+        highlights duplicates in yellow, and sorts the entire list before repopulating the table.
         """
         # Add new results to the master list
         self.results_data.extend(results)
 
-        # Filter for the best result (lowest trim) for each order number
+        # Find the best result (lowest trim) for each order number
         best_results_map = {}
-        for result in self.results_data:
-            order_number = result.get('order_number')
-            if not order_number:
-                continue # Skip results without an order number
-            
-            current_trim = result.get('trim', float('inf'))
-            
-            # If order is new, or this result has a smaller trim, update the map
-            if order_number not in best_results_map or current_trim < best_results_map[order_number].get('trim', float('inf')):
-                best_results_map[order_number] = result
-        
-        # Update the master data list with the filtered unique results, sorted for consistency
-        self.results_data = sorted(list(best_results_map.values()), key=lambda r: r.get('order_number', ''))
+        for res in self.results_data:
+            order_num = res.get('order_number')
+            try:
+                # Ensure trim is a comparable number, default to infinity if missing/invalid
+                trim = float(res.get('trim', float('inf')))
+            except (ValueError, TypeError):
+                trim = float('inf')
 
-        # Repopulate the entire table with the filtered and sorted data
+            if not order_num:
+                continue
+
+            # Check if this result is better (lower trim) than the one stored for the order
+            current_best_trim = best_results_map.get(order_num, {}).get('trim', float('inf'))
+            try:
+                current_best_trim = float(current_best_trim)
+            except (ValueError, TypeError):
+                current_best_trim = float('inf')
+
+            if trim < current_best_trim:
+                best_results_map[order_num] = res
+
+        # Create a set of IDs for the best results for quick lookup
+        best_results_ids = {id(res) for res in best_results_map.values()}
+
+        # Repopulate the entire table
         self.result_table.setRowCount(0)
         self.result_table.setRowCount(len(self.results_data))
 
         for row_idx, result in enumerate(self.results_data):
+            is_duplicate = id(result) not in best_results_ids
+            
             has_no_suitable_roll = False
             roll_info_keys = ['front_roll_info', 'c_roll_info', 'middle_roll_info', 'b_roll_info', 'back_roll_info']
             for key in roll_info_keys:
                 if "ไม่มี" in result.get(key, ''):
                     has_no_suitable_roll = True
                     break
-
+            
             cuts = result.get('cuts')
             order_qty = result.get('order_qty')
             demand_per_cut_val = ""
@@ -718,8 +728,12 @@ class CuttingOptimizerUI(QMainWindow):
             ]):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                
+                # Apply colors based on status (red takes precedence)
                 if has_no_suitable_roll:
-                    item.setBackground(QColor(255, 224, 224))
+                    item.setBackground(QColor(255, 224, 224))  # Red for invalid rolls
+                elif is_duplicate:
+                    item.setBackground(QColor(255, 255, 224))  # Yellow for duplicates
 
                 self.result_table.setItem(row_idx, col_idx, item)
         self.result_table.resizeColumnsToContents()
