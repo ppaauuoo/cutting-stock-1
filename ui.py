@@ -1,6 +1,7 @@
 import asyncio
 import collections
 import copy
+import csv
 import os
 import re
 import sys
@@ -13,6 +14,7 @@ from PyQt5.QtCore import (
     Qt,
     QTextCodec,
     QThread,
+    QTimer,
     pyqtSignal,
 )
 from PyQt5.QtGui import QColor, QFont
@@ -45,7 +47,7 @@ from stock import StockManager
 class WorkerThread(QThread):
     update_signal = pyqtSignal(str)
     progress_updated = pyqtSignal(int, str)  # เพิ่มสัญญาณใหม่สำหรับอัปเดตโปรเกรสบาร์
-    finished = pyqtSignal(list)
+    calculation_succeeded = pyqtSignal(list)
     error_signal = pyqtSignal(str)
 
     def __init__(self, width, length, start_date, end_date, file_path,
@@ -55,6 +57,7 @@ class WorkerThread(QThread):
                  corrugate_b_type, corrugate_b_material_name,
                  back_material,
                  roll_specs,
+                 processed_orders,
                  parent=None):
         super().__init__(parent)
         self.width = width
@@ -70,6 +73,7 @@ class WorkerThread(QThread):
         self.corrugate_b_material_name = corrugate_b_material_name
         self.back_material = back_material
         self.roll_specs = roll_specs
+        self.processed_orders = processed_orders
         self.current_iteration_step = 0 # เพิ่มตัวแปรสำหรับติดตามความคืบหน้าการวนซ้ำ
 
     def run(self):
@@ -77,6 +81,10 @@ class WorkerThread(QThread):
         asyncio.set_event_loop(loop)
         
         def progress_callback(message: str):
+            if self.isInterruptionRequested():
+                # Raise an exception to break out of the blocking call
+                raise InterruptedError("Calculation was interrupted.")
+
             self.update_signal.emit(message)
             # ส่งสัญญาณพร้อมเปอร์เซ็นต์ความคืบหน้าประมาณการ
             if "กำลังเริ่มการคำนวณ" in message:
@@ -122,20 +130,24 @@ class WorkerThread(QThread):
                     b_type=self.corrugate_b_type,
                     b=self.corrugate_b_material_name,
                     back=self.back_material,
-                    roll_specs=self.roll_specs,
+                   roll_specs=self.roll_specs,
+                   processed_orders=self.processed_orders,
                 )
             )
-            self.progress_updated.emit(100, "✅ เสร็จสิ้น")  # สัญญาณเสร็จสมบูรณ์
-            self.finished.emit(results)
+            if not self.isInterruptionRequested():
+                self.progress_updated.emit(100, "✅ เสร็จสิ้น")  # สัญญาณเสร็จสมบูรณ์
+                self.calculation_succeeded.emit(results)
+        except InterruptedError:
+            self.update_signal.emit("⏹️ การคำนวณถูกหยุดโดยผู้ใช้")
         except Exception as e:
-            self.error_signal.emit(f"Error: {str(e)}")
-            self.progress_updated.emit(0, "❌ เกิดข้อผิดพลาด!") # รีเซ็ตโปรเกรสบาร์เมื่อเกิดข้อผิดพลาด
+            if not self.isInterruptionRequested():
+                self.error_signal.emit(f"Error: {str(e)}")
+                self.progress_updated.emit(0, "❌ เกิดข้อผิดพลาด!") # รีเซ็ตโปรเกรสบาร์เมื่อเกิดข้อผิดพลาด
         finally:
             loop.close()
 
 class CustomTableWidget(QTableWidget):
-    """
-    QTableWidget ที่กำหนดเองเพื่อส่งสัญญาณเมื่อกดปุ่ม Enter
+    """    QTableWidget ที่กำหนดเองเพื่อส่งสัญญาณเมื่อกดปุ่ม Enter
     """
     enterPressed = pyqtSignal() # สัญญาณที่กำหนดเอง
 
@@ -153,130 +165,31 @@ class CuttingOptimizerUI(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self.qtapp = QApplication.instance()
+        if self.qtapp:
+            self.qtapp.setQuitOnLastWindowClosed(False)
         self.setWindowTitle("กระดาษม้วนตัด Optimizer")
         self.setGeometry(100, 100, 800, 700)
 
         self.ROLL_SPECS = {}
         self.cleaned_orders_df = None
         self.calculated_length = 0
+        self.suggestions_list = []
+        self.current_suggestion_index = 0
+        self.processed_order_numbers = set()
 
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
         
-        # เพิ่มส่วนเลือกไฟล์
-        layout.addWidget(QLabel("เลือกไฟล์ออเดอร์:"))
-        
-        file_layout = QHBoxLayout()
-        self.file_path_input = QLineEdit("order.csv")
-        self.file_path_input.setPlaceholderText("เลือกไฟล์ CSV...")
-        file_layout.addWidget(self.file_path_input)
-        
-        browse_button = QPushButton("Browse...")
-        browse_button.clicked.connect(self.select_file)
-        file_layout.addWidget(browse_button)
-        
-        layout.addLayout(file_layout)
+        # Default file paths
+        self.order_file_path = "order.csv"
+        self.stock_file_path = "stock.csv"
+
+        layout.addWidget(QLabel(f"Order File: {self.order_file_path}"))
+        layout.addWidget(QLabel(f"Stock File: {self.stock_file_path}"))
 
 
-        # เพิ่มส่วนเลือกไฟล์สต็อก
-        layout.addWidget(QLabel("เลือกไฟล์สต็อก:"))
-        stock_file_layout = QHBoxLayout()
-        self.stock_file_path_input = QLineEdit("stock.csv")
-        self.stock_file_path_input.setPlaceholderText("เลือกไฟล์ CSV สต็อก...")
-        stock_file_layout.addWidget(self.stock_file_path_input)
 
-        browse_stock_button = QPushButton("Browse...")
-        browse_stock_button.clicked.connect(self.select_stock_file)
-        stock_file_layout.addWidget(browse_stock_button)
-        layout.addLayout(stock_file_layout)
-
-
-        layout.addWidget(QLabel("ความกว้างม้วนกระดาษ (inch):")) 
-        self.width_combo = QComboBox()
-        # self.width_combo.addItems(self.ROLL_SPECS.keys()) # จะถูกเติมค่าจากไฟล์สต็อก
-        self.width_combo.setPlaceholderText("รอข้อมูลสต็อก...")
-        layout.addWidget(self.width_combo)
-                # เพิ่มช่องกรอกข้อมูลแผ่นและลอนในแถวเดียวกัน
-        material_layout = QHBoxLayout()
-
-        material_layout.addWidget(QLabel("แผ่นหน้า:"))
-        self.sheet_front_input = QComboBox() # Changed to QComboBox
-        material_layout.addWidget(self.sheet_front_input)
-
-        material_layout.addWidget(QLabel("ลอน:"))
-        self.corrugate_c_type_combo = QComboBox()
-        self.corrugate_c_type_combo.addItems(["C", "E"]) # Added "None" option
-        self.corrugate_c_type_combo.setCurrentText("C")
-        material_layout.addWidget(self.corrugate_c_type_combo)
-        self.corrugate_c_material_input = QComboBox() # Changed to QComboBox
-        self.corrugate_c_material_input.setPlaceholderText("เลือกลอน")
-        material_layout.addWidget(self.corrugate_c_material_input)
-
-        
-        material_layout.addWidget(QLabel("แผ่นกลาง:"))
-        self.sheet_middle_input = QComboBox() # Changed to QComboBox
-        material_layout.addWidget(self.sheet_middle_input)
-
-        material_layout.addWidget(QLabel("ลอน:"))
-        self.corrugate_b_type_combo = QComboBox()
-        self.corrugate_b_type_combo.addItems(["B", "E"]) # Added "None" option
-        self.corrugate_b_type_combo.setCurrentText("B")
-        material_layout.addWidget(self.corrugate_b_type_combo)
-        self.corrugate_b_material_input = QComboBox() # Changed to QComboBox
-        material_layout.addWidget(self.corrugate_b_material_input) 
-
-        material_layout.addWidget(QLabel("แผ่นหลัง:"))
-        self.sheet_back_input = QComboBox() # Changed to QComboBox
-        material_layout.addWidget(self.sheet_back_input)
-    
-        # Connect material/width changes to stock update
-        self.sheet_front_input.currentTextChanged.connect(self.update_length_based_on_stock) # Changed from textChanged to currentTextChanged
-        self.sheet_middle_input.currentTextChanged.connect(self.update_length_based_on_stock)
-        self.sheet_back_input.currentTextChanged.connect(self.update_length_based_on_stock)
-        self.width_combo.currentTextChanged.connect(self.update_length_based_on_stock)
-
-        self.corrugate_c_material_input.currentTextChanged.connect(self.update_length_based_on_stock)
-        self.corrugate_b_material_input.currentTextChanged.connect(self.update_length_based_on_stock)
-
-        layout.addLayout(material_layout)
-
-        # เพิ่มช่องกรอกปริมาณม้วนกระดาษ พร้อมไอคอน info
-        # info_layout = QHBoxLayout()
-        # info_label = QLabel("ปริมาณม้วนกระดาษที่ใช้ได้สูงสุด (ม้วน):")
-        # info_icon = QLabel()
-        # info_icon.setPixmap(self.style().standardIcon(QApplication.style().SP_MessageBoxInformation).pixmap(16, 16))
-        # info_icon.setToolTip(
-        #     "ปริมาณม้วนกระดาษสูงสุดในสเปคนี้ที่ใช้ได้โดยไม่เกินม้วนอื่น (หน่วย: ม้วน)\n"
-        #     "ระบบจะใช้ค่านี้เป็นขีดจำกัดในการคำนวณการตัดม้วนกระดาษ\n"
-        # )
-        # info_layout.addWidget(info_label)
-        # info_layout.addWidget(info_icon)
-        # info_layout.addStretch()
-        # layout.addLayout(info_layout)
-
-        # self.roll_qty = QLineEdit("")
-        # self.update_length_based_on_stock() 
-        # self.roll_qty.setPlaceholderText("ปริมาณม้วนกระดาษ (เมตร)")
-        # self.roll_qty.setEnabled(False)
-        # layout.addWidget(self.roll_qty)
-
-
-        # เพิ่มช่องกรอกวันที่ด้วย QDateEdit (บังคับให้แสดงเลขอารบิก)
-        layout.addWidget(QLabel("วันที่เริ่มต้น (YYYY-MM-DD):"))
-        self.start_date_input = QDateEdit()
-        self.start_date_input.setDisplayFormat("yyyy-MM-dd")
-        self.start_date_input.setCalendarPopup(True)
-        self.start_date_input.setDate(QDate(2023, 1, 1)) # ตั้งค่าเริ่มต้นเป็นวันที่ 1 มกราคม 2023
-        self.start_date_input.setLocale(QLocale(QLocale.English, QLocale.Thailand))
-        layout.addWidget(self.start_date_input)
-
-        layout.addWidget(QLabel("วันที่สิ้นสุด (YYYY-MM-DD):"))
-        self.end_date_input = QDateEdit()
-        self.end_date_input.setDisplayFormat("yyyy-MM-dd")
-        self.end_date_input.setCalendarPopup(True)
-        self.end_date_input.setDate(QDate.currentDate().addYears(1)) # ตั้งค่าเริ่มต้นเป็น 1 ปีข้างหน้า
-        self.end_date_input.setLocale(QLocale(QLocale.English, QLocale.Thailand))
-        layout.addWidget(self.end_date_input)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -289,13 +202,13 @@ class CuttingOptimizerUI(QMainWindow):
         # Buttons layout
         buttons_layout = QHBoxLayout()
 
-        self.suggest_button = QPushButton("แนะนำการตั้งค่า")
-        self.suggest_button.clicked.connect(self.suggest_settings)
-        buttons_layout.addWidget(self.suggest_button)
-
-        self.run_button = QPushButton("เริ่มการคำนวณ")
-        self.run_button.clicked.connect(self.run_calculation)
+        self.run_button = QPushButton("เริ่มการคำนวณอัตโนมัติ")
+        self.run_button.clicked.connect(self.start_main_loop)
         buttons_layout.addWidget(self.run_button)
+
+        self.export_button = QPushButton("ส่งออกเป็น CSV")
+        self.export_button.clicked.connect(self.export_results_to_csv)
+        buttons_layout.addWidget(self.export_button)
         
         layout.addLayout(buttons_layout)
         
@@ -345,7 +258,7 @@ class CuttingOptimizerUI(QMainWindow):
 
     def setup_order_manager(self):
         """เริ่มต้นและเริ่มการทำงานของเธรดจัดการออเดอร์"""
-        order_file_path = self.file_path_input.text()
+        order_file_path = self.order_file_path
         self.order_thread = QThread()
         self.order_manager = OrderManager(order_file_path)
         self.order_manager.moveToThread(self.order_thread)
@@ -386,27 +299,80 @@ class CuttingOptimizerUI(QMainWindow):
     def closeEvent(self, event):
         """หยุดการทำงานของ worker threads อย่างถูกต้องเมื่อปิดโปรแกรม"""
         self.log_message("กำลังปิดโปรแกรม...")
+        self.run_button.setEnabled(False) # ป้องกันการคลิกซ้ำ
+
+        # --- Phase 1: Request all threads to stop ---
+        if hasattr(self, 'worker') and self.worker.isRunning():
+            self.log_message("กำลังส่งคำขอหยุดการคำนวณ...")
+            self.worker.requestInterruption()
         if hasattr(self, 'order_manager'):
             self.order_manager.stop()
-        if hasattr(self, 'order_thread'):
-            self.order_thread.quit()
-            self.order_thread.wait(5000)
-
         if hasattr(self, 'stock_manager'):
             self.stock_manager.stop()
-        if hasattr(self, 'stock_thread'):
-            self.stock_thread.quit()
-            self.stock_thread.wait(5000) # รอสูงสุด 5 วินาที
 
+        QApplication.processEvents()
+
+        # --- Phase 2: Wait for all threads to finish gracefully ---
+        threads_to_wait = []
         if hasattr(self, 'worker') and self.worker.isRunning():
-            self.worker.quit()
-            self.worker.wait(5000)
-        
+            threads_to_wait.append(("Worker", self.worker))
+        if hasattr(self, 'order_thread') and self.order_thread.isRunning():
+            threads_to_wait.append(("Order Manager", self.order_thread))
+        if hasattr(self, 'stock_thread') and self.stock_thread.isRunning():
+            threads_to_wait.append(("Stock Manager", self.stock_thread))
+
+        for name, thread in threads_to_wait:
+            self.log_message(f"กำลังรอให้เธรด {name} หยุดทำงาน...")
+            if not thread.wait(5000):  # 5-second timeout
+                self.log_message(f"⚠️ เธรด {name} ไม่หยุดทำงานในเวลาที่กำหนด, กำลังบังคับปิด.")
+                thread.terminate()
+                thread.wait()
+
+        self.log_message("ปิดโปรแกรมเรียบร้อยแล้ว")
         event.accept()
+
+    def _pause_background_threads(self):
+        """Stops and cleans up the background file monitoring threads gracefully."""
+        self.log_message("ℹ️ Pausing background file monitoring...")
+        if hasattr(self, 'order_thread') and self.order_thread and self.order_thread.isRunning():
+            self.order_manager.stop()
+            self.order_thread.quit()  # Request normal exit
+            if not self.order_thread.wait(5000):  # Extended timeout
+                self.order_manager.stop()  # Ensure worker stops
+                self.order_thread.terminate()  # Force exit if needed
+                self.order_thread.wait()  # Block until thread finishes
+            # Add state verification
+            if self.order_thread.isRunning():
+                self.log_message("❌ Thread still running after termination")
+                return  # Block deletion until thread is fully stopped 
+            self.order_manager.deleteLater()
+            self.order_thread.deleteLater()
+            self.order_manager = None
+            self.order_thread = None
+
+        if hasattr(self, 'stock_thread') and self.stock_thread and self.stock_thread.isRunning():
+            self.stock_manager.stop()
+            self.stock_thread.quit()
+            if not self.stock_thread.wait(3000):
+                self.log_message("⚠️ Stock manager thread did not stop gracefully. Terminating.")
+                self.stock_thread.terminate()
+                self.stock_thread.wait()
+            self.stock_manager.deleteLater()
+            self.stock_thread.deleteLater()
+            self.stock_manager = None
+            self.stock_thread = None
+
+    def _resume_background_threads(self):
+        """Resumes the background file monitoring by creating new threads."""
+        self.log_message("ℹ️ Resuming background file monitoring...")
+        if not (hasattr(self, 'order_thread') and self.order_thread and self.order_thread.isRunning()):
+             self.setup_order_manager()
+        if not (hasattr(self, 'stock_thread') and self.stock_thread and self.stock_thread.isRunning()):
+             self.setup_stock_manager()
 
     def setup_stock_manager(self):
         """เริ่มต้นและเริ่มการทำงานของเธรดจัดการสต็อก"""
-        stock_file_path = self.stock_file_path_input.text()
+        stock_file_path = self.stock_file_path
         self.stock_thread = QThread()
         self.stock_manager = StockManager(stock_file_path)
         self.stock_manager.moveToThread(self.stock_thread)
@@ -478,138 +444,46 @@ class CuttingOptimizerUI(QMainWindow):
             self.ROLL_SPECS = new_roll_specs
             self.log_message("🔄 อัปเดตข้อมูลสต็อกเรียบร้อยแล้ว")
 
-            # อัปเดต QComboBox ของความกว้างม้วนด้วยข้อมูลใหม่จากสต็อก
-            current_width = self.width_combo.currentText()
-            self.width_combo.blockSignals(True)
-            self.width_combo.clear()
-            if self.ROLL_SPECS:
-                # เรียงลำดับความกว้างตามตัวเลข
-                sorted_widths = sorted(self.ROLL_SPECS.keys(), key=lambda x: int(re.sub(r'\D', '', x) or 0))
-                self.width_combo.addItems(sorted_widths)
-                if current_width in sorted_widths:
-                    self.width_combo.setCurrentText(current_width)
-                elif sorted_widths:
-                    self.width_combo.setCurrentIndex(0) # เลือกอันแรกถ้าอันเดิมไม่มี
-            self.width_combo.blockSignals(False)
-          
-            # รีเฟรชองค์ประกอบ UI ที่ขึ้นอยู่กับข้อมูลสต็อก
-            self.update_length_based_on_stock()
-
-    def update_length_based_on_stock(self):
-        """Update material combobox and roll quantity based on stock, avoiding recursion."""
-        sender = self.sender()
-
-        material_combos = [
-            self.sheet_front_input,
-            self.sheet_middle_input,
-            self.sheet_back_input,
-            self.corrugate_c_material_input,
-            self.corrugate_b_material_input
+    def calculate_length_for_suggestion(self, width, spec):
+        """Calculate effective roll length for a given suggestion."""
+        selected_materials = [
+            spec.get('front', ''),
+            spec.get('c', ''),
+            spec.get('middle', ''),
+            spec.get('b', ''),
+            spec.get('back', '')
         ]
-
-        # Only update material lists if width changed or it's the initial call (sender is None)
-        if sender is self.width_combo or sender is None:
-            # Block signals to prevent recursive calls during programmatic updates
-            for combo in material_combos:
-                combo.blockSignals(True)
-
-            # Preserve current selections to restore them after repopulating
-            selections = [combo.currentText() for combo in material_combos]
-            
-            current_width = self.width_combo.currentText()
-            materials = []
-            if current_width and current_width in self.ROLL_SPECS:
-                materials = list(self.ROLL_SPECS[current_width].keys())
-
-            # Add a "None" option (empty string) at the beginning
-            materials.insert(0, "")
-            # materials.append("")
-          
-
-            for i, combo in enumerate(material_combos):
-                combo.clear()
-                if materials:
-                    combo.addItems(materials)
-                    # Restore previous selection if it's valid, otherwise default to first item
-                    if selections[i] in materials:
-                        combo.setCurrentText(selections[i])
-                    elif combo.count() > 0:
-                        combo.setCurrentIndex(0)
-            
-            # Re-enable signals
-            for combo in material_combos:
-                combo.blockSignals(False)
-
-        # --- This part always runs to update the length based on current selections ---
-        current_width = self.width_combo.currentText()
-        selected_materials = [combo.currentText().strip() for combo in material_combos]
         
-        # นับจำนวนครั้งที่ใช้วัสดุแต่ละชนิด
         material_counts = collections.Counter(m for m in selected_materials if m)
         unique_materials = list(material_counts.keys())
 
         effective_lengths = []
-        rolls_used = 0 
-        if unique_materials and current_width:
-            if current_width not in self.ROLL_SPECS:
-                self.ROLL_SPECS[current_width] = {}
-            stock_data_for_width = self.ROLL_SPECS[current_width]
-            for material in unique_materials:
-                material_rolls = stock_data_for_width.get(material)
-                if material_rolls:
-                    # 1. หาความยาวม้วนที่น้อยที่สุดของวัสดุชนิดนั้น แล้วคูณด้วยจำนวนม้วน
-                    min_length = min(roll['length'] for roll in material_rolls.values())
-
-                    # 2. หารด้วยจำนวนครั้งที่ใช้วัสดุนั้น
-                    usage_count = material_counts[material]
-                    # เอาม้วนที่มีมาหารกับจำนวนครั้งที่ใช้วัสดุว่าใช้ได้กี่รอบ
-                    roll_used = floor(len(material_rolls)/usage_count)
-                    rolls_used += roll_used
-  
-                    # คำนวณความยาวที่ใช้ได้จริง
-                    effective_length = min_length * roll_used
-                    effective_lengths.append(effective_length)
+        if not unique_materials or not width:
+            return 0
+            
+        if width not in self.ROLL_SPECS:
+            return 0
+            
+        stock_data_for_width = self.ROLL_SPECS[width]
+        for material in unique_materials:
+            material_rolls = stock_data_for_width.get(material)
+            if material_rolls:
+                min_length = min(roll['length'] for roll in material_rolls.values())
+                usage_count = material_counts[material]
+                if usage_count == 0: continue
+                
+                roll_used = floor(len(material_rolls) / usage_count)
+                effective_length = min_length * roll_used
+                effective_lengths.append(effective_length)
+            else:
+                # If any required material is not in stock for this width, this suggestion is invalid for calculation.
+                return 0
         
         if effective_lengths:
-            # 3. ใช้ค่าที่น้อยที่สุดเป็นขีดจำกัด
             min_effective_length = min(effective_lengths)
-            self.calculated_length = int(min_effective_length)
-            # self.roll_qty.setText(str(int(rolls_used))) # แสดงเป็นจำนวนเต็ม
+            return int(min_effective_length)
         else:
-            self.calculated_length = 0
-            # self.roll_qty.clear()
-            
-    def select_file(self):
-        options = QFileDialog.Options()
-        options |= QFileDialog.DontUseNativeDialog
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "เลือกไฟล์ออเดอร์",
-            "",
-            "CSV Files (*.csv);;All Files (*)",
-            options=options
-        )
-        if file_path:
-            self.file_path_input.setText(file_path)
-            # แจ้ง Order Manager เกี่ยวกับเส้นทางไฟล์ใหม่
-            if hasattr(self, 'order_manager'):
-                self.order_manager.set_file_path(file_path)
-
-    def select_stock_file(self):
-        options = QFileDialog.Options()
-        options |= QFileDialog.DontUseNativeDialog
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "เลือกไฟล์สต็อก",
-            "",
-            "CSV Files (*.csv);;All Files (*)",
-            options=options
-        )
-        if file_path:
-            self.stock_file_path_input.setText(file_path)
-            # แจ้ง Stock Manager เกี่ยวกับเส้นทางไฟล์ใหม่
-            if hasattr(self, 'stock_manager'):
-                self.stock_manager.set_file_path(file_path)
+            return 0
 
     def log_message(self, message: str):
         self.log_display.append(message)
@@ -617,190 +491,236 @@ class CuttingOptimizerUI(QMainWindow):
             self.log_display.verticalScrollBar().maximum()
         )
         
-    def suggest_settings(self):
+    def get_all_suggestions(self):
         """
-        Suggests optimal width and material spec based on order frequency and stock availability.
+        Generates a list of all possible calculation settings based on order frequency and stock.
         """
         if self.cleaned_orders_df is None or self.cleaned_orders_df.is_empty():
-            QMessageBox.warning(self, "ไม่มีข้อมูลออเดอร์", "ไม่สามารถให้คำแนะนำได้เนื่องจากไม่มีข้อมูลออเดอร์\nกรุณาตรวจสอบไฟล์ออเดอร์และรอการอัปเดต")
-            self.log_message("⚠️ ไม่สามารถแนะนำการตั้งค่าได้: ไม่มีข้อมูลออเดอร์")
-            return
+            self.log_message("⚠️ Cannot generate suggestions: No order data available.")
+            return []
 
-        self.log_message("🤔 กำลังวิเคราะห์เพื่อแนะนำการตั้งค่า...")
+        self.log_message("🤔 Analyzing orders to generate all possible settings...")
         try:
             cleaned_orders_df = self.cleaned_orders_df
-            
             material_cols = ['front', 'c', 'middle', 'b', 'back']
             existing_cols = [col for col in material_cols if col in cleaned_orders_df.columns]
 
             if not existing_cols:
-                QMessageBox.warning(self, "ไม่มีข้อมูล", "ไม่พบคอลัมน์วัสดุในไฟล์ออเดอร์")
-                self.log_message("⚠️ ไม่พบคอลัมน์วัสดุ (front, c, middle, b, back) ในไฟล์ออเดอร์")
-                return
+                self.log_message("⚠️ No material columns (front, c, etc.) found in order file.")
+                return []
 
-            # Pre-process material columns: fill nulls and strip whitespace for accurate grouping.
             spec_df = cleaned_orders_df.with_columns(
                 [pl.col(c).fill_null("").str.strip_chars() for c in existing_cols]
             )
 
-            # Group by the combination of materials to find the most frequent spec
-            most_frequent_spec_df = spec_df.group_by(existing_cols).count().sort("count", descending=True)
+            all_specs_df = spec_df.group_by(existing_cols).count().sort("count", descending=True)
             
-            if most_frequent_spec_df.is_empty():
-                QMessageBox.information(self, "ไม่มีข้อมูล", "ไม่พบข้อมูลสเปควัสดุในไฟล์ออเดอร์")
-                self.log_message("ℹ️ ไม่พบข้อมูลสเปควัสดุที่สามารถจัดกลุ่มได้ในไฟล์ออเดอร์")
-                return
+            if all_specs_df.is_empty():
+                self.log_message("ℹ️ No material specs could be grouped from the order file.")
+                return []
 
-            # The most frequent spec is the first row
-            most_frequent_spec = most_frequent_spec_df.row(0, named=True)
-            del most_frequent_spec['count']  # Remove the count column
+            suggestions = []
+            for spec_row in all_specs_df.iter_rows(named=True):
+                spec_materials = {m for k, m in spec_row.items() if k != 'count' and m}
 
-            self.log_message(f"💡 สเปคที่พบบ่อยที่สุด: {most_frequent_spec}")
+                if not spec_materials:
+                    continue
 
-            # Get the unique, non-empty materials from the spec
-            spec_materials = {m for m in most_frequent_spec.values() if m}
+                available_widths = []
+                if self.ROLL_SPECS:
+                    for width, materials_in_stock in self.ROLL_SPECS.items():
+                        if spec_materials.issubset(materials_in_stock.keys()):
+                            available_widths.append(width)
+                
+                if available_widths:
+                    sorted_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
+                    for width in sorted_widths:
+                        full_spec = {k: v for k, v in spec_row.items() if k != 'count'}
+                        suggestion = {'width': width, 'spec': full_spec}
+                        suggestions.append(suggestion)
 
-            if not spec_materials:
-                QMessageBox.information(self, "ไม่มีข้อมูล", "สเปคที่พบบ่อยที่สุดไม่มีการระบุวัสดุ")
-                self.log_message("ℹ️ สเปคที่พบบ่อยที่สุดไม่มีการระบุวัสดุ")
-                return
-
-            # Find widths in stock that have ALL materials for the spec
-            available_widths = []
-            if self.ROLL_SPECS:
-                for width, materials_in_stock in self.ROLL_SPECS.items():
-                    # Check if all materials required by the spec are available for this width
-                    if spec_materials.issubset(materials_in_stock.keys()):
-                        available_widths.append(width)
-
-            if not available_widths:
-                display_spec_str = ', '.join(sorted(list(spec_materials)))
-                QMessageBox.warning(self, "ไม่พบสต็อก", f"ไม่พบสต็อกสำหรับสเปค: '{display_spec_str}'")
-                self.log_message(f"⚠️ ไม่พบสต็อกที่รองรับวัสดุทั้งหมดในสเปค: {display_spec_str}")
-                return
-
-            # Sort available widths and select the first one as the default suggestion
-            sorted_available_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
-            suggested_width = sorted_available_widths[0]
-            self.log_message(f"💡 ความกว้างที่แนะนำ: {suggested_width} นิ้ว (ความกว้างอื่นที่ใช้ได้: {', '.join(sorted_available_widths)})")
-
-            # Update UI with the suggested settings
-            self.width_combo.setCurrentText(suggested_width)
-            
-            # Setting width triggers `update_length_based_on_stock`, which repopulates material combos.
-            # After that, we can set the materials from the spec.
-            self.sheet_front_input.setCurrentText(most_frequent_spec.get('front', ''))
-            self.corrugate_c_material_input.setCurrentText(most_frequent_spec.get('c', ''))
-            self.sheet_middle_input.setCurrentText(most_frequent_spec.get('middle', ''))
-            self.corrugate_b_material_input.setCurrentText(most_frequent_spec.get('b', ''))
-            self.sheet_back_input.setCurrentText(most_frequent_spec.get('back', ''))
-            
-            # Format spec for display in the message box, showing all available widths
-            available_widths_str = ', '.join(sorted_available_widths)
-            display_list = [f"- ความกว้างที่ใช้ได้ (นิ้ว): {available_widths_str}"]
-            material_display_list = [f"- {k.capitalize()}: {v}" for k, v in most_frequent_spec.items() if v]
-            display_list.extend(material_display_list)
-            display_str = "\n".join(display_list)
-
-            QMessageBox.information(self, "แนะนำการตั้งค่า",
-                                    f"แนะนำให้ใช้:\n\n"
-                                    f"สเปคที่แนะนำ:\n{display_str}\n\n"
-                                    f"ได้ตั้งค่าความกว้างเป็น {suggested_width} นิ้วให้แล้ว (เป็นค่าเริ่มต้น)")
+            self.log_message(f"✅ Generated {len(suggestions)} potential settings to test.")
+            return suggestions
 
         except Exception as e:
-            QMessageBox.critical(self, "เกิดข้อผิดพลาด", f"เกิดข้อผิดพลาดระหว่างการแนะนำ: {e}")
-            self.log_message(f"❌ เกิดข้อผิดพลาดระหว่างการแนะนำ: {e}")
-        
-    def run_calculation(self):
-        try:
-            width = int(self.width_combo.currentText())
-            length = self.calculated_length
-            
-            # อ่านค่าเส้นทางไฟล์จาก UI
-            file_path = self.file_path_input.text().strip() or "order.csv"
+            QMessageBox.critical(self, "Error Generating Suggestions", f"An error occurred: {e}")
+            self.log_message(f"❌ Error during suggestion generation: {e}")
+            return []
 
-            # อ่านค่าจาก QDateEdit และแปลงเป็นสตริง
-            start_date = self.start_date_input.date().toString("yyyy-MM-dd") 
-            end_date = self.end_date_input.date().toString("yyyy-MM-dd")
-            
-            # แปลงตัวเลขไทยเป็นอารบิก
-            start_date = convert_thai_digits_to_arabic(start_date).strip() or None
-            end_date = convert_thai_digits_to_arabic(end_date).strip() or None
+    def start_main_loop(self):
+        self.log_message("🚀 Starting automated calculation process...")
+        self.run_button.setEnabled(False)
+        self.log_display.clear()
 
-            # อ่านค่าจากช่องกรอกวัสดุ
-            front_material = self.sheet_front_input.currentText().strip() or None # Changed from .text() to .currentText()
-            middle_material = self.sheet_middle_input.currentText().strip() or None
-            back_material = self.sheet_back_input.currentText().strip() or None
-            corrugate_c_type = self.corrugate_c_type_combo.currentText().strip() or None
-            corrugate_c_material_name = self.corrugate_c_material_input.currentText().strip() or None
-            corrugate_b_type = self.corrugate_b_type_combo.currentText().strip() or None
-            corrugate_b_material_name = self.corrugate_b_material_input.currentText().strip() or None
-            
-            roll_specs_copy = copy.deepcopy(self.ROLL_SPECS)
-            
-            self.log_display.clear()
-            self.result_table.setRowCount(0)
-            self.log_message("⚙️ กำลังเริ่มการคำนวณ...")
-            self.run_button.setEnabled(False)
-            self.progress_bar.setValue(0) # รีเซ็ตโปรเกรสบาร์
-            self.progress_bar.setFormat("กำลังประมวลผล...")
-            
-            # Create worker thread
-            self.worker = WorkerThread(
-                width, length, start_date, end_date, file_path,
-                front_material, 
-                corrugate_c_type, corrugate_c_material_name,
-                middle_material, 
-                corrugate_b_type, corrugate_b_material_name,
-                back_material,
-                roll_specs_copy
-            )
-            self.worker.update_signal.connect(self.log_message)
-            self.worker.progress_updated.connect(self.update_progress_bar)
-            self.worker.finished.connect(self.complete_calculation)
-            self.worker.error_signal.connect(self.handle_error)
-            self.worker.start()
-            
-        except ValueError:
-            QMessageBox.warning(self, "ข้อผิดพลาด", "⚠️ ไม่สามารถแปลงค่าความกว้างเป็นตัวเลขได้ โปรดตรวจสอบข้อมูลสต็อก")
-            self.log_message("⚠️ ไม่สามารถแปลงค่าความกว้างเป็นตัวเลขได้ โปรดตรวจสอบข้อมูลสต็อก")
-            self.run_button.setEnabled(True) # เปิดปุ่มกลับมา
-            self.progress_bar.setFormat("เกิดข้อผิดพลาด!")
+        self._pause_background_threads()
 
-    def update_progress_bar(self, value: int, message: str):
-        """อัปเดตแถบความคืบหน้าและข้อความ"""
-        self.progress_bar.setValue(value)
-        self.progress_bar.setFormat(f"{message} ({value}%)")
-        if value == 100:
+        self.suggestions_list = self.get_all_suggestions()
+        if not self.suggestions_list:
+            self.log_message("⏹️ No suggestions found. Process finished.")
             self.run_button.setEnabled(True)
-
-    def complete_calculation(self, results):
-        self.run_button.setEnabled(True)
-        if not results:
-            self.progress_bar.setFormat("ไม่พบม้วนที่เหมาะสม")
-            self.log_message("❌ ไม่พบม้วนที่เหมาะสม กรุณาเปลี่ยนหน้าม้วน")
-            QMessageBox.warning(self, "ไม่พบม้วนที่เหมาะสม", "❌ ไม่พบม้วนที่เหมาะสม กรุณาเปลี่ยนหน้าม้วน")
-            self.results_data = []
-            self.result_table.setRowCount(0)
+            self._resume_background_threads()
+            QMessageBox.information(self, "No Suggestions", "No valid settings could be suggested from the order data.")
             return
 
-        self.progress_bar.setFormat("เสร็จสิ้น!")
-        self.log_message(f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
-        QMessageBox.information(self, "เสร็จสิ้น", f"✅ เสร็จสิ้นการคำนวณสำหรับม้วน {len(results)} ครั้ง")
+        self.log_message(f"Found {len(self.suggestions_list)} settings to test.")
+        self.current_suggestion_index = 0
+        self.run_next_calculation()
 
-        # เก็บผลลัพธ์ทั้งหมดไว้ในตัวแปรของคลาส
-        self.results_data = results
+    def run_next_calculation(self):
+        if self.current_suggestion_index >= len(self.suggestions_list):
+            self.log_message("✅ All suggestions processed. Automated calculation finished.")
+            self.run_button.setEnabled(True)
+            self.progress_bar.setFormat("✅ Finished all tasks!")
+            self._resume_background_threads()
+            QMessageBox.information(self, "Finished", "All suggested settings have been processed.")
+            return
 
-        # แสดงผลลัพธ์ในตารางด้วยการตั้งค่า Flag เพื่อให้สามารถเลือกคัดลอกได้
-        self.result_table.setRowCount(len(results))
-        for row_idx, result in enumerate(results):
-            # ตรวจสอบว่ามีม้วนที่ไม่เหมาะสมหรือไม่ เพื่อเปลี่ยนสีแถว
+        suggestion = self.suggestions_list[self.current_suggestion_index]
+        width_str = suggestion['width']
+        spec = suggestion['spec']
+
+        try:
+            width = int(width_str)
+        except ValueError:
+            self.log_message(f"⚠️ Skipping suggestion with invalid width: {width_str}")
+            self.on_calculation_error(f"Invalid width '{width_str}'")
+            return
+
+        length = self.calculate_length_for_suggestion(width_str, spec)
+        if length <= 0:
+            self.log_message(f"ℹ️ Skipping suggestion {self.current_suggestion_index + 1} due to zero calculated length (insufficient stock).")
+            # Manually advance to the next suggestion.
+            # We can't call on_calculation_error() directly as there is no sender thread.
+            self.current_suggestion_index += 1
+            # Since no worker was created, the 'destroyed' signal won't fire,
+            # so we trigger the next calculation manually.
+            QTimer.singleShot(0, self.run_next_calculation)
+            return
+
+        front_material = spec.get('front') or None
+        c_material = spec.get('c') or None
+        middle_material = spec.get('middle') or None
+        b_material = spec.get('b') or None
+        back_material = spec.get('back') or None
+        
+        c_type = 'C' if c_material else None
+        b_type = 'B' if b_material else None
+
+        spec_str = ", ".join(f"{k}: {v}" for k, v in spec.items() if v)
+        self.log_message(f"--- Running Suggestion {self.current_suggestion_index + 1}/{len(self.suggestions_list)} ---")
+        self.log_message(f"Width: {width}, Length: {length}, Spec: {spec_str}")
+        
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat(f"Processing suggestion {self.current_suggestion_index + 1}...")
+
+        roll_specs_copy = copy.deepcopy(self.ROLL_SPECS)
+        self.worker = WorkerThread(
+            width, length, None, None, self.order_file_path,
+            front_material, 
+            c_type, c_material,
+            middle_material, 
+            b_type, b_material,
+            back_material,
+            roll_specs_copy,
+            self.processed_order_numbers.copy()
+        )
+        self.worker.update_signal.connect(self.log_message)
+        self.worker.progress_updated.connect(self.update_progress_bar)
+        self.worker.calculation_succeeded.connect(self.on_calculation_finished)
+        self.worker.error_signal.connect(self.on_calculation_error)
+        # เชื่อมต่อสัญญาณ destroyed เพื่อให้แน่ใจว่าเธรดเก่าถูกลบอย่างสมบูรณ์
+        # ก่อนที่จะเริ่มการคำนวณครั้งถัดไปโดยอัตโนมัติ
+        self.worker.destroyed.connect(self.run_next_calculation)
+        self.worker.start()
+
+    def update_progress_bar(self, value: int, message: str):
+        """Updates the progress bar."""
+        self.progress_bar.setValue(value)
+        if self.suggestions_list:
+            self.progress_bar.setFormat(f"({self.current_suggestion_index + 1}/{len(self.suggestions_list)}) {message} ({value}%)")
+        else:
+            self.progress_bar.setFormat(f"{message} ({value}%)")
+
+        if value == 100:
+            pass
+
+    def on_calculation_finished(self, results):
+        if not results:
+            self.log_message(f"ℹ️ Suggestion {self.current_suggestion_index + 1} was feasible but yielded no cutting patterns.")
+        else:
+            self.log_message(f"✅ Suggestion {self.current_suggestion_index + 1} finished with {len(results)} results.")
+            self.append_results_to_table(results)
+            for result in results:
+                if order_num := result.get('order_number'):
+                    self.processed_order_numbers.add(order_num)
+        
+        self.current_suggestion_index += 1
+        sender_thread = self.sender()
+        if sender_thread:
+            # The thread has finished its work. We just need to wait for it to
+            # fully exit and then schedule it for deletion. The 'destroyed'
+            # signal will then trigger the next calculation.
+            if not sender_thread.wait(5000):
+                self.log_message("⚠️ Worker thread did not exit cleanly. Terminating.")
+                sender_thread.terminate()
+                sender_thread.wait()
+            sender_thread.deleteLater()
+
+    def append_results_to_table(self, results):
+        """
+        Adds new results, identifies the best entry (lowest trim) for each order,
+        highlights duplicates in yellow, and sorts the entire list before repopulating the table.
+        """
+        # Add new results to the master list
+        self.results_data.extend(results)
+
+        # Find the best result (lowest trim) for each order number
+        best_results_map = {}
+        for res in self.results_data:
+            order_num = res.get('order_number')
+            try:
+                # Ensure trim is a comparable number, default to infinity if missing/invalid
+                trim = float(res.get('trim', float('inf')))
+            except (ValueError, TypeError):
+                trim = float('inf')
+
+            if not order_num:
+                continue
+
+            # Check if this result is better (lower trim) than the one stored for the order
+            current_best_trim = best_results_map.get(order_num, {}).get('trim', float('inf'))
+            try:
+                current_best_trim = float(current_best_trim)
+            except (ValueError, TypeError):
+                current_best_trim = float('inf')
+
+            if trim < current_best_trim:
+                best_results_map[order_num] = res
+
+        # Create a set of IDs for the best results for quick lookup
+        best_results_ids = {id(res) for res in best_results_map.values()}
+
+        # Repopulate the entire table
+        self.result_table.setRowCount(0)
+        self.result_table.setRowCount(len(self.results_data))
+
+        for row_idx, result in enumerate(self.results_data):
+            is_duplicate = id(result) not in best_results_ids
+            
             has_no_suitable_roll = False
             roll_info_keys = ['front_roll_info', 'c_roll_info', 'middle_roll_info', 'b_roll_info', 'back_roll_info']
             for key in roll_info_keys:
                 if "ไม่มี" in result.get(key, ''):
                     has_no_suitable_roll = True
                     break
+            
+            cuts = result.get('cuts')
+            order_qty = result.get('order_qty')
+            demand_per_cut_val = ""
+            if cuts is not None and cuts > 0 and order_qty is not None:
+                demand_per_cut_val = f"{order_qty / cuts:.2f}"
+            else:
+                demand_per_cut_val = "N/A"
 
             for col_idx, value in enumerate([
                 str(result.get('roll_w', '')),
@@ -812,23 +732,74 @@ class CuttingOptimizerUI(QMainWindow):
                 f"{result.get('order_dmd', '')}",
                 str(result.get('die_cut', '')),
                 f"{result.get('order_qty', '')}",
-                f"{result.get('order_qty', '')/result.get('cuts', ''):.2f}",
-                # f"{result.get('demand_per_cut', ''):.4f}",
-                # f"{result.get('rem_roll_l', ''):.4f}"
+                demand_per_cut_val,
             ]):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                
+                # Apply colors based on status (red takes precedence)
                 if has_no_suitable_roll:
-                    item.setBackground(QColor(255, 224, 224)) # สีแดงอ่อน
+                    item.setBackground(QColor(255, 224, 224))  # Red for invalid rolls
+                elif is_duplicate:
+                    item.setBackground(QColor(255, 255, 224))  # Yellow for duplicates
 
                 self.result_table.setItem(row_idx, col_idx, item)
         self.result_table.resizeColumnsToContents()
 
-    def handle_error(self, error_message: str):
-        self.run_button.setEnabled(True)
-        self.progress_bar.setFormat("เกิดข้อผิดพลาด!")
-        self.log_message(f"❌ {error_message}")
-        QMessageBox.critical(self, "ข้อผิดพลาด", f"❌ เกิดข้อผิดพลาดในการคำนวณ:\n{error_message}")
+    def on_calculation_error(self, error_message: str):
+        self.log_message(f"❌ Error or infeasible on suggestion {self.current_suggestion_index + 1}: {error_message}")
+        self.current_suggestion_index += 1
+        sender_thread = self.sender()
+        if sender_thread:
+            # The thread has finished its work. We just need to wait for it to
+            # fully exit and then schedule it for deletion. The 'destroyed'
+            # signal will then trigger the next calculation.
+            if not sender_thread.wait(5000):
+                self.log_message("⚠️ Worker thread did not exit cleanly after error. Terminating.")
+                sender_thread.terminate()
+                sender_thread.wait()
+            sender_thread.deleteLater()
+
+    def export_results_to_csv(self):
+        """ส่งออกข้อมูลในตารางผลลัพธ์ไปยังไฟล์ CSV"""
+        if self.result_table.rowCount() == 0:
+            QMessageBox.information(self, "ไม่มีข้อมูล", "ไม่มีข้อมูลสำหรับส่งออก")
+            return
+
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "บันทึกผลลัพธ์เป็น CSV",
+            "cutting_results.csv",
+            "CSV Files (*.csv);;All Files (*)",
+            options=options,
+        )
+
+        if file_path:
+            try:
+                # ใช้ utf-8-sig เพื่อให้ Excel เปิดไฟล์ภาษาไทยได้ถูกต้อง
+                with open(file_path, 'w', newline='', encoding='utf-8-sig') as csv_file:
+                    writer = csv.writer(csv_file)
+
+                    # เขียนส่วนหัวของตาราง
+                    headers = [self.result_table.horizontalHeaderItem(i).text() for i in range(self.result_table.columnCount())]
+                    writer.writerow(headers)
+
+                    # เขียนข้อมูลแต่ละแถว
+                    for row in range(self.result_table.rowCount()):
+                        row_data = []
+                        for column in range(self.result_table.columnCount()):
+                            item = self.result_table.item(row, column)
+                            row_data.append(item.text() if item else "")
+                        writer.writerow(row_data)
+                
+                self.log_message(f"✅ ส่งออกผลลัพธ์ไปยัง {file_path} เรียบร้อยแล้ว")
+                QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกผลลัพธ์ไปยัง:\n{file_path} เรียบร้อยแล้ว")
+
+            except Exception as e:
+                self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออกเป็น CSV: {e}")
+                QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", f"เกิดข้อผิดพลาดขณะส่งออกไฟล์:\n{e}")
 
     def show_row_details_popup(self):
         """
