@@ -8,3 +8,4 @@ all_cutting_plan_summary.csv
 *.spec
 roll_cut_results_*.csv
 cutting_results.csv
+cutting_results2.csv
