@@ -40,7 +40,14 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     ]
 
     # --- New Logic: Prioritize last used roll for this material ---
-    last_roll_id = last_used_roll_ids.get((width, material))
+    # find a way to check it order_number have been used before AI! 
+    recurrent_order = 0
+    if order_number and current_order:
+        recurrent_order += 1
+    if order_number and not current_order:
+        recurrent_order = 0
+
+    last_roll_id = last_used_roll_ids.get((width, material, recurrent_order))
     if last_roll_id:
         # Find the last roll in the list of all rolls for this material.
         last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
@@ -147,7 +154,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                         roll1['length'] = 0
                         roll2['length'] -= needed_from_roll2
                         
-                        last_used_roll_ids[(width, material)] = roll2_id
+                        last_used_roll_ids[(width, material,recurrent_order)] = roll2_id
                         
                         used_roll_ids.add(roll1_id)
                         used_roll_ids.add(roll2_id)
@@ -180,7 +187,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                             roll2['length'] = 0
                             roll3['length'] -= needed_from_roll3
                             
-                            last_used_roll_ids[(width, material)] = roll3_id
+                            last_used_roll_ids[(width, material,recurrent_order)] = roll3_id
                             
                             used_roll_ids.add(roll1_id)
                             used_roll_ids.add(roll2_id)
