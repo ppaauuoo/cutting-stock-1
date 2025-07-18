@@ -40,14 +40,18 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     ]
 
     # --- New Logic: Prioritize last used roll for this material ---
-    # find a way to check it order_number have been used before AI! 
-    recurrent_order = 0
-    if order_number and current_order:
-        recurrent_order += 1
-    if order_number and not current_order:
-        recurrent_order = 0
+    # We only apply roll continuation logic for orders that have appeared before in this run.
+    # We track seen orders within the stateful `last_used_roll_ids` dictionary.
+    seen_orders = last_used_roll_ids.setdefault('_seen_orders', set())
 
-    last_roll_id = last_used_roll_ids.get((width, material, recurrent_order))
+    last_roll_id = None
+    if order_number and order_number in seen_orders:
+        # This is a recurrent order, so try to use the last roll for this material.
+        last_roll_id = last_used_roll_ids.get((width, material))
+
+    # Mark this order number as seen for subsequent items.
+    if order_number:
+        seen_orders.add(order_number)
     if last_roll_id:
         # Find the last roll in the list of all rolls for this material.
         last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
@@ -154,7 +158,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                         roll1['length'] = 0
                         roll2['length'] -= needed_from_roll2
                         
-                        last_used_roll_ids[(width, material,recurrent_order)] = roll2_id
+                        last_used_roll_ids[(width, material)] = roll2_id
                         
                         used_roll_ids.add(roll1_id)
                         used_roll_ids.add(roll2_id)
@@ -187,7 +191,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                             roll2['length'] = 0
                             roll3['length'] -= needed_from_roll3
                             
-                            last_used_roll_ids[(width, material,recurrent_order)] = roll3_id
+                            last_used_roll_ids[(width, material)] = roll3_id
                             
                             used_roll_ids.add(roll1_id)
                             used_roll_ids.add(roll2_id)
