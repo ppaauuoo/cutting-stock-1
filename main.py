@@ -19,6 +19,7 @@ from pulp import (
 import cleaning
 
 
+# if function run in the same order_number, save last_roll_ids as positional for next use AI!
 def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict) -> str:
     """
     Finds a suitable roll, prioritizing the last used roll for the same material to ensure sequential use.
