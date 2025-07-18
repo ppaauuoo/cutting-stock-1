@@ -45,7 +45,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         # Find the last roll in the list of all rolls for this material.
         last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
 
-        if last_roll_data and last_roll_data[1]['length'] > 0 and last_roll_id not in used_roll_ids:
+        if last_roll_data and last_roll_id not in used_roll_ids:
             _last_roll_key, last_roll = last_roll_data
             
             # Case 1: The last used roll is sufficient by itself.
@@ -56,7 +56,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                 # The last used roll remains the same.
                 return f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_length)} ม., เหลือ {int(last_roll['length'])} ม.)"
             
-            # Case 2: The last used roll is not sufficient, try to combine it with other rolls.
+            # Case 2: The last used roll is not sufficient (or is empty), try to combine it with other rolls.
             else:
                 needed_from_another = required_length - last_roll['length']
                 original_len_roll1 = last_roll['length']
@@ -65,7 +65,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                 supplement_rolls = [(k, r) for k, r in unused_rolls if r.get('id') != last_roll_id]
                 
                 # 2a. Find a single supplementary roll that can cover the remaining requirement.
-                best_supplement = next(( (k, r) for k, r in sorted(supplement_rolls, key=lambda item: item[1]['length']) if r['length'] >= needed_from_another), None)
+                best_supplement = next(( (k, r) for k, r in sorted(supplement_rolls, key=lambda item: item[1]['length'], reverse=True) if r['length'] >= needed_from_another), None)
 
                 if best_supplement:
                     _supp_key, supp_roll = best_supplement
@@ -75,10 +75,10 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                     last_roll['length'] = 0
                     supp_roll['length'] -= needed_from_another
                     
+                    last_used_roll_ids[(width, material)] = supp_roll_id
+                    
                     used_roll_ids.add(last_roll_id)
                     used_roll_ids.add(supp_roll_id)
-                    
-                    last_used_roll_ids[(width, material)] = supp_roll_id
                     
                     return (f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_len_roll1)} ม., ใช้หมด) "
                             f"+ {supp_roll_id} (ยาว {int(original_len_roll2)} ม., เหลือ {int(supp_roll['length'])} ม.)")
@@ -102,15 +102,18 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                                 supp1['length'] = 0
                                 supp2['length'] -= needed_from_supp2
                                 
+                                last_used_roll_ids[(width, material)] = supp2_id
+                                
                                 used_roll_ids.add(last_roll_id)
                                 used_roll_ids.add(supp1_id)
                                 used_roll_ids.add(supp2_id)
                                 
-                                last_used_roll_ids[(width, material)] = supp2_id
-                                
                                 return (f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_len_roll1)} ม., ใช้หมด) "
                                         f"+ {supp1_id} (ยาว {int(supp1_length)} ม., ใช้หมด) "
                                         f"+ {supp2_id} (ยาว {int(supp2_length)} ม., เหลือ {int(supp2['length'])} ม.)")
+            
+            # If we're here, the locked roll exists but we couldn't find enough supplementary rolls.
+            return "-> (สต็อกไม่พอสำหรับม้วนที่ล็อคไว้)"
 
     # --- Fallback to original logic if last used roll wasn't applicable ---
     # 1. Try to find a single new roll that is sufficient.
@@ -397,11 +400,11 @@ async def main_algorithm(
     
     rolls = [{"width": roll_width, "length": roll_length}]
     all_results = []
-    last_used_roll_ids = {}
 
     order_num_col_idx = orders_df.columns.index("order_number")
 
     for roll in rolls:
+        last_used_roll_ids = {}
         if progress_callback:
             progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
         
