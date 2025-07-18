@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Callable, Optional
 
 import polars as pl
@@ -365,6 +366,9 @@ async def main_algorithm(
     roll_specs: Optional[dict] = None,
     processed_orders: Optional[set] = None,
 ):
+    output_dir = "cache"
+    os.makedirs(output_dir, exist_ok=True)
+
     if progress_callback:
         progress_callback("⚙️ กำลังเริ่มการคำนวณ")
 
@@ -525,7 +529,7 @@ async def main_algorithm(
         # Save results for the current roll to a CSV file
         if roll_cuts:
             output_df = pl.DataFrame(roll_cuts)
-            output_filename = f"roll_cut_results_{roll['width']}.csv"
+            output_filename = os.path.join(output_dir, f"roll_cut_results_{roll['width']}.csv")
             output_df.write_csv(output_filename)
             if progress_callback:
                 progress_callback(f"--- Saved {len(roll_cuts)} cuts for roll {roll['width']} to {output_filename} ---")
@@ -535,7 +539,7 @@ async def main_algorithm(
     # Save all cutting results to a single summary CSV file
     if all_results:
         final_output_df = pl.DataFrame(all_results)
-        final_output_df.write_csv("all_cutting_plan_summary.csv")
+        final_output_df.write_csv(os.path.join(output_dir, "all_cutting_plan_summary.csv"))
         if progress_callback:
             progress_callback("💾 บันทึกผลลัพธ์ลงไฟล์ CSV เรียบร้อย")
     
