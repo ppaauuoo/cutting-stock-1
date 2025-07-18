@@ -19,8 +19,7 @@ from pulp import (
 import cleaning
 
 
-# if function run in the same order_number, save last_roll_ids as positional for next use AI!
-def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict) -> str:
+def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None) -> str:
     """
     Finds a suitable roll, prioritizing the last used roll for the same material to ensure sequential use.
     If one roll is not enough, it tries to combine with another available roll.
@@ -466,41 +465,41 @@ async def main_algorithm(
                 if material_specs.get('front'):
                     material = str(material_specs.get('front')).strip()
                     value = demand_per_cut / type_demand_divisor
-                    roll_info['front_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
+                    roll_info['front_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
 
                 if material_specs.get('c') and c_type_spec == 'C':
                     material = str(material_specs.get('c')).strip()
                     value = demand_per_cut
-                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
+                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
                 elif material_specs.get('c') and c_type_spec == 'E':
                     material = str(material_specs.get('c')).strip()
                     value = demand_per_cut
                     if b_type_spec == 'B':
                         value = value / CORRUGATE_MULTIPLIERS['B'] * CORRUGATE_MULTIPLIERS['E']
-                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
+                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
 
                 if material_specs.get('middle'):
                     material = str(material_specs.get('middle')).strip()
                     value = demand_per_cut / type_demand_divisor
-                    roll_info['middle_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
+                    roll_info['middle_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
 
                 if material_specs.get('b') and b_type_spec == 'B':
                     material = str(material_specs.get('b')).strip()
                     value = demand_per_cut
                     if c_type_spec == 'C':
                         value = (value / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['B']
-                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
+                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
                 elif material_specs.get('b') and b_type_spec == 'E':
                     material = str(material_specs.get('b')).strip()
                     value = demand_per_cut
                     if c_type_spec == 'C':
                         value = (value / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['E']
-                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
+                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
 
                 if material_specs.get('back'):
                     material = str(material_specs.get('back')).strip()
                     value = demand_per_cut / type_demand_divisor
-                    roll_info['back_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids)
+                    roll_info['back_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
 
             cut_info = {
                 "roll_w": variables.get("roll_w"),
