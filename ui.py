@@ -302,9 +302,9 @@ class CuttingOptimizerUI(QMainWindow):
         self.run_button.setEnabled(False) # ป้องกันการคลิกซ้ำ
 
         # --- Phase 1: Request all threads to stop ---
-        # if hasattr(self, 'worker') and self.worker.isRunning():
-        #     self.log_message("กำลังส่งคำขอหยุดการคำนวณ...")
-        #     self.worker.requestInterruption()
+        if hasattr(self, 'worker') and self.worker.isRunning():
+            self.log_message("กำลังส่งคำขอหยุดการคำนวณ...")
+            self.worker.requestInterruption()
         if hasattr(self, 'order_manager'):
             self.order_manager.stop()
         if hasattr(self, 'stock_manager'):
@@ -314,8 +314,8 @@ class CuttingOptimizerUI(QMainWindow):
 
         # --- Phase 2: Wait for all threads to finish gracefully ---
         threads_to_wait = []
-        # if hasattr(self, 'worker') and self.worker.isRunning():
-        #     threads_to_wait.append(("Worker", self.worker))
+        if hasattr(self, 'worker') and self.worker.isRunning():
+            threads_to_wait.append(("Worker", self.worker))
         if hasattr(self, 'order_thread') and self.order_thread.isRunning():
             threads_to_wait.append(("Order Manager", self.order_thread))
         if hasattr(self, 'stock_thread') and self.stock_thread.isRunning():
