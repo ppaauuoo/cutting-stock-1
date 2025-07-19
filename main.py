@@ -47,16 +47,15 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     position = 0
 
     last_roll_id = last_used_roll_ids.get((width, material, position))
-    if order_number and order_number in seen_orders:
+    if order_number and (order_number, material) in seen_orders:
         # This is a recurrent order, so try to use the last roll for this material.
         position+=1
         last_roll_id = last_used_roll_ids.get((width, material, position))
 
-    # Mark this order number as seen for subsequent items.
-    # TODO: check material too because within the same order number can we can have different materials, results in different last roll AI! 
+    # Mark this order number and material combination as seen for subsequent items.
     # This allows us to track which orders have been processed and avoid reusing rolls unnecessarily.
     if order_number:
-        seen_orders.add(order_number)
+        seen_orders.add((order_number, material))
     if last_roll_id:
         # Find the last roll in the list of all rolls for this material.
         last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
