@@ -10,6 +10,7 @@ from math import floor
 import polars as pl
 from PyQt5.QtCore import (
     QDate,
+    QDateTime,
     QLocale,
     Qt,
     QTextCodec,
@@ -209,6 +210,10 @@ class CuttingOptimizerUI(QMainWindow):
         self.export_button = QPushButton("ส่งออกเป็น CSV")
         self.export_button.clicked.connect(self.export_results_to_csv)
         buttons_layout.addWidget(self.export_button)
+
+        self.clear_button = QPushButton("ล้างผลลัพธ์")
+        self.clear_button.clicked.connect(self.clear_results)
+        buttons_layout.addWidget(self.clear_button)
         
         layout.addLayout(buttons_layout)
         
@@ -289,12 +294,13 @@ class CuttingOptimizerUI(QMainWindow):
 
     def update_order_data(self, order_df):
         """อัปเดต DataFrame ออเดอร์ที่ทำความสะอาดแล้ว"""
+        timestamp = QDateTime.currentDateTime().toString("hh:mm:ss")
         if order_df is not None:
             self.cleaned_orders_df = order_df
-            self.log_message("🔄 อัปเดตข้อมูลออเดอร์เรียบร้อยแล้ว")
+            self.log_message(f"[{timestamp}] 🔄 อัปเดตข้อมูลออเดอร์เรียบร้อยแล้ว")
         else:
             self.cleaned_orders_df = None # หรือ pl.DataFrame()
-            self.log_message("ℹ️ ข้อมูลออเดอร์ว่างเปล่าหรือไม่สามารถโหลดได้")
+            self.log_message(f"[{timestamp}] ℹ️ ข้อมูลออเดอร์ว่างเปล่าหรือไม่สามารถโหลดได้")
 
     def closeEvent(self, event):
         """หยุดการทำงานของ worker threads อย่างถูกต้องเมื่อปิดโปรแกรม"""
@@ -759,6 +765,18 @@ class CuttingOptimizerUI(QMainWindow):
                 sender_thread.terminate()
                 sender_thread.wait()
             sender_thread.deleteLater()
+
+    def clear_results(self):
+        """Clears the results table and resets related data."""
+        reply = QMessageBox.question(self, 'ยืนยันการล้างผลลัพธ์',
+                                     "คุณแน่ใจหรือไม่ว่าต้องการล้างผลลัพธ์ทั้งหมด?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            self.results_data.clear()
+            self.processed_order_numbers.clear()
+            self.result_table.setRowCount(0)
+            self.log_message("🧹 ผลลัพธ์ทั้งหมดถูกล้างแล้ว")
 
     def export_results_to_csv(self):
         """ส่งออกข้อมูลในตารางผลลัพธ์ไปยังไฟล์ CSV"""
