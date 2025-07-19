@@ -43,14 +43,15 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     # We only apply roll continuation logic for orders that have appeared before in this run.
     # We track seen orders within the stateful `last_used_roll_ids` dictionary.
     seen_orders = last_used_roll_ids.setdefault('_seen_orders', set())
-    # make position a parameter to allow for sequential roll usage AI!
-    # position = last_used_roll_ids.setdefault('_position', 0) 
-    position = 0
+    
+    # Get the current roll position for this specific material. It's stored in the dictionary.
+    position_key = ('_position', width, material)
+    position = last_used_roll_ids.get(position_key, 0)
 
     last_roll_id = last_used_roll_ids.get((width, material, position))
     if order_number and (order_number, material) in seen_orders:
-        # This is a recurrent order, so try to use the last roll for this material.
-        position+=1
+        # This is a recurrent order, so we advance our position to look for the next roll.
+        position += 1
         last_roll_id = last_used_roll_ids.get((width, material, position))
 
     # Mark this order number and material combination as seen for subsequent items.
@@ -92,6 +93,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                     supp_roll['length'] -= needed_from_another
                     
                     last_used_roll_ids[(width, material, position)] = supp_roll_id
+                    last_used_roll_ids[position_key] = position
                     
                     used_roll_ids.add(last_roll_id)
                     used_roll_ids.add(supp_roll_id)
@@ -119,6 +121,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                                 supp2['length'] -= needed_from_supp2
                                 
                                 last_used_roll_ids[(width, material, position)] = supp2_id
+                                last_used_roll_ids[position_key] = position
                                 
                                 used_roll_ids.add(last_roll_id)
                                 used_roll_ids.add(supp1_id)
@@ -141,6 +144,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
             used_roll_ids.add(roll_id)
             # Set this as the new last used roll for this material.
             last_used_roll_ids[(width, material, position)] = roll_id
+            last_used_roll_ids[position_key] = position
             return f"-> เปิดม้วนใหม่: {roll_id} (ยาว {int(roll_length)} ม., เหลือ {int(roll['length'])} ม.)"
 
     # 2. If no single roll is sufficient, try to combine two new rolls.
@@ -164,6 +168,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                         roll2['length'] -= needed_from_roll2
                         
                         last_used_roll_ids[(width, material, position)] = roll2_id
+                        last_used_roll_ids[position_key] = position
                         
                         used_roll_ids.add(roll1_id)
                         used_roll_ids.add(roll2_id)
@@ -197,6 +202,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                             roll3['length'] -= needed_from_roll3
                             
                             last_used_roll_ids[(width, material, position)] = roll3_id
+                            last_used_roll_ids[position_key] = position
                             
                             used_roll_ids.add(roll1_id)
                             used_roll_ids.add(roll2_id)
