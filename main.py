@@ -43,6 +43,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     # We only apply roll continuation logic for orders that have appeared before in this run.
     # We track seen orders within the stateful `last_used_roll_ids` dictionary.
     seen_orders = last_used_roll_ids.setdefault('_seen_orders', set())
+    # make position a parameter to allow for sequential roll usage AI!
     # position = last_used_roll_ids.setdefault('_position', 0) 
     position = 0
 
