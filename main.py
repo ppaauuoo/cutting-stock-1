@@ -1,6 +1,5 @@
 import asyncio
-import sys
-from pathlib import Path
+import os
 from typing import Callable, Optional
 
 import polars as pl
@@ -19,424 +18,567 @@ from pulp import (
 
 import cleaning
 
+
+def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None) -> str:
+    """
+    Finds a suitable roll, prioritizing the last used roll for the same material to ensure sequential use.
+    If one roll is not enough, it tries to combine with another available roll.
+    """
+    if not material or not width:
+        return ""
+
+    material_rolls_dict = roll_specs.get(str(width), {}).get(material, {})
+    if not material_rolls_dict:
+        return "-> (ไม่มีข้อมูลสต็อก)"
+
+    # Get available rolls, sorted by length.
+    all_available_rolls = sorted(material_rolls_dict.items(), key=lambda item: item[1]['length'])
+    
+    # Filter out already used rolls for this specific cut.
+    unused_rolls = [
+        (k, r) for k, r in all_available_rolls if r.get('id') not in used_roll_ids
+    ]
+
+    # --- New Logic: Prioritize last used roll for this material ---
+    # We only apply roll continuation logic for orders that have appeared before in this run.
+    # We track seen orders within the stateful `last_used_roll_ids` dictionary.
+    seen_orders = last_used_roll_ids.setdefault('_seen_orders', set())
+    
+    # Get the current roll position for this specific material.
+    position_key = ('_position', width, material)
+    last_order_key = ('_last_order', width, material)
+    last_order_number = last_used_roll_ids.get(last_order_key)
+
+    # If the order number is new for this material, reset the position.
+    # Otherwise, load the last known position.
+    if order_number and order_number != last_order_number:
+        position = 0
+    else:
+        position = last_used_roll_ids.get(position_key, 0)
+
+    last_roll_id = last_used_roll_ids.get((width, material, position))
+    if order_number and (order_number, material) in seen_orders:
+        # This is a recurrent order, so we advance our position to look for the next roll.
+        position += 1
+        last_roll_id = last_used_roll_ids.get((width, material, position))
+
+    # Mark this order number and material combination as seen for subsequent items.
+    # This allows us to track which orders have been processed and avoid reusing rolls unnecessarily.
+    if order_number:
+        seen_orders.add((order_number, material))
+    if last_roll_id:
+        # Find the last roll in the list of all rolls for this material.
+        last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
+
+        if last_roll_data and last_roll_id not in used_roll_ids:
+            _last_roll_key, last_roll = last_roll_data
+            
+            # Case 1: The last used roll is sufficient by itself.
+            if last_roll['length'] >= required_length:
+                original_length = last_roll['length']
+                last_roll['length'] -= required_length
+                used_roll_ids.add(last_roll_id)
+                # The last used roll remains the same.
+                return f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_length)} ม., เหลือ {int(last_roll['length'])} ม.)"
+            
+            # Case 2: The last used roll is not sufficient (or is empty), try to combine it with other rolls.
+            else:
+                needed_from_another = required_length - last_roll['length']
+                original_len_roll1 = last_roll['length']
+                
+                # Find supplementary rolls from the unused rolls (excluding the last_roll itself).
+                supplement_rolls = [(k, r) for k, r in unused_rolls if r.get('id') != last_roll_id]
+                
+                # 2a. Find a single supplementary roll that can cover the remaining requirement.
+                best_supplement = next(( (k, r) for k, r in sorted(supplement_rolls, key=lambda item: item[1]['length'], reverse=True) if r['length'] >= needed_from_another), None)
+
+                if best_supplement:
+                    _supp_key, supp_roll = best_supplement
+                    original_len_roll2 = supp_roll['length']
+                    supp_roll_id = supp_roll['id']
+
+                    last_roll['length'] = 0
+                    supp_roll['length'] -= needed_from_another
+                    
+                    last_used_roll_ids[(width, material, position)] = supp_roll_id
+                    last_used_roll_ids[position_key] = position
+                    last_used_roll_ids[last_order_key] = order_number
+                    
+                    used_roll_ids.add(last_roll_id)
+                    used_roll_ids.add(supp_roll_id)
+                    
+                    return (f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_len_roll1)} ม., ใช้หมด) "
+                            f"+ {supp_roll_id} (ยาว {int(original_len_roll2)} ม., เหลือ {int(supp_roll['length'])} ม.)")
+
+                # 2b. If no single supplement roll is sufficient, try combining with two supplementary rolls.
+                if len(supplement_rolls) >= 2:
+                    for i in range(len(supplement_rolls)):
+                        for j in range(i + 1, len(supplement_rolls)):
+                            supp1_key, supp1 = supplement_rolls[i]
+                            supp2_key, supp2 = supplement_rolls[j]
+
+                            supp1_id = supp1.get('id')
+                            supp1_length = supp1.get('length', 0)
+                            supp2_id = supp2.get('id')
+                            supp2_length = supp2.get('length', 0)
+
+                            if supp1_id and supp2_id and (supp1_length + supp2_length >= needed_from_another):
+                                needed_from_supp2 = needed_from_another - supp1_length
+                                
+                                last_roll['length'] = 0
+                                supp1['length'] = 0
+                                supp2['length'] -= needed_from_supp2
+                                
+                                last_used_roll_ids[(width, material, position)] = supp2_id
+                                last_used_roll_ids[position_key] = position
+                                last_used_roll_ids[last_order_key] = order_number
+                                
+                                used_roll_ids.add(last_roll_id)
+                                used_roll_ids.add(supp1_id)
+                                used_roll_ids.add(supp2_id)
+                                
+                                return (f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_len_roll1)} ม., ใช้หมด) "
+                                        f"+ {supp1_id} (ยาว {int(supp1_length)} ม., ใช้หมด) "
+                                        f"+ {supp2_id} (ยาว {int(supp2_length)} ม., เหลือ {int(supp2['length'])} ม.)")
+            
+            # If we're here, the locked roll exists but we couldn't find enough supplementary rolls.
+            return "-> (สต็อกไม่พอสำหรับม้วนที่ล็อคไว้)"
+
+    # --- Fallback to original logic if last used roll wasn't applicable ---
+    # 1. Try to find a single new roll that is sufficient.
+    for roll_key, roll in unused_rolls:
+        roll_id = roll.get('id')
+        roll_length = roll.get('length', 0)
+        if roll_id and roll_length >= required_length:
+            roll['length'] -= required_length
+            used_roll_ids.add(roll_id)
+            # Set this as the new last used roll for this material.
+            last_used_roll_ids[(width, material, position)] = roll_id
+            last_used_roll_ids[position_key] = position
+            last_used_roll_ids[last_order_key] = order_number
+            return f"-> เปิดม้วนใหม่: {roll_id} (ยาว {int(roll_length)} ม., เหลือ {int(roll['length'])} ม.)"
+
+    # 2. If no single roll is sufficient, try to combine two new rolls.
+    if len(unused_rolls) >= 2:
+        for i in range(len(unused_rolls)):
+            for j in range(i + 1, len(unused_rolls)):
+                roll1_key, roll1 = unused_rolls[i]
+                roll2_key, roll2 = unused_rolls[j]
+
+                roll1_id = roll1.get('id')
+                roll1_length = roll1.get('length', 0)
+                roll2_id = roll2.get('id')
+                roll2_length = roll2.get('length', 0)
+
+                if roll1_id and roll2_id:
+                    combined_length = roll1_length + roll2_length
+                    if combined_length >= required_length:
+                        needed_from_roll2 = required_length - roll1_length
+                        
+                        roll1['length'] = 0
+                        roll2['length'] -= needed_from_roll2
+                        
+                        last_used_roll_ids[(width, material, position)] = roll2_id
+                        last_used_roll_ids[position_key] = position
+                        last_used_roll_ids[last_order_key] = order_number
+                        
+                        used_roll_ids.add(roll1_id)
+                        used_roll_ids.add(roll2_id)
+                        
+                        return (f"-> เปิดม้วนใหม่: {roll1_id} (ยาว {int(roll1_length)} ม., ใช้หมด) "
+                                f"+ {roll2_id} (ยาว {int(roll2_length)} ม., เหลือ {int(roll2['length'])} ม.)")
+
+    # 3. If two rolls are not sufficient, try to combine three new rolls.
+    if len(unused_rolls) >= 3:
+        for i in range(len(unused_rolls)):
+            for j in range(i + 1, len(unused_rolls)):
+                for k in range(j + 1, len(unused_rolls)):
+                    roll1_key, roll1 = unused_rolls[i]
+                    roll2_key, roll2 = unused_rolls[j]
+                    roll3_key, roll3 = unused_rolls[k]
+
+                    roll1_id = roll1.get('id')
+                    roll1_length = roll1.get('length', 0)
+                    roll2_id = roll2.get('id')
+                    roll2_length = roll2.get('length', 0)
+                    roll3_id = roll3.get('id')
+                    roll3_length = roll3.get('length', 0)
+
+                    if roll1_id and roll2_id and roll3_id:
+                        combined_length = roll1_length + roll2_length + roll3_length
+                        if combined_length >= required_length:
+                            needed_from_roll3 = required_length - roll1_length - roll2_length
+                            
+                            roll1['length'] = 0
+                            roll2['length'] = 0
+                            roll3['length'] -= needed_from_roll3
+                            
+                            last_used_roll_ids[(width, material, position)] = roll3_id
+                            last_used_roll_ids[position_key] = position
+                            last_used_roll_ids[last_order_key] = order_number
+                            
+                            used_roll_ids.add(roll1_id)
+                            used_roll_ids.add(roll2_id)
+                            used_roll_ids.add(roll3_id)
+                            
+                            return (f"-> เปิดม้วนใหม่: {roll1_id} (ยาว {int(roll1_length)} ม., ใช้หมด) "
+                                    f"+ {roll2_id} (ยาว {int(roll2_length)} ม., ใช้หมด) "
+                                    f"+ {roll3_id} (ยาว {int(roll3_length)} ม., เหลือ {int(roll3['length'])} ม.)")
+
+    return "-> (ไม่มีสต็อกที่พอ)"
+
+
 app = FastAPI()
 
-async def solve_linear_program(roll_paper_width: int, roll_paper_length: int, orders_df: pl.DataFrame, C: Optional[str] = None, B: Optional[str] = None) -> dict:
+CORRUGATE_MULTIPLIERS = {
+    "C": 1.45,
+    "B": 1.35,
+    "E": 1.25,
+}
+
+async def solve_linear_program(
+    roll_width: int,
+    roll_length: int,
+    orders_df: pl.DataFrame,
+    c_type: Optional[str] = None,  # New parameters for corrugate types
+    b_type: Optional[str] = None,  # New parameters for corrugate types
+) -> dict:
     """
     Solve a simple Linear Programming problem using PuLP for a given roll paper width
-    and available orders DataFrame.
+    and available orders DataFrame, considering different corrugate types.
     """
     # 1. Create the LP problem
     # The original objective seems to be related to minimizing trim waste
     # Therefore, change to LpMinimize
-    prob = LpProblem(f"LP Problem for Roll {roll_paper_width} with {roll_paper_length} length", LpMinimize)
+    prob = LpProblem(f"LP_Roll_{roll_width}x{roll_length}", LpMinimize)
 
     # 2. Create decision variables
     if orders_df.is_empty():
-        return {
-            "status": "Infeasible - No orders left",
-            "objective_value": None,
-            "variables": {},
-            "message": "No available orders to cut from."
-        }
+        return {"status": "Infeasible - No orders left", "message": "No available orders to cut from."}
 
-    orders_widths = orders_df['width'].to_list()
-    orders_lengths = orders_df['length'].to_list()
-    orders_quantity = orders_df['quantity'].to_list()
-    orders_types = orders_df['type'].to_list() # ดึงข้อมูลประเภททับเส้น
-    orders_comopnent_types = orders_df['component_type'].to_list() # ดึงข้อมูลประเภททับเส้น
+    most_demand_type = None
+    if c_type == 'C':
+        most_demand_type = 'C'
+    elif b_type == 'B':
+        most_demand_type = 'B'
+    elif 'E' in (c_type, b_type):
+        most_demand_type = 'E'
 
-    # Binary variable for selecting order width
-    # y_order_selection[j] = 1 if orders_widths[j] is selected, 0 otherwise
-    y_order_selection = LpVariable.dicts("select_order", range(len(orders_widths)), 0, 1, LpBinary)
+    widths = orders_df['width'].to_list()
+    lengths = orders_df['length'].to_list()
+    quantities = orders_df['quantity'].to_list()
+    types = orders_df['type'].to_list()
+    component_types = orders_df['component_type'].to_list()
 
-    # Variable z represents the number of times the selected order is cut
-    # Variable z represents the number of times the selected order is cut (across the width)
-    # Determine a suitable upper bound for z based on roll_paper_width and minimum order width
-    # แก้ไขการหา min_order_width_positive ให้เปลี่ยนเปอร์เซ็นต์เป็นจำนวนจริง
-    non_zero_widths = [w for w in orders_widths if w > 0]
-    min_order_width_positive = min(non_zero_widths) if non_zero_widths else 1
-    max_possible_cuts_z = int(roll_paper_width / min_order_width_positive) if min_order_width_positive > 0 else 1000
-    z = LpVariable("num_cuts", 0, max_possible_cuts_z, LpInteger) # z >= 0, should be an integer
+    num_orders = len(widths)
+    # y[j] = 1 if order j is selected, 0 otherwise
+    y = LpVariable.dicts("select_order", range(num_orders), cat=LpBinary)
 
-    # M_UPPER_BOUND_Z for linearization of product z * y_order_selection[j]
-    # This M should be the upper bound of z, so we use max_possible_cuts_z
-    M_UPPER_BOUND_Z_FOR_LINEARIZATION = max_possible_cuts_z
+    # z = number of times the selected order is cut across the width
+    non_zero_widths = [w for w in widths if w > 0]
+    min_width = min(non_zero_widths) if non_zero_widths else 1
+    max_z = int(roll_width / min_width) if min_width > 0 else 1000
+    z = LpVariable("num_cuts", 0, max_z, LpInteger)
 
-    # Auxiliary variables for linearization of product z * y_order_selection[j]
-    # z_effective_cut_width_part[j] will be equal to z if y_order_selection[j] is 1, otherwise it will be 0
-    z_effective_cut_width_part = LpVariable.dicts("z_effective_cut_part", range(len(orders_widths)), 0, None)
+    # M for Big-M method linearization
+    M = max_z
+
+    # z_width[j] = z if order j is selected, otherwise 0
+    z_width = LpVariable.dicts("z_width_part", range(num_orders), 0, None)
 
     # 3. Define constraints
-    # Select only one order length
-    prob += lpSum(y_order_selection[j] for j in range(len(orders_widths))) == 1, "Constraint_SelectOneOrder"
+    # Select only one order
+    prob += lpSum(y[j] for j in range(num_orders)) == 1, "SelectOneOrder"
 
-    # Constraints for linearization of z * y_order_selection[j]
-    # For each order j, z_effective_cut_width_part[j] = y_order_selection[j] * z
-    for j in range(len(orders_widths)):
-        prob += z_effective_cut_width_part[j] <= z, f"Linearize_Wj_1_{j}"
-        prob += z_effective_cut_width_part[j] <= M_UPPER_BOUND_Z_FOR_LINEARIZATION * y_order_selection[j], f"Linearize_Wj_2_{j}"
-        prob += z_effective_cut_width_part[j] >= z - M_UPPER_BOUND_Z_FOR_LINEARIZATION * (1 - y_order_selection[j]), f"Linearize_Wj_3_{j}"
-        prob += z_effective_cut_width_part[j] >= 0, f"Linearize_Wj_4_{j}" # Ensure it's non-negative
-        prob += z_effective_cut_width_part[j] <= 6, f"Linearize_Wj_5_{j}" 
-        # prob += (orders_lengths[j]*orders_quantity[j])/z_effective_cut_width_part[j] <= 100, f"Linearize_Wj_5_{j}" 
+    # Linearization constraints for z_width[j] = y[j] * z
+    for j in range(num_orders):
+        prob += z_width[j] <= z, f"Linearize_Z_1_{j}"
+        prob += z_width[j] <= M * y[j], f"Linearize_Z_2_{j}"
+        prob += z_width[j] >= z - M * (1 - y[j]), f"Linearize_Z_3_{j}"
+        prob += z_width[j] >= 0, f"Linearize_Z_4_{j}"
+        prob += z_width[j] <= 6, f"MaxCutsAcrossWidth_{j}" # TODO: This seems to be a hardcoded business rule.
 
-        # เพิ่มเงื่อนไขการจำกัด z เมื่อประเภททับเส้นเป็น 'X'
-        if orders_types[j] == 'X' or orders_comopnent_types[j] == 'X':
-            # สร้าง constraint: หากเลือกออเดอร์นี้ (y==1) ให้ z <=5
-            # ใช้ Big-M method: z <= 5 + M * (1 - y_order_selection[j])
-            prob += (
-                z <= 5 + M_UPPER_BOUND_Z_FOR_LINEARIZATION * (1 - y_order_selection[j]),
-                f"MaxZConstraint_TypeX_Order_{j}"
-            )
+        # If order type is 'X', limit z to 5 cuts
+        if 'X' in (types[j], component_types[j]):
+            prob += z <= 5 + M * (1 - y[j]), f"MaxZ_TypeX_{j}"
 
-    # Define the selected roll paper width and the total length of cut orders
-    selected_roll_width = roll_paper_width # Use the roll paper width passed as input directly
-    selected_roll_length = roll_paper_length # Use the roll paper length passed as input directly
-    effective_order_cut_width = lpSum(orders_widths[j] * z_effective_cut_width_part[j] for j in range(len(orders_widths)))
-    effective_order_cut_length = lpSum(
-        (
-            (orders_lengths[j] * 25.4 / 100)
-            * orders_quantity[j]
-            * (
-                (1.45 if C else 1.35 if B else 1.0)
-            )
-            * y_order_selection[j]
-        )
-        for j in range(len(orders_widths))
+    total_cut_width = lpSum(widths[j] * z_width[j] for j in range(num_orders))
+
+    # 4. Define objective function and related constraints
+    corr_multiplier = CORRUGATE_MULTIPLIERS.get(most_demand_type, 1.0)
+    
+    # Total length of material required for the selected order (using .get with a default value)
+    # The sum will effectively pick the one order where y[j]=1
+    total_order_len = lpSum(
+        (lengths[j] * 25.4 / 100 * quantities[j] * corr_multiplier * y[j])
+        for j in range(num_orders)
     )
 
-    # 4. Define objective function
     # Objective: Minimize trim waste
-    # Waste = selected_roll_width - effective_order_cut_width
-    prob += selected_roll_width - effective_order_cut_width, "Objective_MinimizeTrim"
+    trim_waste = roll_width - total_cut_width
+    prob += trim_waste, "MinimizeTrim"
 
-    # 5. Define constraints (originally: -1 < trim < 5)
-    # Since trim should not be negative (cut length should not exceed roll paper length)
-    # And to be a Linear Program, it must be split into 2 constraints
-    prob += selected_roll_width - effective_order_cut_width >= 1, "Constraint_Trim_LowerBound"
-    prob += selected_roll_width - effective_order_cut_width <= 5, "Constraint_Trim_UpperBound"
+    # Constraints
+    prob += trim_waste >= 1, "TrimLowerBound"
+    prob += trim_waste <= 5, "TrimUpperBound"
     
-    prob += selected_roll_length * z - effective_order_cut_length  >= 100, "Constraint_Length_LowerBound"
-    
-    # Add constraint that cut length must not exceed roll paper length (waste must not be negative)
-    prob += effective_order_cut_width <= selected_roll_width, "Constraint_CutsMustFit"
+    # Remaining length on roll must be at least 100
+    prob += roll_length * z - total_order_len >= 100, "RemainingLengthLowerBound"
 
-    # 6. Solve the problem (แก้ไขส่วนนี้)
+    # 5. Solve the problem
     try:
-        solver = PULP_CBC_CMD(msg=False)  # ระบุ solver อย่างชัดเจน
-        prob.solve(solver)  # แก้จาก prob.solve() เป็น prob.solve(solver)
-        
-        # ตรวจสอบสถานะการแก้ปัญหา
-        # if prob.status != LpStatus.Optimal:  # 1 = Optimal
-        #     status_str = LpStatus[prob.status]
-        #     return {
-        #         "status": f"Solution Status: {status_str}",
-        #         "objective_value": None,
-        #         "variables": {},
-        #         "message": f"Failed to find optimal solution: {status_str}"
-        #     }
+        prob.solve(PULP_CBC_CMD(msg=False))
     except Exception as e:
-        return {
-            "status": "Solver Error",
-            "objective_value": None,
-            "variables": {},
-            "message": f"Solver failed: {str(e)}"
-        }
+        return {"status": "Solver Error", "message": f"Solver failed: {str(e)}"}
     
-    # 7. Retrieve and format results
-    return await _get_lp_solution_details(
-        prob,
-        y_order_selection,
-        z,
-        orders_df,
-        roll_paper_width,
-        roll_paper_length,
-        effective_order_cut_length
+    # 6. Retrieve and format results
+    return await _format_lp_solution(
+        prob, y, z, orders_df, roll_width, roll_length, total_order_len, c_type, b_type
     )
 
-async def _get_lp_solution_details(
-    prob: LpProblem,
-    y_order_selection: dict,
-    z: LpVariable,
-    orders_df: pl.DataFrame,
-    roll_paper_width: int,
-    roll_paper_length: int,
-    effective_order_cut_length: LpVariable
+async def _format_lp_solution(
+    prob: LpProblem, y: dict, z: LpVariable, orders_df: pl.DataFrame,
+    roll_width: int, roll_length: int, total_order_len: LpVariable,
+    c_type: Optional[str], b_type: Optional[str]
 ) -> dict:
-    """
-    Extracts and formats the results from the solved PuLP problem.
-    """
+    """Formats the results from the solved PuLP problem."""
     status = LpStatus[prob.status]
-    objective_value = round(value(prob.objective), 4) if value(prob.objective) is not None else None
+    obj_val = round(value(prob.objective), 4) if value(prob.objective) is not None else None
 
-    selected_order_idx = -1
-    # orders_df.shape[0] is the total number of orders in the DataFrame, which is equivalent to len(orders_widths)
-    for j in range(orders_df.shape[0]):
-        if y_order_selection[j].varValue == 1:
-            selected_order_idx = j
-            break
+    sel_idx = next((j for j, v in y.items() if v.varValue == 1), -1)
+    
+    if sel_idx == -1:
+        return {"status": status, "message": "No optimal solution found or order selected."}
 
-    actual_z_value = z.varValue if z.varValue is not None else 0
+    z_val = z.varValue or 0
+    orders_data = orders_df.to_dicts()
+    sel_order = orders_data[sel_idx]
 
-    actual_selected_roll_width = roll_paper_width
-    # Access order details using orders_df directly
-    orders_data = orders_df.to_dicts() # Convert to list of dictionaries for easier access by index
-    actual_selected_order_width = orders_data[selected_order_idx]['width'] if selected_order_idx != -1 else None
-    actual_selected_order_length = orders_data[selected_order_idx]['length'] if selected_order_idx != -1 else None
-    actual_selected_order_quantity = orders_data[selected_order_idx]['quantity'] if selected_order_idx != -1 else None
+    sel_order_w = sel_order.get('width')
+    
+    total_len_val = value(total_order_len) or 0
+    demand_per_cut = round(total_len_val / z_val, 4) if z_val > 0 else 0
+    rem_roll_len = round(roll_length - demand_per_cut, 4)
+    trim = round(roll_width - (sel_order_w * z_val), 4) if sel_order_w else None
 
-    # Calculate actual_selected_order_demand from effective_order_cut_length
-    # This represents the total length (length * quantity) for the selected order
-    actual_selected_order_total_length = value(effective_order_cut_length) if selected_order_idx != -1 else 0
-
-    # Calculate the demand per effective cut (as per user's request for calculation)
-    # This calculation should only happen if actual_z_value is valid and not zero
-    calculated_effective_demand_per_cut = None
-    if actual_selected_order_length is not None and actual_selected_order_quantity is not None and actual_z_value is not None and actual_z_value > 0:
-        calculated_effective_demand_per_cut = round(actual_selected_order_total_length / actual_z_value, 4)
-
-    actual_remaining_roll_length = round(roll_paper_length - (calculated_effective_demand_per_cut if calculated_effective_demand_per_cut is not None else 0), 4)
-
-
-    selected_order_original_index = None
-    if selected_order_idx != -1:
-        selected_order_original_index = orders_data[selected_order_idx]['original_idx']
-
-    actual_trim = None
-    if actual_selected_roll_width is not None and actual_selected_order_width is not None and actual_z_value is not None:
-        actual_trim = round(actual_selected_roll_width - (actual_selected_order_width * actual_z_value), 4)
-
-    # เพิ่มการดึงข้อมูลวัสดุจาก orders_df
-    material_specs = {}
-    if selected_order_idx != -1 and orders_data[selected_order_idx]:
-        for key in ['front', 'C', 'middle', 'B', 'back']:
-            # เปลี่ยนชื่อตัวแปร 'value' เป็น 'material_value' เพื่อหลีกเลี่ยงการชนกับฟังก์ชัน pulp.value
-            material_value = orders_data[selected_order_idx].get(key)
-            if material_value:
-                material_specs[key] = material_value
-
-    # เพิ่มการดึงข้อมูลประเภททับเส้นและชนิดส่วนประกอบ
-    type_value = orders_data[selected_order_idx].get('type') if selected_order_idx != -1 else None
-    component_type_value = orders_data[selected_order_idx].get('component_type') if selected_order_idx != -1 else None
+    material_keys = ['demand', 'front', 'middle', 'back', 'c', 'b', 'die_cut']
+    material_specs = {key: sel_order.get(key) for key in material_keys if sel_order.get(key)}
+    material_specs.update({'c_type': c_type, 'b_type': b_type})
 
     return {
         "status": status,
-        "objective_value": objective_value,
+        "objective_value": obj_val,
         "variables": {
-            "selected_roll_width": actual_selected_roll_width,
-            "selected_roll_length": actual_remaining_roll_length, # This is the remaining length of the roll
-            "demand": calculated_effective_demand_per_cut, # ความยาวที่ใช้ไปต่อการตัด 1 ครั้ง
-            "selected_order_width": actual_selected_order_width,
-            "selected_order_length": actual_selected_order_length,
-            "selected_order_quantity": actual_selected_order_quantity,
-            "num_cuts_z": actual_z_value,
-            "calculated_trim": actual_trim, # Display calculated trim value
-            "selected_order_original_index": selected_order_original_index, # Add original_idx of the selected order
-            "type": type_value,  # เพิ่มฟิลด์นี้
-            "component_type": component_type_value  # เพิ่มฟิลด์นี้
+            "roll_w": roll_width,
+            "rem_roll_l": rem_roll_len,
+            "demand_per_cut": demand_per_cut,
+            "order_w": sel_order_w,
+            "order_l": sel_order.get('length'),
+            "order_qty": sel_order.get('quantity'),
+            "order_dmd": sel_order.get('demand'),
+            "cuts": z_val,
+            "trim": trim,
+            "order_idx": sel_order.get('original_idx'),
+            "type": sel_order.get('type'),
+            "component_type": sel_order.get('component_type'),
         },
-        # เพิ่มฟิลด์ material_specs
         "material_specs": material_specs,
-        "message": "PuLP problem solved successfully. Note: This is a linearized formulation for a mixed-integer linear program."
+        "message": "PuLP problem solved successfully."
     }
 
 async def main_algorithm(
     roll_width: int,
     roll_length: int,
-    file_path: str = "order2024.csv", # เปลี่ยนเป็น order2024.csv เพราะจะโหลดและคลีนเอง
+    file_path: str = "order2024.csv",
     max_records: Optional[int] = 2000,
     progress_callback: Optional[Callable[[str], None]] = None,
-    start_date: Optional[str] = None,  # เพิ่มพารามิเตอร์นี้
-    end_date: Optional[str] = None,    # เพิ่มพารามิเตอร์นี้
-    front: Optional[str] = None,       # เพิ่มพารามิเตอร์สำหรับกรองวัสดุ
-    C: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    front: Optional[str] = None,
+    c_type: Optional[str] = None,
+    c: Optional[str] = None,
     middle: Optional[str] = None,
-    B: Optional[str] = None,
+    b_type: Optional[str] = None,
+    b: Optional[str] = None,
     back: Optional[str] = None,
+    roll_specs: Optional[dict] = None,
+    processed_orders: Optional[set] = None,
 ):
+    output_dir = "cache"
+    os.makedirs(output_dir, exist_ok=True)
+
     if progress_callback:
         progress_callback("⚙️ กำลังเริ่มการคำนวณ")
 
-    # โหลดและคลีนข้อมูลทั้งหมดพร้อมเพิ่ม original index column
-    full_orders_df = cleaning.clean_data(
+    orders_df = cleaning.clean_data(
         cleaning.load_data(file_path), 
         start_date,
         end_date,
-        front=front, # ส่งพารามิเตอร์วัสดุไปยัง cleaning.clean_data
-        C=C,
+        front=front,
+        c=c if c_type in ["C", "E"] else None,
         middle=middle,
-        B=B,
+        b=b if b_type in ["B", "E"] else None,
         back=back,
     )
+
+    if processed_orders:
+        orders_df = orders_df.filter(
+            ~pl.col("order_number").is_in(list(processed_orders))
+        )
+
     if progress_callback:
         progress_callback("📁 โหลดและจัดเรียงข้อมูลเรียบร้อย")
 
     if max_records:
-        full_orders_df = full_orders_df.head(max_records)
-    full_orders_df = full_orders_df.with_row_index("original_idx")
+        orders_df = orders_df.head(max_records)
+    orders_df = orders_df.with_row_index("original_idx")
     
-    # The widths of the paper rolls we have (can be changed or received from input)
-    ROLL_PAPER = [{"width": roll_width, "length": roll_length}]
+    rolls = [{"width": roll_width, "length": roll_length}]
+    all_results = []
 
-    all_cut_results = [] # Store all results from cutting all rolls
+    order_num_col_idx = orders_df.columns.index("order_number")
 
-    for roll in ROLL_PAPER:
+    for roll in rolls:
+        last_used_roll_ids = {}
         if progress_callback:
             progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
         
-        # Create a copy of the full orders DataFrame for the current roll
-        remaining_orders_df = full_orders_df.clone()
-        current_roll_cuts = [] # Store cutting results for the current roll
-
+        rem_orders_df = orders_df.clone()
+        roll_cuts = []
         iteration = 0
-        # Loop until no more orders can be cut from the current roll
-        while not remaining_orders_df.is_empty():
+        while not rem_orders_df.is_empty():
             iteration += 1
             if progress_callback:
-                progress_callback(f"  Iteration {iteration}: Remaining orders: {remaining_orders_df.shape[0]} items")
+                progress_callback(f"  Iteration {iteration}: Remaining orders: {rem_orders_df.shape[0]} items")
 
-            # Call the LP solving function
-            result = await solve_linear_program(roll['width'], roll['length'], remaining_orders_df, C, B)
+            if c is None : 
+                c_type = None
+            if b is None : 
+                b_type = None         
 
-            status = result["status"]
-            
-            # แจ้งข้อผิดพลาดหากมี
-            if "Error" in status or "Failed" in status or "Infeasible" in status:
+            result = await solve_linear_program(
+                roll['width'],
+                roll['length'],
+                rem_orders_df,
+                c_type=c_type,
+                b_type=b_type,
+            )
+
+            status = result.get("status")
+            if status != "Optimal":
                 if progress_callback:
-                    progress_callback(f"    ❌ {result['message']}")
+                    progress_callback(f"    ❌ {result.get('message', 'Non-optimal status')}")
                 break
             
-            selected_order_original_index = result["variables"].get("selected_order_original_index")
+            variables = result.get("variables", {})
+            order_idx = variables.get("order_idx")
 
-            if status == "Optimal":
-                if progress_callback:
-                    progress_callback(f"    Optimal solution found for roll {roll['width']}. Trim waste: {result['variables']['calculated_trim']:.4f}")
-                    progress_callback(f"    Selected order width: {result['variables']['selected_order_width']} (Original Index: {selected_order_original_index}), Number of cuts: {result['variables']['num_cuts_z']}")
+            if progress_callback:
+                progress_callback(f"    Optimal solution found. Trim: {variables.get('trim', 0):.4f}")
+                progress_callback(f"    Selected order width: {variables.get('order_w')} (Index: {order_idx}), Cuts: {variables.get('cuts')}")
 
-                # Store current cut information
-                # Get the order_number using the selected_order_original_index
-                order_number = None
-                if selected_order_original_index is not None:
-                    # Get the index of the "order_number" column
-                    order_number_col_idx = full_orders_df.columns.index("order_number")
-                    order_number = full_orders_df.row(int(selected_order_original_index))[order_number_col_idx]
-                
-                # ดึงค่า actual_z_value จาก result["variables"]
-                actual_z_value = result["variables"].get("num_cuts_z")
+            order_number = orders_df.row(int(order_idx))[order_num_col_idx] if order_idx is not None else None
+            
+            material_specs = result.get("material_specs", {})
+            variables = result.get("variables", {})
+            roll_info = {}
+            if roll_specs:
+                used_roll_ids_for_cut = set()
+                roll_w_str = str(variables.get("roll_w", "")).strip()
+                demand_per_cut = variables.get("demand_per_cut", 0)
+                c_type_spec = material_specs.get('c_type')
+                b_type_spec = material_specs.get('b_type')
 
-                cut_info = {
-                    "roll width": result["variables"]["selected_roll_width"],
-                    "roll length": result["variables"]["selected_roll_length"], # ความยาวคงเหลือของม้วน
-                    "demand": result["variables"]["demand"], # ความยาวที่ใช้ไปต่อการตัด 1 ครั้ง
-                    "order_number": order_number,
-                    "selected_order_width": result["variables"]["selected_order_width"],
-                    "selected_order_length": result["variables"]["selected_order_length"],
-                    "selected_order_quantity": result["variables"]["selected_order_quantity"],
-                    "num_cuts_z": actual_z_value, # ใช้ actual_z_value ที่ดึงมา
-                    "calculated_trim": result["variables"]["calculated_trim"],
-                    # เพิ่มข้อมูลวัสดุจาก result
-                    "front": result.get("material_specs", {}).get("front"),
-                    "C": result.get("material_specs", {}).get("C"),
-                    "middle": result.get("material_specs", {}).get("middle"),
-                    "B": result.get("material_specs", {}).get("B"),
-                    "back": result.get("material_specs", {}).get("back"),
-                    "type": result["variables"].get("type"),  # เพิ่มฟิลด์นี้
-                    "component_type": result["variables"].get("component_type")  # เพิ่มฟิลด์นี้
-                }
-                all_cut_results.append(cut_info)
-                current_roll_cuts.append(cut_info)
+                type_demand_divisor = 1.0
+                if c_type_spec == 'C':
+                    type_demand_divisor = CORRUGATE_MULTIPLIERS['C']
+                elif b_type_spec == 'B':
+                    type_demand_divisor = CORRUGATE_MULTIPLIERS['B']
+                elif c_type_spec == 'E' or b_type_spec == 'E':
+                    type_demand_divisor = CORRUGATE_MULTIPLIERS['E']
 
-                roll['length'] = result["variables"]["selected_roll_length"] # Update roll length after cuts
+                if material_specs.get('front'):
+                    material = str(material_specs.get('front')).strip()
+                    value = demand_per_cut / type_demand_divisor
+                    roll_info['front_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
 
-                # Remove the selected order from the remaining orders DataFrame
-                if selected_order_original_index is not None:
-                    remaining_orders_df = remaining_orders_df.filter(
-                        pl.col("original_idx") != selected_order_original_index
-                    )
-                else:
-                    if progress_callback:
-                        progress_callback("    Warning: selected_order_original_index is None, cannot remove order.")
-                    break # Exit loop if order cannot be identified and removed
+                if material_specs.get('c') and c_type_spec == 'C':
+                    material = str(material_specs.get('c')).strip()
+                    value = demand_per_cut
+                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
+                elif material_specs.get('c') and c_type_spec == 'E':
+                    material = str(material_specs.get('c')).strip()
+                    value = demand_per_cut
+                    if b_type_spec == 'B':
+                        value = value / CORRUGATE_MULTIPLIERS['B'] * CORRUGATE_MULTIPLIERS['E']
+                    roll_info['c_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
 
-            elif "No orders left" in status:
-                if progress_callback:
-                    progress_callback(f"    No orders left for roll {roll['width']}.")
-                break # No more orders to process
+                if material_specs.get('middle'):
+                    material = str(material_specs.get('middle')).strip()
+                    value = demand_per_cut / type_demand_divisor
+                    roll_info['middle_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
+
+                if material_specs.get('b') and b_type_spec == 'B':
+                    material = str(material_specs.get('b')).strip()
+                    value = demand_per_cut
+                    if c_type_spec == 'C':
+                        value = (value / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['B']
+                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
+                elif material_specs.get('b') and b_type_spec == 'E':
+                    material = str(material_specs.get('b')).strip()
+                    value = demand_per_cut
+                    if c_type_spec == 'C':
+                        value = (value / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['E']
+                    roll_info['b_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
+
+                if material_specs.get('back'):
+                    material = str(material_specs.get('back')).strip()
+                    value = demand_per_cut / type_demand_divisor
+                    roll_info['back_roll_info'] = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
+
+            cut_info = {
+                "roll_w": variables.get("roll_w"),
+                "rem_roll_l": variables.get("rem_roll_l"),
+                "demand_per_cut": variables.get("demand_per_cut"),
+                "order_number": order_number,
+                "order_w": variables.get("order_w"),
+                "order_l": variables.get("order_l"),
+                "order_qty": variables.get("order_qty"),
+                "order_dmd": variables.get("order_dmd"),
+                "cuts": variables.get("cuts"),
+                "trim": variables.get("trim"),
+                "type": variables.get("type"),
+                "component_type": variables.get("component_type"),
+            }
+            cut_info.update(material_specs)  # Add all material specs
+            cut_info.update(roll_info)
+            all_results.append(cut_info)
+            roll_cuts.append(cut_info)
+
+            roll['length'] = variables.get("rem_roll_l")
+
+            if order_idx is not None:
+                rem_orders_df = rem_orders_df.filter(pl.col("original_idx") != order_idx)
             else:
                 if progress_callback:
-                    progress_callback(f"    Problem is infeasible or status is undefined for roll {roll['width']}.")
-                    progress_callback(f"    Status: {status}")
-                break # Cannot find solution for remaining orders with this roll
+                    progress_callback("    Warning: order_idx is None, cannot remove order. Stopping.")
+                break
 
-        # Save results for the current roll to a CSV file if cuts occurred
-        if current_roll_cuts:
-            output_df = pl.DataFrame(current_roll_cuts)
-            output_filename = f"roll_cut_results_{roll['width']}.csv"
+        # Save results for the current roll to a CSV file
+        if roll_cuts:
+            output_df = pl.DataFrame(roll_cuts)
+            output_filename = os.path.join(output_dir, f"roll_cut_results_{roll['width']}.csv")
             output_df.write_csv(output_filename)
             if progress_callback:
-                progress_callback(f"--- Saved {len(current_roll_cuts)} cut items for roll {roll['width']} to {output_filename} ---")
-        else:
-            if progress_callback:
-                progress_callback(f"--- No cuts made for roll {roll['width']} ---")
+                progress_callback(f"--- Saved {len(roll_cuts)} cuts for roll {roll['width']} to {output_filename} ---")
+        elif progress_callback:
+            progress_callback(f"--- No cuts made for roll {roll['width']} ---")
 
-        # Update the roll width based on the last selected order demand
-        # จุดนี้อาจจะผิด ถ้าต้องการอัปเดตความกว้างของม้วนกระดาษที่เหลือ
-        # แต่เดิมอัปเดตจาก selected_order_demand ซึ่งเป็นความยาว ไม่ใช่ความกว้าง
-        # การเปลี่ยน width ของ roll_paper ในลูปนี้อาจไม่ถูกต้องตามวัตถุประสงค์
-        # หากต้องการลดความยาวของม้วนที่เหลือ ต้องอัปเดต roll['length']
-        # selected_order_demand = result["variables"].get("selected_order_demand")
-        # roll['width'] = roll['width'] - selected_order_demand if selected_order_demand is not None else roll['width']
-        # ความยาวที่เหลือของม้วนจะถูกคำนวณและส่งกลับใน result['variables']['selected_roll_length'] แล้ว
-        # ดังนั้นไม่จำเป็นต้องอัปเดต roll['width'] ตรงนี้
-
-    # Optional: Save all cutting results from all rolls to a single CSV file
-    if all_cut_results:
-        final_output_df = pl.DataFrame(all_cut_results)
-        final_output_df.write_csv("all_cutting_plan_summary.csv")
+    # Save all cutting results to a single summary CSV file
+    if all_results:
+        final_output_df = pl.DataFrame(all_results)
+        final_output_df.write_csv(os.path.join(output_dir, "all_cutting_plan_summary.csv"))
         if progress_callback:
             progress_callback("💾 บันทึกผลลัพธ์ลงไฟล์ CSV เรียบร้อย")
     
-    return all_cut_results
-
-if __name__ == "__main__":
-    # Default values for CLI execution
-    default_roll_width = 75
-    default_roll_length = 111175
-    default_file_path = "order2024.csv" # เปลี่ยนเป็น order2024.csv
-    default_max_records = 200
-    default_start_date = None # เพิ่มค่าเริ่มต้น
-    default_end_date = None   # เพิ่มค่าเริ่มต้น
-    default_front = None      # เพิ่มค่าเริ่มต้นสำหรับวัสดุ
-    default_C = None
-    default_middle = None
-    default_B = None
-    default_back = None
-
-    print(f"Running cutting optimization with default parameters:")
-    print(f"  Roll Width: {default_roll_width}")
-    print(f"  Roll Length: {default_roll_length}")
-    print(f"  Order File: {default_file_path}")
-    print(f"  Max Records: {default_max_records}")
-    print(f"  Start Date: {default_start_date}")
-    print(f"  End Date: {default_end_date}")
-    print(f"  Front Material: {default_front}") # แสดงค่าเริ่มต้นสำหรับวัสดุ
-    print(f"  C Material: {default_C}")
-    print(f"  Middle Material: {default_middle}")
-    print(f"  B Material: {default_B}")
-    print(f"  Back Material: {default_back}")
-
-    asyncio.run(main_algorithm(
-        roll_width=default_roll_width,
-        roll_length=default_roll_length,
-        file_path=default_file_path,
-        max_records=default_max_records,
-        progress_callback=print, # Use print for CLI output
-        start_date=default_start_date,
-        end_date=default_end_date,
-        front=default_front, # ส่งค่าเริ่มต้นสำหรับวัสดุ
-        C=default_C,
-        middle=default_middle,
-        B=default_B,
-        back=default_back,
-    ))
+    return all_results
