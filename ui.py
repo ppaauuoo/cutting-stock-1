@@ -576,6 +576,18 @@ class CuttingOptimizerUI(QMainWindow):
     def run_next_calculation(self):
         if self.current_suggestion_index >= len(self.suggestions_list):
             self.log_message("✅ All suggestions processed. Automated calculation finished.")
+
+            if self.results_data:
+                self.log_message("Sorting final results by roll width...")
+                try:
+                    # Sort the results data in place by roll_w, treating it as an integer.
+                    self.results_data.sort(key=lambda r: int(r.get('roll_w', 0)))
+                    # Repopulate the table with the sorted data by calling append_results_to_table
+                    # with an empty list. This re-uses the existing repopulation logic.
+                    self.append_results_to_table([])
+                except (ValueError, TypeError) as e:
+                    self.log_message(f"⚠️ Could not sort results by roll width: {e}")
+
             self.run_button.setEnabled(True)
             self.progress_bar.setFormat("✅ Finished all tasks!")
             self._resume_background_threads()
