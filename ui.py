@@ -299,8 +299,7 @@ class CuttingOptimizerUI(QMainWindow):
 
     def update_order_data(self, order_df):
         """อัปเดต DataFrame ออเดอร์ที่ทำความสะอาดแล้ว"""
-        # the time stamp is in thai number, make it arabic number AI!
-        timestamp = QDateTime.currentDateTime().toString("hh:mm:ss")
+        timestamp = convert_thai_digits_to_arabic(QDateTime.currentDateTime().toString("hh:mm:ss"))
         if order_df is not None:
             self.cleaned_orders_df = order_df
             self.log_message(f"[{timestamp}] 🔄 อัปเดตข้อมูลออเดอร์เรียบร้อยแล้ว")
