@@ -262,6 +262,7 @@ class CuttingOptimizerUI(QMainWindow):
         
         # เพิ่มตัวแปรสำหรับเก็บข้อมูลผลลัพธ์ทั้งหมด
         self.results_data = []
+        self.display_data = []
         # เชื่อมต่อสัญญาณ enterPressed ของตารางไปยังเมธอดที่แสดงป๊อปอัป
         self.result_table.enterPressed.connect(self.show_row_details_popup)
         # เชื่อมต่อสัญญาณ doubleClicked ของตารางไปยังเมธอดที่แสดงป๊อปอัป
@@ -759,15 +760,15 @@ class CuttingOptimizerUI(QMainWindow):
 
         # Filter data based on UI controls
         if self.show_unprocessed_checkbox.isChecked():
-            display_data = self.results_data
+            self.display_data = self.results_data
         else:
-            display_data = [r for r in self.results_data if r.get('roll_w') != "Failed/Infeasible"]
+            self.display_data = [r for r in self.results_data if r.get('roll_w') != "Failed/Infeasible"]
 
         # Repopulate the entire table
         self.result_table.setRowCount(0)
-        self.result_table.setRowCount(len(display_data))
+        self.result_table.setRowCount(len(self.display_data))
 
-        for row_idx, result in enumerate(display_data):
+        for row_idx, result in enumerate(self.display_data):
             is_duplicate = id(result) not in best_results_ids
             is_unprocessed = result.get('roll_w') == "Failed/Infeasible"
 
@@ -1075,7 +1076,7 @@ class CuttingOptimizerUI(QMainWindow):
 
         row_index = selected_rows[0].row()
         try:
-            result = self.results_data[row_index]
+            result = self.display_data[row_index]
         except (IndexError, TypeError):
             result = {}
 
