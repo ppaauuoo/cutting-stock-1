@@ -522,19 +522,22 @@ class CuttingOptimizerUI(QMainWindow):
         try:
             cleaned_orders_df = self.cleaned_orders_df
 
-            # there was order that didnt start with 1218 again, maybe try filter with int? AI!
             # Filter orders based on factory selection
             selected_factory = self.factory_combo.currentText()
             if "order_number" in cleaned_orders_df.columns:
+                # Use a more robust numeric check for order number prefixes.
+                # Cast to string, strip whitespace, then check the numeric value of the prefix.
+                order_num_col = pl.col("order_number").cast(pl.Utf8).str.strip_chars()
+
                 if selected_factory in ["1", "2"]:
-                    self.log_message(f"🏭 Filtering orders for {selected_factory}. Only using orders starting with '1218'.")
+                    self.log_message(f"🏭 Filtering orders for factory {selected_factory}. Only using orders starting with '1218'.")
                     cleaned_orders_df = cleaned_orders_df.filter(
-                        pl.col("order_number").cast(pl.Utf8).str.strip_chars().str.starts_with("1218")
+                        order_num_col.str.slice(0, 4).str.to_integer(strict=False) == 1218
                     )
                 elif selected_factory in ["3", "4", "5"]:
                     self.log_message(f"🏭 Filtering orders for factory {selected_factory}. Only using orders starting with '{selected_factory}'.")
                     cleaned_orders_df = cleaned_orders_df.filter(
-                        pl.col("order_number").cast(pl.Utf8).str.strip_chars().str.starts_with(selected_factory)
+                        order_num_col.str.slice(0, 1).str.to_integer(strict=False) == int(selected_factory)
                     )
 
             material_cols = ['front', 'c', 'middle', 'b', 'back']
