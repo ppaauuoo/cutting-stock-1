@@ -516,14 +516,13 @@ class CuttingOptimizerUI(QMainWindow):
         try:
             cleaned_orders_df = self.cleaned_orders_df
 
-            # when i select 1, some time order with number starting with 6218 is showup, make sure it won't AI!
             # Filter orders based on factory selection
             selected_factory = self.factory_combo.currentText()
             if selected_factory in ["1", "2"]:
                 self.log_message(f"🏭 Filtering orders for {selected_factory}. Only using orders starting with '1218'.")
                 if "order_number" in cleaned_orders_df.columns:
                     cleaned_orders_df = cleaned_orders_df.filter(
-                        pl.col("order_number").cast(pl.Utf8).str.starts_with("1218")
+                        pl.col("order_number").cast(pl.Utf8).str.strip_chars().str.starts_with("1218")
                     )
 
             material_cols = ['front', 'c', 'middle', 'b', 'back']
