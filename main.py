@@ -537,6 +537,39 @@ async def main_algorithm(
         elif progress_callback:
             progress_callback(f"--- No cuts made for roll {roll['width']} ---")
 
+        if not rem_orders_df.is_empty():
+            if progress_callback:
+                progress_callback(f"    Adding {rem_orders_df.shape[0]} unprocessed orders to the results.")
+            
+            unprocessed_orders = rem_orders_df.to_dicts()
+            for order in unprocessed_orders:
+                unprocessed_result = {
+                    "roll_w": "Unprocessed",
+                    "rem_roll_l": 0,
+                    "demand_per_cut": 0,
+                    "order_number": order.get("order_number"),
+                    "order_w": order.get("width"),
+                    "order_l": order.get("length"),
+                    "order_qty": order.get("quantity"),
+                    "order_dmd": order.get("demand"),
+                    "cuts": 0,
+                    "trim": 0,
+                    "type": order.get("type"),
+                    "component_type": order.get("component_type"),
+                    "die_cut": order.get("die_cut"),
+                    "front": order.get("front"),
+                    "c": order.get("c"),
+                    "middle": order.get("middle"),
+                    "b": order.get("b"),
+                    "back": order.get("back"),
+                    "front_roll_info": "-> (ยังไม่ได้ประมวลผล)",
+                    "c_roll_info": "-> (ยังไม่ได้ประมวลผล)",
+                    "middle_roll_info": "-> (ยังไม่ได้ประมวลผล)",
+                    "b_roll_info": "-> (ยังไม่ได้ประมวลผล)",
+                    "back_roll_info": "-> (ยังไม่ได้ประมวลผล)",
+                }
+                all_results.append(unprocessed_result)
+
     # Save all cutting results to a single summary CSV file
     if all_results:
         final_output_df = pl.DataFrame(all_results)

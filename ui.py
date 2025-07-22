@@ -746,7 +746,8 @@ class CuttingOptimizerUI(QMainWindow):
 
         for row_idx, result in enumerate(self.results_data):
             is_duplicate = id(result) not in best_results_ids
-            
+            is_unprocessed = result.get('roll_w') == "Unprocessed"
+
             has_no_suitable_roll = False
             roll_info_keys = ['front_roll_info', 'c_roll_info', 'middle_roll_info', 'b_roll_info', 'back_roll_info']
             for key in roll_info_keys:
@@ -778,7 +779,7 @@ class CuttingOptimizerUI(QMainWindow):
                 item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 
                 # Apply colors based on status (red takes precedence)
-                if has_no_suitable_roll:
+                if has_no_suitable_roll or is_unprocessed:
                     item.setBackground(QColor(255, 224, 224))  # Red for invalid rolls
                 elif is_duplicate:
                     item.setBackground(QColor(255, 255, 224))  # Yellow for duplicates
