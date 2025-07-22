@@ -522,6 +522,7 @@ class CuttingOptimizerUI(QMainWindow):
         try:
             cleaned_orders_df = self.cleaned_orders_df
 
+            # there was some order that start with 6218 come out, make this filter more strict AI!
             # Filter orders based on factory selection
             selected_factory = self.factory_combo.currentText()
             if selected_factory in ["1", "2"]:
