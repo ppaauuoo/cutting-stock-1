@@ -21,6 +21,7 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDateEdit,
     QFileDialog,
@@ -219,6 +220,11 @@ class CuttingOptimizerUI(QMainWindow):
         self.clear_button = QPushButton("ล้างผลลัพธ์")
         self.clear_button.clicked.connect(self.clear_results)
         buttons_layout.addWidget(self.clear_button)
+
+        self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ที่ประมวลผลไม่สำเร็จ")
+        self.show_unprocessed_checkbox.setChecked(True)
+        self.show_unprocessed_checkbox.toggled.connect(self._refresh_results_display)
+        buttons_layout.addWidget(self.show_unprocessed_checkbox)
         
         layout.addLayout(buttons_layout)
         
@@ -518,11 +524,20 @@ class CuttingOptimizerUI(QMainWindow):
 
             # Filter orders based on factory selection
             selected_factory = self.factory_combo.currentText()
-            if selected_factory in ["1", "2"]:
-                self.log_message(f"🏭 Filtering orders for {selected_factory}. Only using orders starting with '1218'.")
-                if "order_number" in cleaned_orders_df.columns:
+            if "order_number" in cleaned_orders_df.columns:
+                # Use a more robust numeric check for order number prefixes.
+                # Cast to string, strip whitespace, then check the numeric value of the prefix.
+                order_num_col = pl.col("order_number").cast(pl.Utf8).str.strip_chars()
+
+                if selected_factory in ["1", "2"]:
+                    self.log_message(f"🏭 Filtering orders for factory {selected_factory}. Only using orders starting with '1218'.")
                     cleaned_orders_df = cleaned_orders_df.filter(
-                        pl.col("order_number").cast(pl.Utf8).str.strip_chars().str.starts_with("1218")
+                        order_num_col.str.slice(0, 4).str.to_integer(strict=False) == 1218
+                    )
+                elif selected_factory in ["3", "4", "5"]:
+                    self.log_message(f"🏭 Filtering orders for factory {selected_factory}. Only using orders starting with '{selected_factory}'.")
+                    cleaned_orders_df = cleaned_orders_df.filter(
+                        order_num_col.str.slice(0, 1).str.to_integer(strict=False) == int(selected_factory)
                     )
 
             material_cols = ['front', 'c', 'middle', 'b', 'back']
@@ -706,6 +721,10 @@ class CuttingOptimizerUI(QMainWindow):
                 sender_thread.wait()
             sender_thread.deleteLater()
 
+    def _refresh_results_display(self):
+        """Refreshes the results table display based on current filters."""
+        self.append_results_to_table([])
+
     def append_results_to_table(self, results):
         """
         Adds new results, identifies the best entry (lowest trim) for each order,
@@ -740,13 +759,20 @@ class CuttingOptimizerUI(QMainWindow):
         # Create a set of IDs for the best results for quick lookup
         best_results_ids = {id(res) for res in best_results_map.values()}
 
+        # Filter data based on UI controls
+        if self.show_unprocessed_checkbox.isChecked():
+            display_data = self.results_data
+        else:
+            display_data = [r for r in self.results_data if r.get('roll_w') != "Failed/Infeasible"]
+
         # Repopulate the entire table
         self.result_table.setRowCount(0)
-        self.result_table.setRowCount(len(self.results_data))
+        self.result_table.setRowCount(len(display_data))
 
-        for row_idx, result in enumerate(self.results_data):
+        for row_idx, result in enumerate(display_data):
             is_duplicate = id(result) not in best_results_ids
-            
+            is_unprocessed = result.get('roll_w') == "Failed/Infeasible"
+
             has_no_suitable_roll = False
             roll_info_keys = ['front_roll_info', 'c_roll_info', 'middle_roll_info', 'b_roll_info', 'back_roll_info']
             for key in roll_info_keys:
@@ -778,7 +804,7 @@ class CuttingOptimizerUI(QMainWindow):
                 item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 
                 # Apply colors based on status (red takes precedence)
-                if has_no_suitable_roll:
+                if has_no_suitable_roll or is_unprocessed:
                     item.setBackground(QColor(255, 224, 224))  # Red for invalid rolls
                 elif is_duplicate:
                     item.setBackground(QColor(255, 255, 224))  # Yellow for duplicates
