@@ -522,14 +522,18 @@ class CuttingOptimizerUI(QMainWindow):
         try:
             cleaned_orders_df = self.cleaned_orders_df
 
-            # there was some order that start with 6218 come out, make this filter more strict AI!
             # Filter orders based on factory selection
             selected_factory = self.factory_combo.currentText()
-            if selected_factory in ["1", "2"]:
-                self.log_message(f"🏭 Filtering orders for {selected_factory}. Only using orders starting with '1218'.")
-                if "order_number" in cleaned_orders_df.columns:
+            if "order_number" in cleaned_orders_df.columns:
+                if selected_factory in ["1", "2"]:
+                    self.log_message(f"🏭 Filtering orders for {selected_factory}. Only using orders starting with '1218'.")
                     cleaned_orders_df = cleaned_orders_df.filter(
                         pl.col("order_number").cast(pl.Utf8).str.strip_chars().str.starts_with("1218")
+                    )
+                elif selected_factory in ["3", "4", "5"]:
+                    self.log_message(f"🏭 Filtering orders for factory {selected_factory}. Only using orders starting with '{selected_factory}'.")
+                    cleaned_orders_df = cleaned_orders_df.filter(
+                        pl.col("order_number").cast(pl.Utf8).str.strip_chars().str.starts_with(selected_factory)
                     )
 
             material_cols = ['front', 'c', 'middle', 'b', 'back']
