@@ -1119,9 +1119,11 @@ class CuttingOptimizerUI(QMainWindow):
 
                     roll_count = 0
                     total_used_length = 0
+                    roll_ids = []
                     for roll_str in roll_strings:
                         match = roll_pattern.match(roll_str.strip())
                         if match:
+                            roll_ids.append(match.group(1).strip())
                             roll_count += 1
                             original_len = int(match.group(2))
                             
@@ -1134,7 +1136,8 @@ class CuttingOptimizerUI(QMainWindow):
                             total_used_length += used_len
                     
                     if roll_count > 0:
-                        roll_summary_html = f'<br/><i><span style="margin-left: 15px;">ใช้ {roll_count} ม้วน, ความยาวรวม {total_used_length:,} ม.</span></i>'
+                        roll_id_str = ", ".join(roll_ids)
+                        roll_summary_html = f'<br/><i><span style="margin-left: 15px;">ใช้ {roll_count} ม้วน, ความยาวรวม {total_used_length:,} ม. (ID: {roll_id_str})</span></i>'
 
             return f"<b>{label}:</b> {material} = {value:.2f}{roll_summary_html}"
 
