@@ -1119,8 +1119,37 @@ class CuttingOptimizerUI(QMainWindow):
         elif c_type == 'E' or b_type == 'E': type_demand = 1.25
 
         def create_material_html(label: str, material: str, value: float, roll_info: str) -> str:
-            roll_html = self._format_roll_usage_to_html(roll_info)
-            return f"<b>{label}:</b> {material} = {value:.2f}<br/>{roll_html}"
+            roll_summary_html = ""
+            if "(ไม่มี" in roll_info:
+                roll_summary_html = '<br/><i><span style="margin-left: 15px;">(ไม่มีข้อมูลสต็อก)</span></i>'
+            elif "->" in roll_info:
+                parts = roll_info.split(': ', 1)
+                if len(parts) >= 2:
+                    roll_details_str = parts[1]
+                    roll_strings = roll_details_str.split(' + ')
+                    
+                    roll_pattern = re.compile(r'(.+?)\s*\(ยาว\s*(\d+)\s*ม\.,\s*(?:เหลือ\s*(\d+)\s*ม\.|(ใช้หมด))\)')
+
+                    roll_count = 0
+                    total_used_length = 0
+                    for roll_str in roll_strings:
+                        match = roll_pattern.match(roll_str.strip())
+                        if match:
+                            roll_count += 1
+                            original_len = int(match.group(2))
+                            
+                            if match.group(4) and match.group(4) == "ใช้หมด":
+                                remaining_len = 0
+                            else:
+                                remaining_len = int(match.group(3)) if match.group(3) else 0
+                            
+                            used_len = original_len - remaining_len
+                            total_used_length += used_len
+                    
+                    if roll_count > 0:
+                        roll_summary_html = f'<br/><i><span style="margin-left: 15px;">ใช้ {roll_count} ม้วน, ความยาวรวม {total_used_length:,} ม.</span></i>'
+
+            return f"<b>{label}:</b> {material} = {value:.2f}{roll_summary_html}"
 
         if result.get('front'):
             value = result.get('demand_per_cut', 0) / type_demand
