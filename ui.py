@@ -452,8 +452,9 @@ class CuttingOptimizerUI(QMainWindow):
                 return
 
         if self.ROLL_SPECS != new_roll_specs:
+            timestamp = convert_thai_digits_to_arabic(QDateTime.currentDateTime().toString("hh:mm:ss"))
             self.ROLL_SPECS = new_roll_specs
-            self.log_message("🔄 อัปเดตข้อมูลสต็อกเรียบร้อยแล้ว")
+            self.log_message(f"[{timestamp}] 🔄 อัปเดตข้อมูลสต็อกเรียบร้อยแล้ว")
 
     def calculate_length_for_suggestion(self, width, spec):
         """Calculate effective roll length for a given suggestion."""
@@ -515,9 +516,10 @@ class CuttingOptimizerUI(QMainWindow):
         try:
             cleaned_orders_df = self.cleaned_orders_df
 
+            # when i select 1, some time order with number starting with 6218 is showup, make sure it won't AI!
             # Filter orders based on factory selection
             selected_factory = self.factory_combo.currentText()
-            if selected_factory in ["Factory 1", "Factory 2"]:
+            if selected_factory in ["1", "2"]:
                 self.log_message(f"🏭 Filtering orders for {selected_factory}. Only using orders starting with '1218'.")
                 if "order_number" in cleaned_orders_df.columns:
                     cleaned_orders_df = cleaned_orders_df.filter(
