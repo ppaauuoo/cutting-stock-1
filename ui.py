@@ -21,6 +21,7 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDateEdit,
     QFileDialog,
@@ -219,6 +220,11 @@ class CuttingOptimizerUI(QMainWindow):
         self.clear_button = QPushButton("ล้างผลลัพธ์")
         self.clear_button.clicked.connect(self.clear_results)
         buttons_layout.addWidget(self.clear_button)
+
+        self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ที่ยังไม่ได้ประมวลผล")
+        self.show_unprocessed_checkbox.setChecked(True)
+        self.show_unprocessed_checkbox.toggled.connect(self._refresh_results_display)
+        buttons_layout.addWidget(self.show_unprocessed_checkbox)
         
         layout.addLayout(buttons_layout)
         
@@ -706,6 +712,10 @@ class CuttingOptimizerUI(QMainWindow):
                 sender_thread.wait()
             sender_thread.deleteLater()
 
+    def _refresh_results_display(self):
+        """Refreshes the results table display based on current filters."""
+        self.append_results_to_table([])
+
     def append_results_to_table(self, results):
         """
         Adds new results, identifies the best entry (lowest trim) for each order,
@@ -740,11 +750,17 @@ class CuttingOptimizerUI(QMainWindow):
         # Create a set of IDs for the best results for quick lookup
         best_results_ids = {id(res) for res in best_results_map.values()}
 
+        # Filter data based on UI controls
+        if self.show_unprocessed_checkbox.isChecked():
+            display_data = self.results_data
+        else:
+            display_data = [r for r in self.results_data if r.get('roll_w') != "Unprocessed"]
+
         # Repopulate the entire table
         self.result_table.setRowCount(0)
-        self.result_table.setRowCount(len(self.results_data))
+        self.result_table.setRowCount(len(display_data))
 
-        for row_idx, result in enumerate(self.results_data):
+        for row_idx, result in enumerate(display_data):
             is_duplicate = id(result) not in best_results_ids
             is_unprocessed = result.get('roll_w') == "Unprocessed"
 
