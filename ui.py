@@ -958,120 +958,141 @@ class CuttingOptimizerUI(QMainWindow):
                 self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออกเป็น CSV: {e}")
                 QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", f"เกิดข้อผิดพลาดขณะส่งออกไฟล์:\n{e}")
 
+    def _format_roll_usage_to_html(self, roll_info_str: str) -> str:
+        """Parses roll usage string and formats it as an HTML table."""
+        if not roll_info_str or "->" not in roll_info_str:
+            return roll_info_str  # Return as is if empty or not in expected format
+
+        if "(ไม่มี" in roll_info_str:
+            # e.g., "-> (ไม่มีข้อมูลสต็อก)"
+            return f"<i>{roll_info_str.replace('-> ', '')}</i>"
+
+        parts = roll_info_str.split(': ', 1)
+        if len(parts) < 2:
+            return roll_info_str  # Fallback for unexpected format
+        
+        status_text = parts[0].replace('-> ', '').strip()
+        roll_details_str = parts[1]
+
+        roll_strings = roll_details_str.split(' + ')
+        
+        # Using a more robust regex to handle various whitespace and characters in roll ID
+        roll_pattern = re.compile(r'(.+?)\s*\(ยาว\s*(\d+)\s*ม\.,\s*(?:เหลือ\s*(\d+)\s*ม\.|(ใช้หมด))\)')
+
+        table_rows = []
+        for roll_str in roll_strings:
+            match = roll_pattern.match(roll_str.strip())
+            if match:
+                roll_id = match.group(1).strip()
+                original_len = int(match.group(2))
+                
+                if match.group(4) and match.group(4) == "ใช้หมด":
+                    remaining_len = 0
+                else:
+                    remaining_len = int(match.group(3)) if match.group(3) else 0
+                
+                used_len = original_len - remaining_len
+                
+                table_rows.append(f'<tr><td style="padding-right:10px;">{roll_id}</td><td align="right" style="padding-right:10px;">{original_len:,}</td><td align="right" style="padding-right:10px;">{used_len:,}</td><td align="right">{remaining_len:,}</td></tr>')
+            else:
+                # Fallback for unexpected format
+                table_rows.append(f'<tr><td colspan="4" style="color: gray;"><i>(ข้อมูลไม่สมบูรณ์: {roll_str.strip()})</i></td></tr>')
+
+        if not table_rows:
+            return f"<i>{status_text}</i>"
+
+        html = f'<table border="0" cellpadding="2" cellspacing="0" style="margin-top: 4px; margin-left: 15px; border-collapse: collapse;">'
+        html += '<tr><th align="left" style="padding-right:10px; border-bottom: 1px solid black;">ID ม้วน</th><th align="right" style="padding-right:10px; border-bottom: 1px solid black;">ยาวเดิม (ม.)</th><th align="right" style="padding-right:10px; border-bottom: 1px solid black;">ใช้ไป (ม.)</th><th align="right" style="border-bottom: 1px solid black;">คงเหลือ (ม.)</th></tr>'
+        html += "".join(table_rows)
+        html += '</table>'
+        
+        return f"<i>{status_text}:</i>{html}"
+
     def show_row_details_popup(self):
         """
-        แสดงป๊อปอัปพร้อมรายละเอียดของแถวที่เลือกในตาราง
+        แสดงป๊อปอัปพร้อมรายละเอียดของแถวที่เลือกในตาราง (ใช้ HTML สำหรับการจัดรูปแบบ)
         """
         selected_rows = self.result_table.selectedIndexes()
         if not selected_rows:
             return
 
-        row_index = selected_rows[0].row() # รับดัชนีของแถวที่เลือก
-        
-        # พยายามดึงข้อมูลผลลัพธ์เต็มจาก self.results_data
+        row_index = selected_rows[0].row()
         try:
             result = self.results_data[row_index]
         except (IndexError, TypeError):
-            # Fallback to table data only if full results are not available
             result = {}
-        
-        # แสดงข้อมูลเดิมจากตาราง
+
         details = []
         for col_idx in range(self.result_table.columnCount()):
             item = self.result_table.item(row_index, col_idx)
             if item:
                 header = self.result_table.horizontalHeaderItem(col_idx).text()
-                details.append(f"{header}: {item.text()}")
+                details.append(f"<b>{header}:</b> {item.text()}")
 
-        # เพิ่มข้อมูลประเภททับเส้นและชนิดส่วนประกอบ
         type_details = []
         if result.get('type'):
-            type_details.append(f"ประเภททับเส้น: {result['type']}")
+            type_details.append(f"<b>ประเภททับเส้น:</b> {result['type']}")
         if result.get('component_type'):
-            type_details.append(f"ชนิดส่วนประกอบ: {result['component_type']}")
+            type_details.append(f"<b>ชนิดส่วนประกอบ:</b> {result['component_type']}")
         
         if type_details:
-            details.append("\n📌 ข้อมูลประเภท:")
+            details.append("<br/><b>📌 ข้อมูลประเภท:</b>")
             details.extend(type_details)
 
-        # เพิ่มข้อมูลวัสดุแบบมีเงื่อนไขเฉพาะที่มีค่าเท่านั้น
-        material_details = []
-
-        # Determine a common divisor based on corrugate types in result for front/middle/back materials
+        material_details_parts = []
         c_type = result.get('c_type', '')
         b_type = result.get('b_type', '')
+        type_demand = 1.0
+        if c_type == 'C': type_demand = 1.45
+        elif b_type == 'B': type_demand = 1.35
+        elif c_type == 'E' or b_type == 'E': type_demand = 1.25
 
-        type_demand = 1.0 # Default divisor if no specific C or B corrugate
-        if c_type == 'C':
-            type_demand = 1.45
-        elif b_type == 'B':
-            type_demand = 1.35
-        elif c_type == 'E' or b_type == 'E':
-            type_demand = 1.25
+        def create_material_html(label: str, material: str, value: float, roll_info: str) -> str:
+            roll_html = self._format_roll_usage_to_html(roll_info)
+            return f"<b>{label}:</b> {material} = {value:.2f}<br/>{roll_html}"
 
         if result.get('front'):
-            front_material = result.get('front')
-            front_value = result.get('demand_per_cut', 0) / type_demand
-            roll_info_str = result.get('front_roll_info', '')
-            if front_material:
-                material_details.append(f"แผ่นหน้า: {front_material} = {front_value:.2f} {roll_info_str}")
+            value = result.get('demand_per_cut', 0) / type_demand
+            material_details_parts.append(create_material_html("แผ่นหน้า", result.get('front'), value, result.get('front_roll_info', '')))
             
-        if result.get('c') and c_type == 'C':
+        if result.get('c'):
             c_material = result.get('c')
-            c_value = result.get('demand_per_cut', 0)
-            roll_info_str = result.get('c_roll_info', '')
-            material_details.append(f"ลอน C: {c_material} = {c_value:.2f} {roll_info_str}")
-        elif result.get('c') and c_type == 'E':
-            c_material = result.get('c')
-            demand_per_cut = result.get('demand_per_cut', 0)
-            if b_type == 'B':
-                c_value = demand_per_cut / 1.35 * 1.25
-            else:
-                c_value = demand_per_cut
-            roll_info_str = result.get('c_roll_info', '')
-            material_details.append(f"ลอน E: {c_material} = {c_value:.2f} {roll_info_str}")
+            if c_type == 'C':
+                value = result.get('demand_per_cut', 0)
+                material_details_parts.append(create_material_html("ลอน C", c_material, value, result.get('c_roll_info', '')))
+            elif c_type == 'E':
+                demand = result.get('demand_per_cut', 0)
+                value = (demand / 1.35 * 1.25) if b_type == 'B' else demand
+                material_details_parts.append(create_material_html("ลอน E", c_material, value, result.get('c_roll_info', '')))
 
         if result.get('middle'):
-            middle_material = result.get('middle')
-            middle_value = result.get('demand_per_cut', 0) / type_demand
-            roll_info_str = result.get('middle_roll_info', '')
-            material_details.append(f"แผ่นกลาง: {middle_material} = {middle_value:.2f} {roll_info_str}")
+            value = result.get('demand_per_cut', 0) / type_demand
+            material_details_parts.append(create_material_html("แผ่นกลาง", result.get('middle'), value, result.get('middle_roll_info', '')))
            
-        #B is value, if B exist and corrugate_b_type is 'B' or 'E', calculate accordingly
-        if result.get('b') and b_type == 'B':
+        if result.get('b'):
             b_material = result.get('b')
-            demand_per_cut = result.get('demand_per_cut', 0)
-            if c_type == 'C':
-                b_value = (demand_per_cut / 1.45) * 1.35
-            else:
-                b_value = demand_per_cut
-            roll_info_str = result.get('b_roll_info', '')
-            material_details.append(f"ลอน B: {b_material} = {b_value:.2f} {roll_info_str}")
-        elif result.get('b') and b_type == 'E':
-            b_material = result.get('b')
-            demand_per_cut = result.get('demand_per_cut', 0)
-            if c_type == 'C':
-                b_value = (demand_per_cut / 1.45) * 1.25
-            else:
-                b_value = demand_per_cut
-            roll_info_str = result.get('b_roll_info', '')
-            material_details.append(f"ลอน E: {b_material} = {b_value:.2f} {roll_info_str}")
+            demand = result.get('demand_per_cut', 0)
+            if b_type == 'B':
+                value = (demand / 1.45 * 1.35) if c_type == 'C' else demand
+                material_details_parts.append(create_material_html("ลอน B", b_material, value, result.get('b_roll_info', '')))
+            elif b_type == 'E':
+                value = (demand / 1.45 * 1.25) if c_type == 'C' else demand
+                material_details_parts.append(create_material_html("ลอน E", b_material, value, result.get('b_roll_info', '')))
 
         if result.get('back'):
-            back_material = result.get('back')
-            back_value = result.get('demand_per_cut', 0) / type_demand
-            roll_info_str = result.get('back_roll_info', '')
-            material_details.append(f"แผ่นหลัง: {back_material} = {back_value:.2f} {roll_info_str}")
+            value = result.get('demand_per_cut', 0) / type_demand
+            material_details_parts.append(create_material_html("แผ่นหลัง", result.get('back'), value, result.get('back_roll_info', '')))
         
-        if material_details:
-            details.append("\n⚙️ ข้อมูลแผ่นและลอน:")
-            details.extend(material_details)
+        if material_details_parts:
+            details.append("<br/><b>⚙️ ข้อมูลแผ่นและลอน:</b>")
+            details.append("<br/><br/>".join(material_details_parts))
 
-        detail_message = "\n".join(details)
+        detail_message = "<br/>".join(details)
         msg_box = QMessageBox(self)
         msg_box.setIcon(QMessageBox.Information)
         msg_box.setText(detail_message)
         msg_box.setWindowTitle("รายละเอียดผลลัพธ์การตัด")
+        msg_box.setTextFormat(Qt.RichText) # Ensure HTML is rendered
         msg_box.setTextInteractionFlags(Qt.TextSelectableByMouse)
         msg_box.exec_()
 
