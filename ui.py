@@ -221,7 +221,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.clear_button.clicked.connect(self.clear_results)
         buttons_layout.addWidget(self.clear_button)
 
-        self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ที่ยังไม่ได้ประมวลผล")
+        self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ที่ประมวลผลไม่สำเร็จ")
         self.show_unprocessed_checkbox.setChecked(True)
         self.show_unprocessed_checkbox.toggled.connect(self._refresh_results_display)
         buttons_layout.addWidget(self.show_unprocessed_checkbox)
@@ -763,7 +763,7 @@ class CuttingOptimizerUI(QMainWindow):
         if self.show_unprocessed_checkbox.isChecked():
             display_data = self.results_data
         else:
-            display_data = [r for r in self.results_data if r.get('roll_w') != "Unprocessed"]
+            display_data = [r for r in self.results_data if r.get('roll_w') != "Failed/Infeasible"]
 
         # Repopulate the entire table
         self.result_table.setRowCount(0)
@@ -771,7 +771,7 @@ class CuttingOptimizerUI(QMainWindow):
 
         for row_idx, result in enumerate(display_data):
             is_duplicate = id(result) not in best_results_ids
-            is_unprocessed = result.get('roll_w') == "Unprocessed"
+            is_unprocessed = result.get('roll_w') == "Failed/Infeasible"
 
             has_no_suitable_roll = False
             roll_info_keys = ['front_roll_info', 'c_roll_info', 'middle_roll_info', 'b_roll_info', 'back_roll_info']

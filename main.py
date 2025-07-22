@@ -539,12 +539,12 @@ async def main_algorithm(
 
         if not rem_orders_df.is_empty():
             if progress_callback:
-                progress_callback(f"    Adding {rem_orders_df.shape[0]} unprocessed orders to the results.")
+                progress_callback(f"    Adding {rem_orders_df.shape[0]} failed/infeasible orders to the results.")
             
             unprocessed_orders = rem_orders_df.to_dicts()
             for order in unprocessed_orders:
                 unprocessed_result = {
-                    "roll_w": "Unprocessed",
+                    "roll_w": "Failed/Infeasible",
                     "rem_roll_l": 0,
                     "demand_per_cut": 0,
                     "order_number": order.get("order_number"),
@@ -562,11 +562,11 @@ async def main_algorithm(
                     "middle": order.get("middle"),
                     "b": order.get("b"),
                     "back": order.get("back"),
-                    "front_roll_info": "-> (ยังไม่ได้ประมวลผล)",
-                    "c_roll_info": "-> (ยังไม่ได้ประมวลผล)",
-                    "middle_roll_info": "-> (ยังไม่ได้ประมวลผล)",
-                    "b_roll_info": "-> (ยังไม่ได้ประมวลผล)",
-                    "back_roll_info": "-> (ยังไม่ได้ประมวลผล)",
+                    "front_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                    "c_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                    "middle_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                    "b_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                    "back_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
                 }
                 all_results.append(unprocessed_result)
 
