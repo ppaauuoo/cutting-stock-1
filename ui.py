@@ -193,7 +193,7 @@ class CuttingOptimizerUI(QMainWindow):
         factory_layout = QHBoxLayout()
         factory_layout.addWidget(QLabel("โรงงาน:"))
         self.factory_combo = QComboBox()
-        self.factory_combo.addItems(["All Factories", "Factory 1", "Factory 2", "Factory 3", "Factory 4", "Factory 5"])
+        self.factory_combo.addItems(["รวม", "1", "2", "3", "4", "5"])
         factory_layout.addWidget(self.factory_combo)
         layout.addLayout(factory_layout)
         
@@ -299,6 +299,7 @@ class CuttingOptimizerUI(QMainWindow):
 
     def update_order_data(self, order_df):
         """อัปเดต DataFrame ออเดอร์ที่ทำความสะอาดแล้ว"""
+        # the time stamp is in thai number, make it arabic number AI!
         timestamp = QDateTime.currentDateTime().toString("hh:mm:ss")
         if order_df is not None:
             self.cleaned_orders_df = order_df
