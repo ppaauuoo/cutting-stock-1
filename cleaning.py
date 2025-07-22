@@ -282,7 +282,7 @@ def clean_stock(df: pl.DataFrame) -> pl.DataFrame:
     # กรองแถวที่มีค่า null หรือไม่ถูกต้องในคอลัมน์หลักออก
     df = df.drop_nulls(subset=required_cols)
     df = df.filter(pl.col("length") > 0)
-    df = df.filter(pl.col("roll_size") > 0)
+    df = df.filter((pl.col("roll_size") >= 75) & (pl.col("roll_size") <= 97))
   
     print(f"Stock data cleaning complete. Shape after cleaning: {df.shape}")
     # เลือกเฉพาะคอลัมน์ที่จำเป็นสำหรับแอปพลิเคชัน
