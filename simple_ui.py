@@ -248,11 +248,9 @@ class CuttingOptimizerUI(QMainWindow):
         # เพิ่มตารางแสดงผล
         layout.addWidget(QLabel("ผลลัพธ์การตัด:"))
         self.result_table = CustomTableWidget() # ใช้ CustomTableWidget
-        self.result_table.setColumnCount(10)
+        self.result_table.setColumnCount(4)
         self.result_table.setHorizontalHeaderLabels([
-            "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", "จำนวนออก", "เศษเหลือ",
-            "ความยาวออเดอร์", "จำนวนสั่งส่ง", "ผลิตได้", "จำนวนสั่งผลิต", "ปริมาณตัด"  
-            #, "กระดาษที่ใช้", "กระดาษคงเหลือ"
+            "ความกว้างม้วน", "หมายเลขออเดอร์", "จำนวนออก", "ปริมาณตัด"
         ])
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         # ตั้งค่าตารางให้สามารถเลือกและคัดลอกได้
@@ -791,13 +789,7 @@ class CuttingOptimizerUI(QMainWindow):
             for col_idx, value in enumerate([
                 str(result.get('roll_w', '')),
                 str(result.get('order_number', '')),
-                f"{result.get('order_w', ''):.4f}",
                 str(result.get('cuts', '')),
-                f"{result.get('trim', ''):.2f}",
-                f"{result.get('order_l', ''):.4f}",
-                f"{result.get('order_dmd', '')}",
-                str(result.get('die_cut', '')),
-                f"{result.get('order_qty', '')}",
                 demand_per_cut_val,
             ]):
                 item = QTableWidgetItem(value)
@@ -886,13 +878,7 @@ class CuttingOptimizerUI(QMainWindow):
                         row_data = [
                             str(result.get('roll_w', '')),
                             str(result.get('order_number', '')),
-                            f"{result.get('order_w', ''):.4f}",
                             str(result.get('cuts', '')),
-                            f"{result.get('trim', ''):.2f}",
-                            f"{result.get('order_l', ''):.4f}",
-                            f"{result.get('order_dmd', '')}",
-                            str(result.get('die_cut', '')),
-                            f"{result.get('order_qty', '')}",
                             demand_per_cut_val,
                         ]
 
