@@ -884,7 +884,7 @@ class CuttingOptimizerUI(QMainWindow):
                             if type_demand > 0:
                                 front_value = f"{demand_per_cut / type_demand:.2f}"
                             front_str = front_material
-                            front_roll_info = result.get('front_roll_info', '')
+                            front_roll_info = self._format_roll_usage_for_csv(result.get('front_roll_info', ''))
 
                         # ลอน C
                         c_str, c_value, c_roll_info = "", "", ""
@@ -899,7 +899,7 @@ class CuttingOptimizerUI(QMainWindow):
                                 else:
                                     c_value = f"{demand_per_cut:.2f}"
                             c_str = c_material
-                            c_roll_info = result.get('c_roll_info', '')
+                            c_roll_info = self._format_roll_usage_for_csv(result.get('c_roll_info', ''))
                         
                         # แผ่นกลาง
                         middle_str, middle_value, middle_roll_info = "", "", ""
@@ -909,7 +909,7 @@ class CuttingOptimizerUI(QMainWindow):
                             if type_demand > 0:
                                 middle_value = f"{demand_per_cut / type_demand:.2f}"
                             middle_str = middle_material
-                            middle_roll_info = result.get('middle_roll_info', '')
+                            middle_roll_info = self._format_roll_usage_for_csv(result.get('middle_roll_info', ''))
                         
                         # ลอน B
                         b_str, b_value, b_roll_info = "", "", ""
@@ -927,7 +927,7 @@ class CuttingOptimizerUI(QMainWindow):
                                 else:
                                     b_value = f"{demand_per_cut:.2f}"
                             b_str = b_material
-                            b_roll_info = result.get('b_roll_info', '')
+                            b_roll_info = self._format_roll_usage_for_csv(result.get('b_roll_info', ''))
                         
                         # แผ่นหลัง
                         back_str, back_value, back_roll_info = "", "", ""
@@ -937,7 +937,7 @@ class CuttingOptimizerUI(QMainWindow):
                             if type_demand > 0:
                                 back_value = f"{demand_per_cut / type_demand:.2f}"
                             back_str = back_material
-                            back_roll_info = result.get('back_roll_info', '')
+                            back_roll_info = self._format_roll_usage_for_csv(result.get('back_roll_info', ''))
 
                         detail_data = [
                             front_str, front_value, front_roll_info,
@@ -1007,6 +1007,45 @@ class CuttingOptimizerUI(QMainWindow):
         html += '</table>'
         
         return f"<i>{status_text}:</i>{html}"
+
+    def _format_roll_usage_for_csv(self, roll_info_str: str) -> str:
+        """Parses roll usage string and formats it for readable CSV export."""
+        if not roll_info_str or "->" not in roll_info_str:
+            return roll_info_str.replace('-> ', '').strip()
+
+        if "(ไม่มี" in roll_info_str:
+            return roll_info_str.replace('-> ', '').strip()
+
+        parts = roll_info_str.split(': ', 1)
+        if len(parts) < 2:
+            return roll_info_str
+
+        status_text = parts[0].replace('-> ', '').strip()
+        roll_details_str = parts[1]
+
+        roll_strings = roll_details_str.split(' + ')
+        
+        roll_pattern = re.compile(r'(.+?)\s*\(ยาว\s*(\d+)\s*ม\.,\s*(?:เหลือ\s*(\d+)\s*ม\.|(ใช้หมด))\)')
+
+        csv_parts = [f"{status_text}:"]
+        for roll_str in roll_strings:
+            match = roll_pattern.match(roll_str.strip())
+            if match:
+                roll_id = match.group(1).strip()
+                original_len = int(match.group(2))
+                
+                if match.group(4) and match.group(4) == "ใช้หมด":
+                    remaining_len = 0
+                else:
+                    remaining_len = int(match.group(3)) if match.group(3) else 0
+                
+                used_len = original_len - remaining_len
+                
+                csv_parts.append(f"  ID: {roll_id}, ยาวเดิม: {original_len}, ใช้ไป: {used_len}, คงเหลือ: {remaining_len}")
+            else:
+                csv_parts.append(f"  (ข้อมูลไม่สมบูรณ์: {roll_str.strip()})")
+
+        return "\n".join(csv_parts)
 
     def show_row_details_popup(self):
         """
