@@ -573,6 +573,11 @@ class CuttingOptimizerUI(QMainWindow):
     def start_main_loop(self):
         self.log_message("🚀 Starting automated calculation process...")
         self.run_button.setEnabled(False)
+
+        self.results_data.clear()
+        self.processed_order_numbers.clear()
+        self.result_table.setRowCount(0)
+
         self.log_display.clear()
 
         self._pause_background_threads()
