@@ -487,7 +487,8 @@ class CuttingOptimizerUI(QMainWindow):
         
         if effective_lengths:
             min_effective_length = min(effective_lengths)
-            return int(min_effective_length)
+            # return int(min_effective_length)
+            return 1000000000
         else:
             return 0
 
