@@ -141,6 +141,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
                     return " + ".join(message_parts)
             
+            # instad of return this, open a new roll if we couldn't find enough supplementary rolls. AI!
             # If we're here, the locked roll exists but we couldn't find enough supplementary rolls.
             return "-> (สต็อกไม่พอสำหรับม้วนที่ล็อคไว้)"
 
