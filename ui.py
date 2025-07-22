@@ -189,8 +189,13 @@ class CuttingOptimizerUI(QMainWindow):
         layout.addWidget(QLabel(f"Order File: {self.order_file_path}"))
         layout.addWidget(QLabel(f"Stock File: {self.stock_file_path}"))
 
-
-
+        # Factory selection
+        factory_layout = QHBoxLayout()
+        factory_layout.addWidget(QLabel("โรงงาน:"))
+        self.factory_combo = QComboBox()
+        self.factory_combo.addItems(["All Factories", "Factory 1", "Factory 2", "Factory 3", "Factory 4", "Factory 5"])
+        factory_layout.addWidget(self.factory_combo)
+        layout.addLayout(factory_layout)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -509,6 +514,16 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_message("🤔 Analyzing orders to generate all possible settings...")
         try:
             cleaned_orders_df = self.cleaned_orders_df
+
+            # Filter orders based on factory selection
+            selected_factory = self.factory_combo.currentText()
+            if selected_factory in ["Factory 1", "Factory 2"]:
+                self.log_message(f"🏭 Filtering orders for {selected_factory}. Only using orders starting with '1218'.")
+                if "order_number" in cleaned_orders_df.columns:
+                    cleaned_orders_df = cleaned_orders_df.filter(
+                        pl.col("order_number").cast(pl.Utf8).str.starts_with("1218")
+                    )
+
             material_cols = ['front', 'c', 'middle', 'b', 'back']
             existing_cols = [col for col in material_cols if col in cleaned_orders_df.columns]
 
