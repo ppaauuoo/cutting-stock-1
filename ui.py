@@ -221,7 +221,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.clear_button.clicked.connect(self.clear_results)
         buttons_layout.addWidget(self.clear_button)
 
-        self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ออกไม่ได้")
+        self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ที่ไม่สามารถออกได้")
         self.show_unprocessed_checkbox.setChecked(True)
         self.show_unprocessed_checkbox.toggled.connect(self._refresh_results_display)
         buttons_layout.addWidget(self.show_unprocessed_checkbox)
