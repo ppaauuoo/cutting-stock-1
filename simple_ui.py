@@ -187,8 +187,8 @@ class CuttingOptimizerUI(QMainWindow):
         self.order_file_path = "order.csv"
         self.stock_file_path = "stock.csv"
 
-        layout.addWidget(QLabel(f"Order File: {self.order_file_path}"))
-        layout.addWidget(QLabel(f"Stock File: {self.stock_file_path}"))
+        # layout.addWidget(QLabel(f"Order File: {self.order_file_path}"))
+        # layout.addWidget(QLabel(f"Stock File: {self.stock_file_path}"))
 
         # Factory selection
         factory_layout = QHBoxLayout()
@@ -219,9 +219,9 @@ class CuttingOptimizerUI(QMainWindow):
 
         self.clear_button = QPushButton("ล้างผลลัพธ์")
         self.clear_button.clicked.connect(self.clear_results)
-        buttons_layout.addWidget(self.clear_button)
+        # buttons_layout.addWidget(self.clear_button)
 
-        self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ออกไม่ได้")
+        self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ที่ประมวลผลไม่สำเร็จ")
         self.show_unprocessed_checkbox.setChecked(True)
         self.show_unprocessed_checkbox.toggled.connect(self._refresh_results_display)
         buttons_layout.addWidget(self.show_unprocessed_checkbox)
@@ -239,7 +239,7 @@ class CuttingOptimizerUI(QMainWindow):
         log_layout.addWidget(self.log_display)
         self.log_group_box.setLayout(log_layout)
         
-        layout.addWidget(self.log_group_box)
+        # layout.addWidget(self.log_group_box)
         
         # เชื่อมต่อ signal เพื่อซ่อน/แสดง log_display
         self.log_group_box.toggled.connect(self.log_display.setVisible)
@@ -248,11 +248,9 @@ class CuttingOptimizerUI(QMainWindow):
         # เพิ่มตารางแสดงผล
         layout.addWidget(QLabel("ผลลัพธ์การตัด:"))
         self.result_table = CustomTableWidget() # ใช้ CustomTableWidget
-        self.result_table.setColumnCount(10)
+        self.result_table.setColumnCount(4)
         self.result_table.setHorizontalHeaderLabels([
-            "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", "จำนวนออก", "เศษเหลือ",
-            "ความยาวออเดอร์", "จำนวนสั่งส่ง", "ผลิตได้", "จำนวนสั่งผลิต", "ปริมาณตัด"  
-            #, "กระดาษที่ใช้", "กระดาษคงเหลือ"
+            "ความกว้างม้วน", "หมายเลขออเดอร์", "จำนวนออก", "ปริมาณตัด"
         ])
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
         # ตั้งค่าตารางให้สามารถเลือกและคัดลอกได้
@@ -792,13 +790,7 @@ class CuttingOptimizerUI(QMainWindow):
             for col_idx, value in enumerate([
                 str(result.get('roll_w', '')),
                 str(result.get('order_number', '')),
-                f"{result.get('order_w', ''):.4f}",
                 str(result.get('cuts', '')),
-                f"{result.get('trim', ''):.2f}",
-                f"{result.get('order_l', ''):.4f}",
-                f"{result.get('order_dmd', '')}",
-                str(result.get('die_cut', '')),
-                f"{result.get('order_qty', '')}",
                 demand_per_cut_val,
             ]):
                 item = QTableWidgetItem(value)
@@ -835,7 +827,6 @@ class CuttingOptimizerUI(QMainWindow):
 
         if reply == QMessageBox.Yes:
             self.results_data.clear()
-            self.display_data.clear()
             self.processed_order_numbers.clear()
             self.result_table.setRowCount(0)
             self.log_message("🧹 ผลลัพธ์ทั้งหมดถูกล้างแล้ว")
@@ -888,13 +879,7 @@ class CuttingOptimizerUI(QMainWindow):
                         row_data = [
                             str(result.get('roll_w', '')),
                             str(result.get('order_number', '')),
-                            f"{result.get('order_w', ''):.4f}",
                             str(result.get('cuts', '')),
-                            f"{result.get('trim', ''):.2f}",
-                            f"{result.get('order_l', ''):.4f}",
-                            f"{result.get('order_dmd', '')}",
-                            str(result.get('die_cut', '')),
-                            f"{result.get('order_qty', '')}",
                             demand_per_cut_val,
                         ]
 
@@ -1091,7 +1076,6 @@ class CuttingOptimizerUI(QMainWindow):
 
         row_index = selected_rows[0].row()
         try:
-            # Use the filtered display_data list which matches the table view
             result = self.display_data[row_index]
         except (IndexError, TypeError):
             result = {}
@@ -1122,8 +1106,40 @@ class CuttingOptimizerUI(QMainWindow):
         elif c_type == 'E' or b_type == 'E': type_demand = 1.25
 
         def create_material_html(label: str, material: str, value: float, roll_info: str) -> str:
-            roll_html = self._format_roll_usage_to_html(roll_info)
-            return f"<b>{label}:</b> {material} = {value:.2f}<br/>{roll_html}"
+            roll_summary_html = ""
+            if "(ไม่มี" in roll_info:
+                roll_summary_html = '<br/><i><span style="margin-left: 15px;">(ไม่มีข้อมูลสต็อก)</span></i>'
+            elif "->" in roll_info:
+                parts = roll_info.split(': ', 1)
+                if len(parts) >= 2:
+                    roll_details_str = parts[1]
+                    roll_strings = roll_details_str.split(' + ')
+                    
+                    roll_pattern = re.compile(r'(.+?)\s*\(ยาว\s*(\d+)\s*ม\.,\s*(?:เหลือ\s*(\d+)\s*ม\.|(ใช้หมด))\)')
+
+                    roll_count = 0
+                    total_used_length = 0
+                    roll_ids = []
+                    for roll_str in roll_strings:
+                        match = roll_pattern.match(roll_str.strip())
+                        if match:
+                            roll_ids.append(match.group(1).strip())
+                            roll_count += 1
+                            original_len = int(match.group(2))
+                            
+                            if match.group(4) and match.group(4) == "ใช้หมด":
+                                remaining_len = 0
+                            else:
+                                remaining_len = int(match.group(3)) if match.group(3) else 0
+                            
+                            used_len = original_len - remaining_len
+                            total_used_length += used_len
+                    
+                    if roll_count > 0:
+                        roll_id_str = ", ".join(roll_ids)
+                        roll_summary_html = f'<br/><i><span style="margin-left: 15px;">ใช้ {roll_count} ม้วน, ความยาวรวม {total_used_length:,} ม. (ID: {roll_id_str})</span></i>'
+
+            return f"<b>{label}:</b> {material} = {value:.2f}{roll_summary_html}"
 
         if result.get('front'):
             value = result.get('demand_per_cut', 0) / type_demand
