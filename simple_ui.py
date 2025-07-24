@@ -171,6 +171,7 @@ class CuttingOptimizerUI(QMainWindow):
         if self.qtapp:
             self.qtapp.setQuitOnLastWindowClosed(False)
         self.setWindowTitle("กระดาษม้วนตัด Optimizer")
+        # make this fit the table width AI!
         self.setGeometry(100, 100, 800, 700)
 
         self.ROLL_SPECS = {}
@@ -196,8 +197,24 @@ class CuttingOptimizerUI(QMainWindow):
         self.factory_combo = QComboBox()
         self.factory_combo.addItems(["รวม", "1", "2", "3", "4", "5"])
         factory_layout.addWidget(self.factory_combo)
+
+        self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ที่ประมวลผลไม่สำเร็จ")
+        self.show_unprocessed_checkbox.setChecked(True)
+        self.show_unprocessed_checkbox.toggled.connect(self._refresh_results_display)
+        factory_layout.addWidget(self.show_unprocessed_checkbox)
+
         layout.addLayout(factory_layout)
+
+        # Buttons layout
+        buttons_layout = QHBoxLayout()
+
+        self.run_button = QPushButton("เริ่มการคำนวณอัตโนมัติ")
+        self.run_button.clicked.connect(self.start_main_loop)
+        buttons_layout.addWidget(self.run_button)
         
+        layout.addLayout(buttons_layout)
+
+
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)  # ตั้งค่าระยะ 0-100%
@@ -206,27 +223,17 @@ class CuttingOptimizerUI(QMainWindow):
         self.progress_bar.setFormat("กำลังรอการเริ่มต้น...") # ตั้งค่าข้อความเริ่มต้น
         layout.addWidget(self.progress_bar)
         
-        # Buttons layout
-        buttons_layout = QHBoxLayout()
 
-        self.run_button = QPushButton("เริ่มการคำนวณอัตโนมัติ")
-        self.run_button.clicked.connect(self.start_main_loop)
-        buttons_layout.addWidget(self.run_button)
 
         self.export_button = QPushButton("ส่งออกเป็น CSV")
         self.export_button.clicked.connect(self.export_results_to_csv)
-        buttons_layout.addWidget(self.export_button)
+        # buttons_layout.addWidget(self.export_button)
 
         self.clear_button = QPushButton("ล้างผลลัพธ์")
         self.clear_button.clicked.connect(self.clear_results)
         # buttons_layout.addWidget(self.clear_button)
 
-        self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ที่ประมวลผลไม่สำเร็จ")
-        self.show_unprocessed_checkbox.setChecked(True)
-        self.show_unprocessed_checkbox.toggled.connect(self._refresh_results_display)
-        buttons_layout.addWidget(self.show_unprocessed_checkbox)
         
-        layout.addLayout(buttons_layout)
         
         # Log display (Collapsible)
         self.log_group_box = QGroupBox("Show Logs:")
