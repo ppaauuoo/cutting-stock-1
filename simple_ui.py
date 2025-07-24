@@ -171,8 +171,7 @@ class CuttingOptimizerUI(QMainWindow):
         if self.qtapp:
             self.qtapp.setQuitOnLastWindowClosed(False)
         self.setWindowTitle("กระดาษม้วนตัด Optimizer")
-        # make this fit the table width AI!
-        self.setGeometry(100, 100, 800, 700)
+        self.setGeometry(100, 100, 550, 700)
 
         self.ROLL_SPECS = {}
         self.cleaned_orders_df = None
