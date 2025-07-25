@@ -380,9 +380,6 @@ async def main_algorithm(
     output_dir = "cache"
     os.makedirs(output_dir, exist_ok=True)
 
-    if roll_specs:
-        roll_specs = copy.deepcopy(roll_specs)
-
     if progress_callback:
         progress_callback("⚙️ กำลังเริ่มการคำนวณ")
 
