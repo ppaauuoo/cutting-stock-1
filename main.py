@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import os
 from typing import Callable, Optional
 
@@ -379,6 +380,9 @@ async def main_algorithm(
     output_dir = "cache"
     os.makedirs(output_dir, exist_ok=True)
 
+    if roll_specs:
+        roll_specs = copy.deepcopy(roll_specs)
+
     if progress_callback:
         progress_callback("⚙️ กำลังเริ่มการคำนวณ")
 
@@ -455,7 +459,6 @@ async def main_algorithm(
             material_specs = result.get("material_specs", {})
             variables = result.get("variables", {})
             roll_info = {}
-            # rol that have been used in this main algorithm get to full again when the main algorithm start again, make it persistent AI!
             if roll_specs:
                 roll_w_str = str(variables.get("roll_w", "")).strip()
                 demand_per_cut = variables.get("demand_per_cut", 0)
