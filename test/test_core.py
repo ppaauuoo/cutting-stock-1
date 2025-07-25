@@ -1,5 +1,9 @@
+import importlib
+
 import polars as pl
 import pytest
+
+importlib.import_module('core')
 
 from core import _find_and_update_roll, main_algorithm, solve_linear_program
 
