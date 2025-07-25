@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import os
 from typing import Callable, Optional
 
@@ -70,7 +71,15 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         # Find the last roll in the list of all rolls for this material.
         last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
 
-        if last_roll_data and last_roll_id not in used_roll_ids:
+        if last_roll_data and last_roll_id in used_roll_ids and order_number == last_order_number and not (order_number and (order_number, material) in seen_orders):
+            # The roll at the current position is already used for this cut. Advance position.
+            position += 1
+            last_roll_id = last_used_roll_ids.get((width, material, position))
+            last_roll_data = None # Invalidate, we need to re-fetch if a new last_roll_id is found.
+            if last_roll_id:
+                 last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
+
+        if last_roll_data:
             _last_roll_key, last_roll = last_roll_data
             
             # Case 1: The last used roll is sufficient by itself.
@@ -78,152 +87,116 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                 original_length = last_roll['length']
                 last_roll['length'] -= required_length
                 used_roll_ids.add(last_roll_id)
+                last_used_roll_ids[last_order_key] = order_number
                 # The last used roll remains the same.
                 return f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_length)} ม., เหลือ {int(last_roll['length'])} ม.)"
             
-            # Case 2: The last used roll is not sufficient (or is empty), try to combine it with other rolls.
+            # Case 2: The last used roll is not sufficient. Combine with other rolls.
             else:
                 needed_from_another = required_length - last_roll['length']
                 original_len_roll1 = last_roll['length']
                 
-                # Find supplementary rolls from the unused rolls (excluding the last_roll itself).
-                supplement_rolls = [(k, r) for k, r in unused_rolls if r.get('id') != last_roll_id]
+                # Greedily find supplementary rolls, sorted descending by length to use largest rolls first.
+                supplement_rolls = sorted(
+                    [(k, r) for k, r in unused_rolls if r.get('id') != last_roll_id],
+                    key=lambda item: item[1]['length'],
+                    reverse=True
+                )
                 
-                # 2a. Find a single supplementary roll that can cover the remaining requirement.
-                best_supplement = next(( (k, r) for k, r in sorted(supplement_rolls, key=lambda item: item[1]['length'], reverse=True) if r['length'] >= needed_from_another), None)
+                rolls_for_combination = []
+                length_from_supplements = 0
+                for supp_key, supp_roll in supplement_rolls:
+                    rolls_for_combination.append((supp_key, supp_roll))
+                    length_from_supplements += supp_roll.get('length', 0)
+                    if length_from_supplements >= needed_from_another:
+                        break  # Found enough rolls
 
-                if best_supplement:
-                    _supp_key, supp_roll = best_supplement
-                    original_len_roll2 = supp_roll['length']
-                    supp_roll_id = supp_roll['id']
-
+                if length_from_supplements >= needed_from_another:
+                    # We have enough supplementary rolls.
+                    # First, use up the last_roll.
                     last_roll['length'] = 0
-                    supp_roll['length'] -= needed_from_another
-                    
-                    last_used_roll_ids[(width, material, position)] = supp_roll_id
-                    last_used_roll_ids[position_key] = position
-                    last_used_roll_ids[last_order_key] = order_number
-                    
                     used_roll_ids.add(last_roll_id)
-                    used_roll_ids.add(supp_roll_id)
                     
-                    return (f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_len_roll1)} ม., ใช้หมด) "
-                            f"+ {supp_roll_id} (ยาว {int(original_len_roll2)} ม., เหลือ {int(supp_roll['length'])} ม.)")
+                    message_parts = [f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_len_roll1)} ม., ใช้หมด)"]
+                    
+                    remaining_needed = needed_from_another
+                    new_last_used_roll_id = None
 
-                # 2b. If no single supplement roll is sufficient, try combining with two supplementary rolls.
-                if len(supplement_rolls) >= 2:
-                    for i in range(len(supplement_rolls)):
-                        for j in range(i + 1, len(supplement_rolls)):
-                            supp1_key, supp1 = supplement_rolls[i]
-                            supp2_key, supp2 = supplement_rolls[j]
-
-                            supp1_id = supp1.get('id')
-                            supp1_length = supp1.get('length', 0)
-                            supp2_id = supp2.get('id')
-                            supp2_length = supp2.get('length', 0)
-
-                            if supp1_id and supp2_id and (supp1_length + supp2_length >= needed_from_another):
-                                needed_from_supp2 = needed_from_another - supp1_length
-                                
-                                last_roll['length'] = 0
-                                supp1['length'] = 0
-                                supp2['length'] -= needed_from_supp2
-                                
-                                last_used_roll_ids[(width, material, position)] = supp2_id
-                                last_used_roll_ids[position_key] = position
-                                last_used_roll_ids[last_order_key] = order_number
-                                
-                                used_roll_ids.add(last_roll_id)
-                                used_roll_ids.add(supp1_id)
-                                used_roll_ids.add(supp2_id)
-                                
-                                return (f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_len_roll1)} ม., ใช้หมด) "
-                                        f"+ {supp1_id} (ยาว {int(supp1_length)} ม., ใช้หมด) "
-                                        f"+ {supp2_id} (ยาว {int(supp2_length)} ม., เหลือ {int(supp2['length'])} ม.)")
-            
-            # If we're here, the locked roll exists but we couldn't find enough supplementary rolls.
-            return "-> (สต็อกไม่พอสำหรับม้วนที่ล็อคไว้)"
-
-    # --- Fallback to original logic if last used roll wasn't applicable ---
-    # 1. Try to find a single new roll that is sufficient.
-    for roll_key, roll in unused_rolls:
-        roll_id = roll.get('id')
-        roll_length = roll.get('length', 0)
-        if roll_id and roll_length >= required_length:
-            roll['length'] -= required_length
-            used_roll_ids.add(roll_id)
-            # Set this as the new last used roll for this material.
-            last_used_roll_ids[(width, material, position)] = roll_id
-            last_used_roll_ids[position_key] = position
-            last_used_roll_ids[last_order_key] = order_number
-            return f"-> เปิดม้วนใหม่: {roll_id} (ยาว {int(roll_length)} ม., เหลือ {int(roll['length'])} ม.)"
-
-    # 2. If no single roll is sufficient, try to combine two new rolls.
-    if len(unused_rolls) >= 2:
-        for i in range(len(unused_rolls)):
-            for j in range(i + 1, len(unused_rolls)):
-                roll1_key, roll1 = unused_rolls[i]
-                roll2_key, roll2 = unused_rolls[j]
-
-                roll1_id = roll1.get('id')
-                roll1_length = roll1.get('length', 0)
-                roll2_id = roll2.get('id')
-                roll2_length = roll2.get('length', 0)
-
-                if roll1_id and roll2_id:
-                    combined_length = roll1_length + roll2_length
-                    if combined_length >= required_length:
-                        needed_from_roll2 = required_length - roll1_length
+                    for i, (supp_key, supp_roll) in enumerate(rolls_for_combination):
+                        supp_id = supp_roll.get('id')
+                        original_supp_length = supp_roll['length']
                         
-                        roll1['length'] = 0
-                        roll2['length'] -= needed_from_roll2
-                        
-                        last_used_roll_ids[(width, material, position)] = roll2_id
+                        used_roll_ids.add(supp_id)
+
+                        if remaining_needed > 0:
+                            if original_supp_length >= remaining_needed:
+                                # This is the last roll needed.
+                                supp_roll['length'] -= remaining_needed
+                                message_parts.append(f"{supp_id} (ยาว {int(original_supp_length)} ม., เหลือ {int(supp_roll['length'])} ม.)")
+                                new_last_used_roll_id = supp_id
+                                remaining_needed = 0
+                            else:
+                                # Use this roll completely.
+                                supp_roll['length'] = 0
+                                message_parts.append(f"{supp_id} (ยาว {int(original_supp_length)} ม., ใช้หมด)")
+                                remaining_needed -= original_supp_length
+                                # If this is the last available roll in our combination, it becomes the new last used roll.
+                                if i == len(rolls_for_combination) - 1:
+                                    new_last_used_roll_id = supp_id
+                    
+                    if new_last_used_roll_id:
+                        last_used_roll_ids[(width, material, position)] = new_last_used_roll_id
                         last_used_roll_ids[position_key] = position
                         last_used_roll_ids[last_order_key] = order_number
-                        
-                        used_roll_ids.add(roll1_id)
-                        used_roll_ids.add(roll2_id)
-                        
-                        return (f"-> เปิดม้วนใหม่: {roll1_id} (ยาว {int(roll1_length)} ม., ใช้หมด) "
-                                f"+ {roll2_id} (ยาว {int(roll2_length)} ม., เหลือ {int(roll2['length'])} ม.)")
 
-    # 3. If two rolls are not sufficient, try to combine three new rolls.
-    if len(unused_rolls) >= 3:
-        for i in range(len(unused_rolls)):
-            for j in range(i + 1, len(unused_rolls)):
-                for k in range(j + 1, len(unused_rolls)):
-                    roll1_key, roll1 = unused_rolls[i]
-                    roll2_key, roll2 = unused_rolls[j]
-                    roll3_key, roll3 = unused_rolls[k]
+                    return " + ".join(message_parts)
+            
 
-                    roll1_id = roll1.get('id')
-                    roll1_length = roll1.get('length', 0)
-                    roll2_id = roll2.get('id')
-                    roll2_length = roll2.get('length', 0)
-                    roll3_id = roll3.get('id')
-                    roll3_length = roll3.get('length', 0)
+    # --- Fallback to original logic if last used roll wasn't applicable ---
+    # Greedily find a combination of new rolls, using largest available rolls first.
+    sorted_unused_rolls = sorted(unused_rolls, key=lambda item: item[1]['length'], reverse=True)
+    
+    rolls_for_combination = []
+    combined_length = 0
+    for roll_key, roll in sorted_unused_rolls:
+        rolls_for_combination.append((roll_key, roll))
+        combined_length += roll.get('length', 0)
+        if combined_length >= required_length:
+            break
 
-                    if roll1_id and roll2_id and roll3_id:
-                        combined_length = roll1_length + roll2_length + roll3_length
-                        if combined_length >= required_length:
-                            needed_from_roll3 = required_length - roll1_length - roll2_length
-                            
-                            roll1['length'] = 0
-                            roll2['length'] = 0
-                            roll3['length'] -= needed_from_roll3
-                            
-                            last_used_roll_ids[(width, material, position)] = roll3_id
-                            last_used_roll_ids[position_key] = position
-                            last_used_roll_ids[last_order_key] = order_number
-                            
-                            used_roll_ids.add(roll1_id)
-                            used_roll_ids.add(roll2_id)
-                            used_roll_ids.add(roll3_id)
-                            
-                            return (f"-> เปิดม้วนใหม่: {roll1_id} (ยาว {int(roll1_length)} ม., ใช้หมด) "
-                                    f"+ {roll2_id} (ยาว {int(roll2_length)} ม., ใช้หมด) "
-                                    f"+ {roll3_id} (ยาว {int(roll3_length)} ม., เหลือ {int(roll3['length'])} ม.)")
+    if combined_length >= required_length:
+        message_parts = []
+        remaining_needed = required_length
+        new_last_used_roll_id = None
+
+        for i, (roll_key, roll) in enumerate(rolls_for_combination):
+            roll_id = roll.get('id')
+            original_length = roll.get('length', 0)
+            
+            used_roll_ids.add(roll_id)
+
+            if remaining_needed > 0:
+                if original_length >= remaining_needed:
+                    # This is the last roll needed.
+                    roll['length'] -= remaining_needed
+                    message_parts.append(f"{roll_id} (ยาว {int(original_length)} ม., เหลือ {int(roll['length'])} ม.)")
+                    new_last_used_roll_id = roll_id
+                    remaining_needed = 0
+                else:
+                    # Use this roll completely.
+                    roll['length'] = 0
+                    message_parts.append(f"{roll_id} (ยาว {int(original_length)} ม., ใช้หมด)")
+                    remaining_needed -= original_length
+                    # If this is the last available roll in our combination, it becomes the new last used roll.
+                    if i == len(rolls_for_combination) - 1:
+                        new_last_used_roll_id = roll_id
+
+        if new_last_used_roll_id:
+            last_used_roll_ids[(width, material, position)] = new_last_used_roll_id
+            last_used_roll_ids[position_key] = position
+            last_used_roll_ids[last_order_key] = order_number
+
+        return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
 
     return "-> (ไม่มีสต็อกที่พอ)"
 
@@ -440,6 +413,7 @@ async def main_algorithm(
 
     for roll in rolls:
         last_used_roll_ids = {}
+        used_roll_ids_for_cut = set()
         if progress_callback:
             progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
         
@@ -483,7 +457,6 @@ async def main_algorithm(
             variables = result.get("variables", {})
             roll_info = {}
             if roll_specs:
-                used_roll_ids_for_cut = set()
                 roll_w_str = str(variables.get("roll_w", "")).strip()
                 demand_per_cut = variables.get("demand_per_cut", 0)
                 c_type_spec = material_specs.get('c_type')
@@ -573,6 +546,39 @@ async def main_algorithm(
                 progress_callback(f"--- Saved {len(roll_cuts)} cuts for roll {roll['width']} to {output_filename} ---")
         elif progress_callback:
             progress_callback(f"--- No cuts made for roll {roll['width']} ---")
+
+        if not rem_orders_df.is_empty():
+            if progress_callback:
+                progress_callback(f"    Adding {rem_orders_df.shape[0]} failed/infeasible orders to the results.")
+            
+            unprocessed_orders = rem_orders_df.to_dicts()
+            for order in unprocessed_orders:
+                unprocessed_result = {
+                    "roll_w": "Failed/Infeasible",
+                    "rem_roll_l": 0,
+                    "demand_per_cut": 0,
+                    "order_number": order.get("order_number"),
+                    "order_w": order.get("width"),
+                    "order_l": order.get("length"),
+                    "order_qty": order.get("quantity"),
+                    "order_dmd": order.get("demand"),
+                    "cuts": 0,
+                    "trim": 0,
+                    "type": order.get("type"),
+                    "component_type": order.get("component_type"),
+                    "die_cut": order.get("die_cut"),
+                    "front": order.get("front"),
+                    "c": order.get("c"),
+                    "middle": order.get("middle"),
+                    "b": order.get("b"),
+                    "back": order.get("back"),
+                    "front_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                    "c_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                    "middle_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                    "b_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                    "back_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                }
+                all_results.append(unprocessed_result)
 
     # Save all cutting results to a single summary CSV file
     if all_results:
