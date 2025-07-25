@@ -1,9 +1,8 @@
 import polars as pl
 import pytest
 
-from main import _find_and_update_roll, solve_linear_program
+from main import _find_and_update_roll, main_algorithm, solve_linear_program
 
-# test main alrgorithm in ui.py AI!
 
 def test_find_and_update_roll_sufficient_single_roll():
     """
@@ -153,3 +152,45 @@ async def test_solve_linear_program_infeasible():
     result = await solve_linear_program(roll_width, roll_length, orders_df)
     
     assert "Infeasible" in result['status']
+
+
+@pytest.mark.asyncio
+async def test_main_algorithm_simple_run(tmp_path):
+    """
+    Tests the main_algorithm with a simple, solvable scenario.
+    """
+    # 1. Create a dummy order file
+    order_data = (
+        "order_number,width,length,quantity,front,c,middle,b,back,type,component_type,demand,die_cut\n"
+        "ORD-001,10,100,10,KA125,,,,,,A,compA,100,1\n"
+    )
+    order_file = tmp_path / "test_orders.csv"
+    order_file.write_text(order_data, encoding='utf-8')
+
+    # 2. Define roll_specs
+    roll_specs = {
+        '55': {
+            'KA125': {
+                1: {'id': 'R1', 'length': 10000}
+            }
+        }
+    }
+
+    # 3. Call main_algorithm
+    results = await main_algorithm(
+        roll_width=55,
+        roll_length=10000,
+        file_path=str(order_file),
+        front='KA125',
+        roll_specs=roll_specs
+    )
+
+    # 4. Assertions
+    assert isinstance(results, list)
+    assert len(results) == 1
+    result = results[0]
+    assert result['order_number'] == 'ORD-001'
+    assert result['cuts'] == 5
+    assert abs(result['trim'] - 5.0) < 1e-9
+    assert 'front_roll_info' in result
+    assert "-> เปิดม้วนใหม่: R1" in result['front_roll_info']
