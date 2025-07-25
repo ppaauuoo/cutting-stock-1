@@ -412,6 +412,7 @@ async def main_algorithm(
 
     for roll in rolls:
         last_used_roll_ids = {}
+        used_roll_ids_for_cut = set()
         if progress_callback:
             progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
         
@@ -454,9 +455,7 @@ async def main_algorithm(
             material_specs = result.get("material_specs", {})
             variables = result.get("variables", {})
             roll_info = {}
-            # roll that have been used in this cut show up again in the next cut, make it persistent AI!
             if roll_specs:
-                used_roll_ids_for_cut = set()
                 roll_w_str = str(variables.get("roll_w", "")).strip()
                 demand_per_cut = variables.get("demand_per_cut", 0)
                 c_type_spec = material_specs.get('c_type')
