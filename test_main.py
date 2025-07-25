@@ -47,7 +47,6 @@ def test_find_and_update_roll_same_order_same_material_multiple_roll():
     used_roll_ids = set()
     last_used_roll_ids = {}
     
-    # how do i check the postion key? AI!
     result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids)
     position_key = ('_position', width, material)
     assert 0 == last_used_roll_ids.get(position_key, 0)

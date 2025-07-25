@@ -70,7 +70,15 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         # Find the last roll in the list of all rolls for this material.
         last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
 
-        if last_roll_data and last_roll_id not in used_roll_ids:
+        if last_roll_data and last_roll_id in used_roll_ids:
+            # The roll at the current position is already used for this cut. Advance position.
+            position += 1
+            last_roll_id = last_used_roll_ids.get((width, material, position))
+            last_roll_data = None # Invalidate, we need to re-fetch if a new last_roll_id is found.
+            if last_roll_id:
+                 last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
+
+        if last_roll_data:
             _last_roll_key, last_roll = last_roll_data
             
             # Case 1: The last used roll is sufficient by itself.
