@@ -455,6 +455,7 @@ async def main_algorithm(
             material_specs = result.get("material_specs", {})
             variables = result.get("variables", {})
             roll_info = {}
+            # rol that have been used in this main algorithm get to full again when the main algorithm start again, make it persistent AI!
             if roll_specs:
                 roll_w_str = str(variables.get("roll_w", "")).strip()
                 demand_per_cut = variables.get("demand_per_cut", 0)
