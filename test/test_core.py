@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from main import _find_and_update_roll, main_algorithm, solve_linear_program
+from core import _find_and_update_roll, main_algorithm, solve_linear_program
 
 
 def test_find_and_update_roll_sufficient_single_roll():

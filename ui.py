@@ -41,7 +41,7 @@ from PyQt5.QtWidgets import (
 )
 
 import cleaning
-import main  # Import our modified main module
+import core  # Import our modified main module
 from order import OrderManager
 from stock import StockManager
 
@@ -118,7 +118,7 @@ class WorkerThread(QThread):
             
         try:
             results = loop.run_until_complete(
-                main.main_algorithm(
+                core.main_algorithm(
                     roll_width=self.width,
                     roll_length=self.length,
                     progress_callback=progress_callback,
