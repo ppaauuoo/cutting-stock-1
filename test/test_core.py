@@ -1,9 +1,10 @@
-import importlib
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import polars as pl
 import pytest
-
-importlib.import_module('core')
 
 from core import _find_and_update_roll, main_algorithm, solve_linear_program
 
