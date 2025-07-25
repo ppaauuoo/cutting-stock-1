@@ -70,7 +70,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         # Find the last roll in the list of all rolls for this material.
         last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
 
-        if last_roll_data and last_roll_id in used_roll_ids and order_number == last_order_number:
+        if last_roll_data and last_roll_id in used_roll_ids and order_number == last_order_number and not (order_number and (order_number, material) in seen_orders):
             # The roll at the current position is already used for this cut. Advance position.
             position += 1
             last_roll_id = last_used_roll_ids.get((width, material, position))
