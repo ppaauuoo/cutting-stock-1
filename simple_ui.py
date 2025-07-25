@@ -673,7 +673,6 @@ class CuttingOptimizerUI(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat(f"Processing suggestion {self.current_suggestion_index + 1}...")
 
-        roll_specs_copy = copy.deepcopy(self.ROLL_SPECS)
         self.worker = WorkerThread(
             width, length, None, None, self.order_file_path,
             front_material, 
@@ -681,7 +680,7 @@ class CuttingOptimizerUI(QMainWindow):
             middle_material, 
             b_type, b_material,
             back_material,
-            roll_specs_copy,
+            self.ROLL_SPECS,
             self.processed_order_numbers.copy()
         )
         self.worker.update_signal.connect(self.log_message)
