@@ -2,22 +2,30 @@ import asyncio
 import collections
 import copy
 import csv
+import collections
+import copy
+import csv
 import os
 import re
 import sys
 from math import floor
+from math import floor
 
+import polars as pl
 import polars as pl
 from PyQt5.QtCore import (
     QDate,
+    QDateTime,
     QDateTime,
     QLocale,
     Qt,
     QTextCodec,
     QThread,
     QTimer,
+    QTimer,
     pyqtSignal,
 )
+from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtWidgets import (
     QApplication,
@@ -50,9 +58,17 @@ class WorkerThread(QThread):
     update_signal = pyqtSignal(str)
     progress_updated = pyqtSignal(int, str)  # เพิ่มสัญญาณใหม่สำหรับอัปเดตโปรเกรสบาร์
     calculation_succeeded = pyqtSignal(list)
+    calculation_succeeded = pyqtSignal(list)
     error_signal = pyqtSignal(str)
 
     def __init__(self, width, length, start_date, end_date, file_path,
+                 front_material,
+                 corrugate_c_type, corrugate_c_material_name,
+                 middle_material,
+                 corrugate_b_type, corrugate_b_material_name,
+                 back_material,
+                 roll_specs,
+                 processed_orders,
                  front_material,
                  corrugate_c_type, corrugate_c_material_name,
                  middle_material,
@@ -70,10 +86,18 @@ class WorkerThread(QThread):
         self.front_material = front_material
         self.corrugate_c_type = corrugate_c_type
         self.corrugate_c_material_name = corrugate_c_material_name
+        self.front_material = front_material
+        self.corrugate_c_type = corrugate_c_type
+        self.corrugate_c_material_name = corrugate_c_material_name
         self.middle_material = middle_material
         self.corrugate_b_type = corrugate_b_type
         self.corrugate_b_material_name = corrugate_b_material_name
+        self.corrugate_b_type = corrugate_b_type
+        self.corrugate_b_material_name = corrugate_b_material_name
         self.back_material = back_material
+        self.roll_specs = roll_specs
+        self.processed_orders = processed_orders
+        self.current_iteration_step = 0 # เพิ่มตัวแปรสำหรับติดตามความคืบหน้าการวนซ้ำ
         self.roll_specs = roll_specs
         self.processed_orders = processed_orders
         self.current_iteration_step = 0 # เพิ่มตัวแปรสำหรับติดตามความคืบหน้าการวนซ้ำ
@@ -87,12 +111,36 @@ class WorkerThread(QThread):
                 # Raise an exception to break out of the blocking call
                 raise InterruptedError("Calculation was interrupted.")
 
+            if self.isInterruptionRequested():
+                # Raise an exception to break out of the blocking call
+                raise InterruptedError("Calculation was interrupted.")
+
             self.update_signal.emit(message)
             # ส่งสัญญาณพร้อมเปอร์เซ็นต์ความคืบหน้าประมาณการ
             if "กำลังเริ่มการคำนวณ" in message:
                 self.progress_updated.emit(5, message)
             elif "โหลดและจัดเรียงข้อมูลเรียบร้อย" in message:
                 self.progress_updated.emit(20, message)
+            elif "Iteration" in message:
+                # พยายามดึงตัวเลขการวนซ้ำทั้งหมด (X/Y)
+                match = re.search(r'Iteration (\d+)(?:/| of )(\d+)', message)
+                if match:
+                    current_iter = int(match.group(1))
+                    total_iters = int(match.group(2))
+                    if total_iters > 0:
+                        # คำนวณเปอร์เซ็นต์ความคืบหน้าในช่วง 50-95%
+                        progress_percentage = 50 + (current_iter / total_iters) * 45
+                        self.progress_updated.emit(int(progress_percentage), message)
+                    else:
+                        # หากไม่มีตัวเลขรวมหรือเป็น 0 ให้ใช้การเพิ่มค่าทีละน้อย
+                        self.current_iteration_step += 1
+                        estimated_progress = min(95, 50 + self.current_iteration_step) # เพิ่มทีละ 1%
+                        self.progress_updated.emit(estimated_progress, message)
+                else:
+                    # หากไม่พบรูปแบบตัวเลข ให้เพิ่มค่าทีละน้อย
+                    self.current_iteration_step += 1
+                    estimated_progress = min(95, 50 + self.current_iteration_step) # เพิ่มทีละ 1%
+                    self.progress_updated.emit(estimated_progress, message)
             elif "Iteration" in message:
                 # พยายามดึงตัวเลขการวนซ้ำทั้งหมด (X/Y)
                 match = re.search(r'Iteration (\d+)(?:/| of )(\d+)', message)
@@ -128,10 +176,17 @@ class WorkerThread(QThread):
                     front=self.front_material,
                     c_type=self.corrugate_c_type,
                     c=self.corrugate_c_material_name,
+                    front=self.front_material,
+                    c_type=self.corrugate_c_type,
+                    c=self.corrugate_c_material_name,
                     middle=self.middle_material,
                     b_type=self.corrugate_b_type,
                     b=self.corrugate_b_material_name,
+                    b_type=self.corrugate_b_type,
+                    b=self.corrugate_b_material_name,
                     back=self.back_material,
+                   roll_specs=self.roll_specs,
+                   processed_orders=self.processed_orders,
                    roll_specs=self.roll_specs,
                    processed_orders=self.processed_orders,
                 )
@@ -141,7 +196,15 @@ class WorkerThread(QThread):
                 self.calculation_succeeded.emit(results)
         except InterruptedError:
             self.update_signal.emit("⏹️ การคำนวณถูกหยุดโดยผู้ใช้")
+            if not self.isInterruptionRequested():
+                self.progress_updated.emit(100, "✅ เสร็จสิ้น")  # สัญญาณเสร็จสมบูรณ์
+                self.calculation_succeeded.emit(results)
+        except InterruptedError:
+            self.update_signal.emit("⏹️ การคำนวณถูกหยุดโดยผู้ใช้")
         except Exception as e:
+            if not self.isInterruptionRequested():
+                self.error_signal.emit(f"Error: {str(e)}")
+                self.progress_updated.emit(0, "❌ เกิดข้อผิดพลาด!") # รีเซ็ตโปรเกรสบาร์เมื่อเกิดข้อผิดพลาด
             if not self.isInterruptionRequested():
                 self.error_signal.emit(f"Error: {str(e)}")
                 self.progress_updated.emit(0, "❌ เกิดข้อผิดพลาด!") # รีเซ็ตโปรเกรสบาร์เมื่อเกิดข้อผิดพลาด
@@ -149,6 +212,7 @@ class WorkerThread(QThread):
             loop.close()
 
 class CustomTableWidget(QTableWidget):
+    """    QTableWidget ที่กำหนดเองเพื่อส่งสัญญาณเมื่อกดปุ่ม Enter
     """    QTableWidget ที่กำหนดเองเพื่อส่งสัญญาณเมื่อกดปุ่ม Enter
     """
     enterPressed = pyqtSignal() # สัญญาณที่กำหนดเอง
@@ -165,13 +229,25 @@ class CustomTableWidget(QTableWidget):
 
 class CuttingOptimizerUI(QMainWindow):
 
+
     def __init__(self):
         super().__init__()
         self.qtapp = QApplication.instance()
         if self.qtapp:
             self.qtapp.setQuitOnLastWindowClosed(False)
+        self.qtapp = QApplication.instance()
+        if self.qtapp:
+            self.qtapp.setQuitOnLastWindowClosed(False)
         self.setWindowTitle("กระดาษม้วนตัด Optimizer")
         self.setGeometry(100, 100, 800, 700)
+
+        self.ROLL_SPECS = {}
+        self.cleaned_orders_df = None
+        self.calculated_length = 0
+        self.suggestions_list = []
+        self.current_suggestion_index = 0
+        self.processed_order_numbers = set()
+
 
         self.ROLL_SPECS = {}
         self.cleaned_orders_df = None
@@ -249,7 +325,11 @@ class CuttingOptimizerUI(QMainWindow):
         layout.addWidget(QLabel("ผลลัพธ์การตัด:"))
         self.result_table = CustomTableWidget() # ใช้ CustomTableWidget
         self.result_table.setColumnCount(10)
+        self.result_table.setColumnCount(10)
         self.result_table.setHorizontalHeaderLabels([
+            "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", "จำนวนออก", "เศษเหลือ",
+            "ความยาวออเดอร์", "จำนวนสั่งส่ง", "ผลิตได้", "จำนวนสั่งผลิต", "ปริมาณตัด"  
+            #, "กระดาษที่ใช้", "กระดาษคงเหลือ"
             "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", "จำนวนออก", "เศษเหลือ",
             "ความยาวออเดอร์", "จำนวนสั่งส่ง", "ผลิตได้", "จำนวนสั่งผลิต", "ปริมาณตัด"  
             #, "กระดาษที่ใช้", "กระดาษคงเหลือ"
@@ -690,7 +770,13 @@ class CuttingOptimizerUI(QMainWindow):
 
     def update_progress_bar(self, value: int, message: str):
         """Updates the progress bar."""
+        """Updates the progress bar."""
         self.progress_bar.setValue(value)
+        if self.suggestions_list:
+            self.progress_bar.setFormat(f"({self.current_suggestion_index + 1}/{len(self.suggestions_list)}) {message} ({value}%)")
+        else:
+            self.progress_bar.setFormat(f"{message} ({value}%)")
+
         if self.suggestions_list:
             self.progress_bar.setFormat(f"({self.current_suggestion_index + 1}/{len(self.suggestions_list)}) {message} ({value}%)")
         else:
@@ -790,7 +876,16 @@ class CuttingOptimizerUI(QMainWindow):
 
             for col_idx, value in enumerate([
                 str(result.get('roll_w', '')),
+                str(result.get('roll_w', '')),
                 str(result.get('order_number', '')),
+                f"{result.get('order_w', ''):.4f}",
+                str(result.get('cuts', '')),
+                f"{result.get('trim', ''):.2f}",
+                f"{result.get('order_l', ''):.4f}",
+                f"{result.get('order_dmd', '')}",
+                str(result.get('die_cut', '')),
+                f"{result.get('order_qty', '')}",
+                demand_per_cut_val,
                 f"{result.get('order_w', ''):.4f}",
                 str(result.get('cuts', '')),
                 f"{result.get('trim', ''):.2f}",
@@ -1195,4 +1290,5 @@ if __name__ == "__main__":
     window = CuttingOptimizerUI()
     window.show()
     sys.exit(app.exec_())
+
 
