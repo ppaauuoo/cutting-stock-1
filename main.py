@@ -454,6 +454,7 @@ async def main_algorithm(
             material_specs = result.get("material_specs", {})
             variables = result.get("variables", {})
             roll_info = {}
+            # roll that have been used in this cut show up again in the next cut, make it persistent AI!
             if roll_specs:
                 used_roll_ids_for_cut = set()
                 roll_w_str = str(variables.get("roll_w", "")).strip()
