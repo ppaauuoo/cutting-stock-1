@@ -3,6 +3,7 @@ import pytest
 
 from main import _find_and_update_roll, solve_linear_program
 
+# test main alrgorithm in ui.py AI!
 
 def test_find_and_update_roll_sufficient_single_roll():
     """
