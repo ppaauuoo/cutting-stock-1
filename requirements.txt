@@ -7,3 +7,5 @@ PyQt5
 pyinstaller
 sip
 tzdata
+pytest
+pytest-asyncio
