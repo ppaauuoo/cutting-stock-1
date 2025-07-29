@@ -60,16 +60,26 @@ class OrderManager(QObject):
                 try:
                     mod_time = os.path.getmtime(current_path)
                     if mod_time != self._last_mod_time:
-                        cache_path = current_path + ".cache"
-                        shutil.copy2(current_path, cache_path)
+                        # Use a temporary copy to avoid issues with file locks
+                        temp_csv_path = current_path + ".tmp"
+                        shutil.copy2(current_path, temp_csv_path)
 
-                        # โหลดและทำความสะอาดข้อมูล
-                        raw_order_df = load_data(cache_path)
+                        # โหลดข้อมูลจากไฟล์ CSV ที่คัดลอกมา
+                        raw_order_df = load_data(temp_csv_path)
+                        os.remove(temp_csv_path)  # ลบไฟล์ชั่วคราว
+
                         if raw_order_df is not None and not raw_order_df.is_empty():
+                            # บันทึกข้อมูลลงในฐานข้อมูล SQLite เพื่อใช้เป็นแคช
+                            cache_db_path = current_path + ".db"
+                            table_name = os.path.splitext(os.path.basename(current_path))[0]
+                            conn_str = f"sqlite:///{cache_db_path}"
+                            raw_order_df.write_database(table_name, connection=conn_str, if_table_exists="replace")
+
+                            # ประมวลผลข้อมูลที่โหลดมา
                             cleaned_order_df = clean_data(raw_order_df, suggestion_mode=True)
                             self.order_updated.emit(cleaned_order_df)
                         else:
-                            # หากไฟล์ว่างหรือโหลดไม่สำเร็จ ให้ส่ง DataFrame ที่ว่างเปล่า
+                            # หากไฟล์ต้นฉบับว่างเปล่า ให้ส่ง DataFrame ที่ว่างเปล่า
                             self.order_updated.emit(pl.DataFrame())
 
                         self._last_mod_time = mod_time
