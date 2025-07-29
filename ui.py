@@ -113,7 +113,7 @@ class WorkerThread(QThread):
                     self.current_iteration_step += 1
                     estimated_progress = min(95, 50 + self.current_iteration_step) # เพิ่มทีละ 1%
                     self.progress_updated.emit(estimated_progress, message)
-            elif "บันทึกผลลัพธ์ลงไฟล์ CSV เรียบร้อย" in message:
+            elif "บันทึกผลลัพธ์ลงฐานข้อมูลเรียบร้อย" in message:
                 self.progress_updated.emit(95, message)
             
         try:

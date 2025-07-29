@@ -539,13 +539,15 @@ async def main_algorithm(
                     progress_callback("    Warning: order_idx is None, cannot remove order. Stopping.")
                 break
 
-        # Save results for the current roll to a CSV file
+        # Save results for the current roll to a sqlite file
         if roll_cuts:
             output_df = pl.DataFrame(roll_cuts)
-            output_filename = os.path.join(output_dir, f"roll_cut_results_{roll['width']}.csv")
-            output_df.write_csv(output_filename)
+            db_path = os.path.join(output_dir, "cache.db")
+            conn_str = f"sqlite:///{db_path}"
+            table_name = f"roll_cut_results_{roll['width']}"
+            output_df.write_database(table_name, connection=conn_str, if_table_exists="replace")
             if progress_callback:
-                progress_callback(f"--- Saved {len(roll_cuts)} cuts for roll {roll['width']} to {output_filename} ---")
+                progress_callback(f"--- Saved {len(roll_cuts)} cuts for roll {roll['width']} to database table '{table_name}' ---")
         elif progress_callback:
             progress_callback(f"--- No cuts made for roll {roll['width']} ---")
 
@@ -583,11 +585,13 @@ async def main_algorithm(
                 }
                 all_results.append(unprocessed_result)
 
-    # Save all cutting results to a single summary CSV file
+    # Save all cutting results to a single summary table in sqlite
     if all_results:
         final_output_df = pl.DataFrame(all_results)
-        final_output_df.write_csv(os.path.join(output_dir, "all_cutting_plan_summary.csv"))
+        db_path = os.path.join(output_dir, "cache.db")
+        conn_str = f"sqlite:///{db_path}"
+        final_output_df.write_database("all_cutting_plan_summary", connection=conn_str, if_table_exists="replace")
         if progress_callback:
-            progress_callback("💾 บันทึกผลลัพธ์ลงไฟล์ CSV เรียบร้อย")
+            progress_callback("💾 บันทึกผลลัพธ์ลงฐานข้อมูลเรียบร้อย")
     
     return all_results
