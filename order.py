@@ -1,4 +1,5 @@
 import os
+import shutil
 import time
 
 import polars as pl
@@ -23,6 +24,7 @@ class OrderManager(QObject):
         self._is_running = False
         self._mutex = QMutex()
         self._file_exists = True  # สมมติว่าไฟล์มีอยู่ตอนเริ่มต้น
+        self._last_mod_time = 0
 
     def set_file_path(self, file_path):
         """เมธอดที่ปลอดภัยต่อเธรดเพื่ออัปเดตเส้นทางไฟล์"""
@@ -30,6 +32,7 @@ class OrderManager(QObject):
             self._file_path = file_path
             # รีเซ็ตสถานะเพื่อบังคับให้ตรวจสอบใหม่
             self._file_exists = True
+            self._last_mod_time = 0
 
     def run(self):
         """
@@ -54,14 +57,25 @@ class OrderManager(QObject):
                 # หากพบไฟล์ ให้รีเซ็ตแฟล็ก
                 self._file_exists = True
 
-                # โหลดและทำความสะอาดข้อมูล
-                raw_order_df = load_data(current_path)
-                if raw_order_df is not None and not raw_order_df.is_empty():
-                    cleaned_order_df = clean_data(raw_order_df, suggestion_mode=True)
-                    self.order_updated.emit(cleaned_order_df)
-                else:
-                    # หากไฟล์ว่างหรือโหลดไม่สำเร็จ ให้ส่ง DataFrame ที่ว่างเปล่า
-                    self.order_updated.emit(pl.DataFrame())
+                try:
+                    mod_time = os.path.getmtime(current_path)
+                    if mod_time != self._last_mod_time:
+                        cache_path = current_path + ".cache"
+                        shutil.copy2(current_path, cache_path)
+
+                        # โหลดและทำความสะอาดข้อมูล
+                        raw_order_df = load_data(cache_path)
+                        if raw_order_df is not None and not raw_order_df.is_empty():
+                            cleaned_order_df = clean_data(raw_order_df, suggestion_mode=True)
+                            self.order_updated.emit(cleaned_order_df)
+                        else:
+                            # หากไฟล์ว่างหรือโหลดไม่สำเร็จ ให้ส่ง DataFrame ที่ว่างเปล่า
+                            self.order_updated.emit(pl.DataFrame())
+
+                        self._last_mod_time = mod_time
+                except (IOError, PermissionError):
+                    # File might be locked. Silently ignore and retry in the next cycle.
+                    pass
 
             except Exception as e:
                 self.error_signal.emit(
