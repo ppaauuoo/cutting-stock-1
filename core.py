@@ -389,7 +389,7 @@ async def main_algorithm(
     table_name = base_filename
     if os.path.exists(cache_db_path):
         conn_str = f"sqlite:///{os.path.abspath(cache_db_path)}"
-        query = f"SELECT * FROM {table_name}"
+        query = f'SELECT * FROM "{table_name}"'
         raw_orders_df = pl.read_database_uri(query, conn_str)
         if progress_callback:
             progress_callback(f"💾 โหลดข้อมูลออเดอร์จากแคช {cache_db_path}")
