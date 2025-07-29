@@ -354,6 +354,7 @@ async def _format_lp_solution(
             "order_idx": sel_order.get('original_idx'),
             "type": sel_order.get('type'),
             "component_type": sel_order.get('component_type'),
+            "due_date": sel_order.get('due_date'),
         },
         "material_specs": material_specs,
         "message": "PuLP problem solved successfully."
@@ -522,6 +523,7 @@ async def main_algorithm(
                 "trim": variables.get("trim"),
                 "type": variables.get("type"),
                 "component_type": variables.get("component_type"),
+                "due_date": variables.get("due_date"),
             }
             cut_info.update(material_specs)  # Add all material specs
             cut_info.update(roll_info)
@@ -562,6 +564,7 @@ async def main_algorithm(
                     "order_l": order.get("length"),
                     "order_qty": order.get("quantity"),
                     "order_dmd": order.get("demand"),
+                    "due_date": order.get("due_date"),
                     "cuts": 0,
                     "trim": 0,
                     "type": order.get("type"),

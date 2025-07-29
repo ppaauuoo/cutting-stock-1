@@ -248,9 +248,9 @@ class CuttingOptimizerUI(QMainWindow):
         # เพิ่มตารางแสดงผล
         layout.addWidget(QLabel("ผลลัพธ์การตัด:"))
         self.result_table = CustomTableWidget() # ใช้ CustomTableWidget
-        self.result_table.setColumnCount(10)
+        self.result_table.setColumnCount(11)
         self.result_table.setHorizontalHeaderLabels([
-            "ความกว้างม้วน", "หมายเลขออเดอร์", "ความกว้างออเดอร์", "จำนวนออก", "เศษเหลือ",
+            "ความกว้างม้วน", "หมายเลขออเดอร์", "กำหนดส่ง", "ความกว้างออเดอร์", "จำนวนออก", "เศษเหลือ",
             "ความยาวออเดอร์", "จำนวนสั่งส่ง", "ผลิตได้", "จำนวนสั่งผลิต", "ปริมาณตัด"  
             #, "กระดาษที่ใช้", "กระดาษคงเหลือ"
         ])
@@ -791,6 +791,7 @@ class CuttingOptimizerUI(QMainWindow):
             for col_idx, value in enumerate([
                 str(result.get('roll_w', '')),
                 str(result.get('order_number', '')),
+                str(result.get('due_date', '')),
                 f"{result.get('order_w', ''):.4f}",
                 str(result.get('cuts', '')),
                 f"{result.get('trim', ''):.2f}",
@@ -887,6 +888,7 @@ class CuttingOptimizerUI(QMainWindow):
                         row_data = [
                             str(result.get('roll_w', '')),
                             str(result.get('order_number', '')),
+                            str(result.get('due_date', '')),
                             f"{result.get('order_w', ''):.4f}",
                             str(result.get('cuts', '')),
                             f"{result.get('trim', ''):.2f}",
