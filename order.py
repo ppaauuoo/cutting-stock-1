@@ -76,7 +76,7 @@ class OrderManager(QObject):
                             cache_db_path = os.path.join(cache_dir, f"{base_filename}.db")
                             table_name = base_filename
                             conn_str = f"sqlite:///{cache_db_path}"
-                            raw_order_df.write_database(table_name, connection=conn_str, if_table_exists="replace")
+                            raw_order_df.write_database(table_name, connection_uri=conn_str, if_table_exists="replace")
 
                             # ประมวลผลข้อมูลที่โหลดมา
                             cleaned_order_df = clean_data(raw_order_df, suggestion_mode=True)
