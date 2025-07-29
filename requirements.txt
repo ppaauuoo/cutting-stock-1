@@ -9,3 +9,7 @@ sip
 tzdata
 pytest
 pytest-asyncio
+pyarrow
+pandas
+connectorx
+sqlalchemy

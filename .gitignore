@@ -9,4 +9,4 @@ utils
 cleaning_old
 cutting_results*
 *.spec
-
+*.db
