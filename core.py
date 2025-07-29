@@ -384,8 +384,22 @@ async def main_algorithm(
     if progress_callback:
         progress_callback("⚙️ กำลังเริ่มการคำนวณ")
 
+    base_filename = os.path.splitext(os.path.basename(file_path))[0]
+    cache_db_path = os.path.join(output_dir, f"{base_filename}.db")
+    table_name = base_filename
+    if os.path.exists(cache_db_path):
+        conn_str = f"sqlite:///{cache_db_path}"
+        query = f"SELECT * FROM {table_name}"
+        raw_orders_df = pl.read_database(query, conn_str)
+        if progress_callback:
+            progress_callback(f"💾 โหลดข้อมูลออเดอร์จากแคช {cache_db_path}")
+    else:
+        raw_orders_df = cleaning.load_data(file_path)
+        if progress_callback:
+            progress_callback(f"💾 ไม่พบแคช โหลดข้อมูลออเดอร์จากไฟล์ CSV: {file_path}")
+
     orders_df = cleaning.clean_data(
-        cleaning.load_data(file_path), 
+        raw_orders_df,
         start_date,
         end_date,
         front=front,

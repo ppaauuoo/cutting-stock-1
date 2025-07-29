@@ -70,8 +70,11 @@ class OrderManager(QObject):
 
                         if raw_order_df is not None and not raw_order_df.is_empty():
                             # บันทึกข้อมูลลงในฐานข้อมูล SQLite เพื่อใช้เป็นแคช
-                            cache_db_path = current_path + ".db"
-                            table_name = os.path.splitext(os.path.basename(current_path))[0]
+                            cache_dir = "cache"
+                            os.makedirs(cache_dir, exist_ok=True)
+                            base_filename = os.path.splitext(os.path.basename(current_path))[0]
+                            cache_db_path = os.path.join(cache_dir, f"{base_filename}.db")
+                            table_name = base_filename
                             conn_str = f"sqlite:///{cache_db_path}"
                             raw_order_df.write_database(table_name, connection=conn_str, if_table_exists="replace")
 
