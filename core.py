@@ -388,7 +388,7 @@ async def main_algorithm(
     cache_db_path = os.path.join(output_dir, f"{base_filename}.db")
     table_name = base_filename
     if os.path.exists(cache_db_path):
-        conn_str = f"sqlite:///{cache_db_path}"
+        conn_str = f"sqlite:///{os.path.abspath(cache_db_path)}"
         query = f"SELECT * FROM {table_name}"
         raw_orders_df = pl.read_database_uri(query, conn_str)
         if progress_callback:
@@ -557,7 +557,7 @@ async def main_algorithm(
         if roll_cuts:
             output_df = pl.DataFrame(roll_cuts)
             db_path = os.path.join(output_dir, "cache.db")
-            conn_str = f"sqlite:///{db_path}"
+            conn_str = f"sqlite:///{os.path.abspath(db_path)}"
             table_name = f"roll_cut_results_{roll['width']}"
             output_df.write_database(table_name, connection=conn_str, if_table_exists="replace")
             if progress_callback:
@@ -603,7 +603,7 @@ async def main_algorithm(
     if all_results:
         final_output_df = pl.DataFrame(all_results)
         db_path = os.path.join(output_dir, "cache.db")
-        conn_str = f"sqlite:///{db_path}"
+        conn_str = f"sqlite:///{os.path.abspath(db_path)}"
         final_output_df.write_database("all_cutting_plan_summary", connection=conn_str, if_table_exists="replace")
         if progress_callback:
             progress_callback("💾 บันทึกผลลัพธ์ลงฐานข้อมูลเรียบร้อย")

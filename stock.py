@@ -75,7 +75,7 @@ class StockManager(QObject):
                             base_filename = os.path.splitext(os.path.basename(current_path))[0]
                             cache_db_path = os.path.join(cache_dir, f"{base_filename}.db")
                             table_name = base_filename
-                            conn_str = f"sqlite:///{cache_db_path}"
+                            conn_str = f"sqlite:///{os.path.abspath(cache_db_path)}"
                             raw_stock_df.write_database(table_name, connection=conn_str, if_table_exists="replace")
 
                             # ประมวลผลข้อมูลที่โหลดมา
