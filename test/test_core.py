@@ -1,5 +1,6 @@
 import os
 import sys
+import sqlite3
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -208,6 +209,40 @@ def test_find_and_update_roll_no_stock():
     result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids)
     
     assert "-> (ไม่มีข้อมูลสต็อก)" == result
+
+def test_sqlite_basic_operations():
+    """
+    Tests basic SQLite operations: connection, table creation, insertion, and querying.
+    """
+    # 1. Connect to an in-memory database
+    conn = sqlite3.connect(':memory:')
+    cursor = conn.cursor()
+
+    # 2. Create a table
+    cursor.execute('''
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL
+        )
+    ''')
+
+    # 3. Insert some data
+    cursor.execute("INSERT INTO users (name, email) VALUES (?, ?)", ('Alice', 'alice@example.com'))
+    cursor.execute("INSERT INTO users (name, email) VALUES (?, ?)", ('Bob', 'bob@example.com'))
+    conn.commit()
+
+    # 4. Query the data
+    cursor.execute("SELECT name, email FROM users WHERE name = ?", ('Alice',))
+    result = cursor.fetchone()
+
+    # 5. Assert the result
+    assert result is not None
+    assert result[0] == 'Alice'
+    assert result[1] == 'alice@example.com'
+
+    # 6. Close the connection
+    conn.close()
 
 @pytest.mark.asyncio
 async def test_solve_linear_program_simple_case():
