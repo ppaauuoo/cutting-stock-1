@@ -157,3 +157,100 @@ async def test_solve_linear_program_infeasible():
     result = await solve_linear_program(roll_width, roll_length, orders_df)
     
     assert "Infeasible" in result['status']
+
+
+@pytest.mark.asyncio
+async def test_main_algorithm_simple_run(mocker):
+    """
+    Tests main_algorithm with a simple, successful run.
+    """
+    mock_orders_df = pl.DataFrame({
+        "order_number": ["ORD001"], "width": [10], "length": [100], "quantity": [1],
+        "type": ["A"], "component_type": ["compA"], "due_date": ["2025-01-01"],
+        "front": ["KA125"], "c": [None], "middle": [None], "b": [None], "back": [None], "die_cut": [None],
+    }).with_columns([
+        pl.col(c).cast(pl.Utf8) for c in ["c", "middle", "b", "back", "die_cut"]
+    ])
+
+    # Mock file and cleaning operations to isolate algorithm logic
+    mocker.patch("cleaning.load_data", return_value=mock_orders_df)
+    mocker.patch("cleaning.clean_data", return_value=mock_orders_df)
+    mocker.patch("os.path.exists", return_value=False)
+    mocker.patch("os.makedirs")
+    mocker.patch("polars.DataFrame.write_database")
+
+    roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 10000}}}}
+
+    results = await main_algorithm(
+        roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
+    )
+
+    assert len(results) == 1
+    result = results[0]
+    assert result["order_number"] == "ORD001"
+    assert result["cuts"] == 5
+    assert result["front"] == "KA125"
+    assert result["front_roll_info"] == "-> เปิดม้วนใหม่: R1 (ยาว 10000 ม., เหลือ 9994 ม.)"
+
+
+@pytest.mark.asyncio
+async def test_main_algorithm_insufficient_stock(mocker):
+    """
+    Tests main_algorithm when stock is insufficient for an order.
+    """
+    mock_orders_df = pl.DataFrame({
+        "order_number": ["ORD002"], "width": [10], "length": [100], "quantity": [1],
+        "type": ["A"], "component_type": ["compA"], "due_date": ["2025-01-01"],
+        "front": ["KA125"], "c": [None], "middle": [None], "b": [None], "back": [None], "die_cut": [None],
+    }).with_columns([
+        pl.col(c).cast(pl.Utf8) for c in ["c", "middle", "b", "back", "die_cut"]
+    ])
+
+    mocker.patch("cleaning.load_data", return_value=mock_orders_df)
+    mocker.patch("cleaning.clean_data", return_value=mock_orders_df)
+    mocker.patch("os.path.exists", return_value=False)
+    mocker.patch("os.makedirs")
+    mocker.patch("polars.DataFrame.write_database")
+
+    roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 1}}}}  # Not enough length
+
+    results = await main_algorithm(
+        roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
+    )
+
+    assert len(results) == 1
+    result = results[0]
+    assert result["order_number"] == "ORD002"
+    assert result["front_roll_info"] == "-> (ไม่มีสต็อกที่พอ)"
+
+
+@pytest.mark.asyncio
+async def test_main_algorithm_infeasible_order(mocker):
+    """
+    Tests main_algorithm with an order that is infeasible to process.
+    """
+    mock_orders_df = pl.DataFrame({
+        "order_number": ["ORD003"], "width": [60], "length": [100], "quantity": [1],  # width > roll_width
+        "type": ["A"], "component_type": ["compA"], "due_date": ["2025-01-01"],
+        "front": ["KA125"], "c": [None], "middle": [None], "b": [None], "back": [None], "die_cut": [None],
+    }).with_columns([
+        pl.col(c).cast(pl.Utf8) for c in ["c", "middle", "b", "back", "die_cut"]
+    ])
+
+    mocker.patch("cleaning.load_data", return_value=mock_orders_df)
+    mocker.patch("cleaning.clean_data", return_value=mock_orders_df)
+    mocker.patch("os.path.exists", return_value=False)
+    mocker.patch("os.makedirs")
+    mocker.patch("polars.DataFrame.write_database")
+
+    roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 10000}}}}
+
+    results = await main_algorithm(
+        roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
+    )
+
+    assert len(results) == 1
+    result = results[0]
+    assert result["order_number"] == "ORD003"
+    assert result["roll_w"] == "Failed/Infeasible"
+    assert result["front_roll_info"] == "-> (ประมวลผลไม่สำเร็จ)"
