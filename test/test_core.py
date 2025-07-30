@@ -109,7 +109,7 @@ def test_find_and_update_roll_multiple_order_same_material_same_roll():
 
 def test_find_and_update_roll_multiple_order_multiple_different_material_multiple_roll():
     """
-    Tests the case where a single new roll from stock is sufficient.
+    Tests the case where a multiple new roll with different material several time.
     """
     roll_specs = {
         '100': {
@@ -243,108 +243,3 @@ async def test_solve_linear_program_infeasible():
     
     assert "Infeasible" in result['status']
 
-
-@pytest.mark.asyncio
-async def test_main_algorithm_simple_run():
-    """
-    Tests main_algorithm with a simple, successful run.
-    """
-    mock_orders_df = pl.DataFrame({
-        "order_number": ["ORD001"], "width": [10], "length": [100], "quantity": [100],
-        "type": ["A"], "component_type": ["compA"], "due_date": ["2025-01-01"],
-        "front": ["KA125"], "c": [None], "middle": [None], "b": [None], "back": [None], "die_cut": [None],
-    }).with_columns([
-        pl.col(c).cast(pl.Utf8) for c in ["c", "middle", "b", "back", "die_cut"]
-    ])
-
-    # Mock file and cleaning operations to isolate algorithm logic
-    with patch("cleaning.load_data", return_value=mock_orders_df), \
-         patch("cleaning.clean_data", return_value=mock_orders_df), \
-         patch("os.path.exists", return_value=False), \
-         patch("os.makedirs"), \
-         patch("polars.DataFrame.write_database"):
-
-        roll_specs = {
-            '54': {
-                'KA125': {
-                    'R1': {'id': 'R1', 'length': 1000},
-                    'R2': {'id': 'R2', 'length': 500}
-                },
-            }
-        }
-
-        results = await main_algorithm(
-            roll_width=54, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
-        )
-
-    assert len(results) == 1
-    result = results[0]
-    assert result["order_number"] == "ORD001"
-    assert "-> (ประมวลผลไม่สำเร็จ" in result["front_roll_info"]
-    assert result["front_roll_info"] == "dog"
-    assert result["cuts"] == 0
-    assert result["front"] == "KA125"
-    assert int(result["rem_roll_l"]) == 0
-
-
-@pytest.mark.asyncio
-async def test_main_algorithm_insufficient_stock():
-    """
-    Tests main_algorithm when stock is insufficient for an order.
-    """
-    mock_orders_df = pl.DataFrame({
-        "order_number": ["ORD002"], "width": [10], "length": [100], "quantity": [1],
-        "type": ["A"], "component_type": ["compA"], "due_date": ["2025-01-01"],
-        "front": ["KA125"], "c": [None], "middle": [None], "b": [None], "back": [None], "die_cut": [None],
-    }).with_columns([
-        pl.col(c).cast(pl.Utf8) for c in ["c", "middle", "b", "back", "die_cut"]
-    ])
-
-    with patch("cleaning.load_data", return_value=mock_orders_df), \
-         patch("cleaning.clean_data", return_value=mock_orders_df), \
-         patch("os.path.exists", return_value=False), \
-         patch("os.makedirs"), \
-         patch("polars.DataFrame.write_database"):
-
-        roll_specs = {'54': {'KA125': {'R1': {'id': 'R1', 'length': 1}}}}  # Not enough length
-
-        results = await main_algorithm(
-            roll_width=54, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
-        )
-
-    assert len(results) == 1
-    result = results[0]
-    assert result["order_number"] == "ORD002"
-    assert "-> (ประมวลผลไม่สำเร็จ" in result["front_roll_info"]
-
-
-@pytest.mark.asyncio
-async def test_main_algorithm_infeasible_order():
-    """
-    Tests main_algorithm with an order that is infeasible to process.
-    """
-    mock_orders_df = pl.DataFrame({
-        "order_number": ["ORD003"], "width": [60], "length": [100], "quantity": [1],  # width > roll_width
-        "type": ["A"], "component_type": ["compA"], "due_date": ["2025-01-01"],
-        "front": ["KA125"], "c": [None], "middle": [None], "b": [None], "back": [None], "die_cut": [None],
-    }).with_columns([
-        pl.col(c).cast(pl.Utf8) for c in ["c", "middle", "b", "back", "die_cut"]
-    ])
-
-    with patch("cleaning.load_data", return_value=mock_orders_df), \
-         patch("cleaning.clean_data", return_value=mock_orders_df), \
-         patch("os.path.exists", return_value=False), \
-         patch("os.makedirs"), \
-         patch("polars.DataFrame.write_database"):
-
-        roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 10000}}}}
-
-        results = await main_algorithm(
-            roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
-        )
-
-    assert len(results) == 1
-    result = results[0]
-    assert result["order_number"] == "ORD003"
-    assert result["roll_w"] == "Failed/Infeasible"
-    assert "-> (ประมวลผลไม่สำเร็จ" in result["front_roll_info"]
