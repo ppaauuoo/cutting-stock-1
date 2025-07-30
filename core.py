@@ -436,6 +436,7 @@ async def main_algorithm(
         rem_orders_df = orders_df.clone()
         roll_cuts = []
         iteration = 0
+        failure_reason = "ไม่สามารถหาผลลัพธ์ที่เหมาะสมได้"
         while not rem_orders_df.is_empty():
             iteration += 1
             if progress_callback:
@@ -458,6 +459,7 @@ async def main_algorithm(
             if status != "Optimal":
                 if progress_callback:
                     progress_callback(f"    ❌ {result.get('message', 'Non-optimal status')}")
+                failure_reason = result.get('message', f'สถานะไม่เหมาะสม: {status}')
                 break
             
             variables = result.get("variables", {})
@@ -570,6 +572,7 @@ async def main_algorithm(
             if progress_callback:
                 progress_callback(f"    Adding {rem_orders_df.shape[0]} failed/infeasible orders to the results.")
             
+            fail_msg = f"-> (ประมวลผลไม่สำเร็จ: {failure_reason})"
             unprocessed_orders = rem_orders_df.to_dicts()
             for order in unprocessed_orders:
                 unprocessed_result = {
@@ -592,11 +595,11 @@ async def main_algorithm(
                     "middle": order.get("middle"),
                     "b": order.get("b"),
                     "back": order.get("back"),
-                    "front_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
-                    "c_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
-                    "middle_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
-                    "b_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
-                    "back_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                    "front_roll_info": fail_msg,
+                    "c_roll_info": fail_msg,
+                    "middle_roll_info": fail_msg,
+                    "b_roll_info": fail_msg,
+                    "back_roll_info": fail_msg,
                 }
                 all_results.append(unprocessed_result)
 

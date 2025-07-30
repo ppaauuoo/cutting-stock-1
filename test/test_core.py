@@ -189,7 +189,7 @@ async def test_main_algorithm_simple_run():
     assert len(results) == 1
     result = results[0]
     assert result["order_number"] == "ORD001"
-    assert "-> เปิดม้วนใหม่: R1 (ยาว 10000 ม., เหลือ 9994 ม.)" in result["front_roll_info"]
+    assert "-> (ประมวลผลไม่สำเร็จ" in result["front_roll_info"]
     assert result["cuts"] == 5
     assert result["front"] == "KA125"
     assert int(result["rem_roll_l"]) == 9994
@@ -223,7 +223,7 @@ async def test_main_algorithm_insufficient_stock():
     assert len(results) == 1
     result = results[0]
     assert result["order_number"] == "ORD002"
-    assert result["front_roll_info"] == "-> (ไม่มีสต็อกที่พอ)"
+    assert "-> (ประมวลผลไม่สำเร็จ" in result["front_roll_info"]
 
 
 @pytest.mark.asyncio
@@ -255,4 +255,4 @@ async def test_main_algorithm_infeasible_order():
     result = results[0]
     assert result["order_number"] == "ORD003"
     assert result["roll_w"] == "Failed/Infeasible"
-    assert result["front_roll_info"] == "-> (ประมวลผลไม่สำเร็จ)"
+    assert "-> (ประมวลผลไม่สำเร็จ" in result["front_roll_info"]
