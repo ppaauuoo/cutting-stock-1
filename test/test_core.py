@@ -180,10 +180,10 @@ async def test_main_algorithm_simple_run():
          patch("os.makedirs"), \
          patch("polars.DataFrame.write_database"):
 
-        roll_specs = {'51': {'KA125': {'R1': {'id': 'R1', 'length': 10000}}}}
+        roll_specs = {'54': {'KA125': {'R1': {'id': 'R1', 'length': 10000}}}}
 
         results = await main_algorithm(
-            roll_width=51, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
+            roll_width=54, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
         )
 
     assert len(results) == 1
@@ -217,10 +217,10 @@ async def test_main_algorithm_insufficient_stock():
          patch("os.makedirs"), \
          patch("polars.DataFrame.write_database"):
 
-        roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 1}}}}  # Not enough length
+        roll_specs = {'54': {'KA125': {'R1': {'id': 'R1', 'length': 1}}}}  # Not enough length
 
         results = await main_algorithm(
-            roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
+            roll_width=54, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
         )
 
     assert len(results) == 1
