@@ -1,5 +1,6 @@
 import os
 import sys
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -160,7 +161,7 @@ async def test_solve_linear_program_infeasible():
 
 
 @pytest.mark.asyncio
-async def test_main_algorithm_simple_run(mocker):
+async def test_main_algorithm_simple_run():
     """
     Tests main_algorithm with a simple, successful run.
     """
@@ -173,17 +174,17 @@ async def test_main_algorithm_simple_run(mocker):
     ])
 
     # Mock file and cleaning operations to isolate algorithm logic
-    mocker.patch("cleaning.load_data", return_value=mock_orders_df)
-    mocker.patch("cleaning.clean_data", return_value=mock_orders_df)
-    mocker.patch("os.path.exists", return_value=False)
-    mocker.patch("os.makedirs")
-    mocker.patch("polars.DataFrame.write_database")
+    with patch("cleaning.load_data", return_value=mock_orders_df), \
+         patch("cleaning.clean_data", return_value=mock_orders_df), \
+         patch("os.path.exists", return_value=False), \
+         patch("os.makedirs"), \
+         patch("polars.DataFrame.write_database"):
 
-    roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 10000}}}}
+        roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 10000}}}}
 
-    results = await main_algorithm(
-        roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
-    )
+        results = await main_algorithm(
+            roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
+        )
 
     assert len(results) == 1
     result = results[0]
@@ -194,7 +195,7 @@ async def test_main_algorithm_simple_run(mocker):
 
 
 @pytest.mark.asyncio
-async def test_main_algorithm_insufficient_stock(mocker):
+async def test_main_algorithm_insufficient_stock():
     """
     Tests main_algorithm when stock is insufficient for an order.
     """
@@ -206,17 +207,17 @@ async def test_main_algorithm_insufficient_stock(mocker):
         pl.col(c).cast(pl.Utf8) for c in ["c", "middle", "b", "back", "die_cut"]
     ])
 
-    mocker.patch("cleaning.load_data", return_value=mock_orders_df)
-    mocker.patch("cleaning.clean_data", return_value=mock_orders_df)
-    mocker.patch("os.path.exists", return_value=False)
-    mocker.patch("os.makedirs")
-    mocker.patch("polars.DataFrame.write_database")
+    with patch("cleaning.load_data", return_value=mock_orders_df), \
+         patch("cleaning.clean_data", return_value=mock_orders_df), \
+         patch("os.path.exists", return_value=False), \
+         patch("os.makedirs"), \
+         patch("polars.DataFrame.write_database"):
 
-    roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 1}}}}  # Not enough length
+        roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 1}}}}  # Not enough length
 
-    results = await main_algorithm(
-        roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
-    )
+        results = await main_algorithm(
+            roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
+        )
 
     assert len(results) == 1
     result = results[0]
@@ -225,7 +226,7 @@ async def test_main_algorithm_insufficient_stock(mocker):
 
 
 @pytest.mark.asyncio
-async def test_main_algorithm_infeasible_order(mocker):
+async def test_main_algorithm_infeasible_order():
     """
     Tests main_algorithm with an order that is infeasible to process.
     """
@@ -237,17 +238,17 @@ async def test_main_algorithm_infeasible_order(mocker):
         pl.col(c).cast(pl.Utf8) for c in ["c", "middle", "b", "back", "die_cut"]
     ])
 
-    mocker.patch("cleaning.load_data", return_value=mock_orders_df)
-    mocker.patch("cleaning.clean_data", return_value=mock_orders_df)
-    mocker.patch("os.path.exists", return_value=False)
-    mocker.patch("os.makedirs")
-    mocker.patch("polars.DataFrame.write_database")
+    with patch("cleaning.load_data", return_value=mock_orders_df), \
+         patch("cleaning.clean_data", return_value=mock_orders_df), \
+         patch("os.path.exists", return_value=False), \
+         patch("os.makedirs"), \
+         patch("polars.DataFrame.write_database"):
 
-    roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 10000}}}}
+        roll_specs = {'55': {'KA125': {'R1': {'id': 'R1', 'length': 10000}}}}
 
-    results = await main_algorithm(
-        roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
-    )
+        results = await main_algorithm(
+            roll_width=55, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
+        )
 
     assert len(results) == 1
     result = results[0]
