@@ -56,6 +56,8 @@ def test_find_and_update_roll_same_order_same_material_multiple_roll():
     result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids)
     position_key = ('_position', width, material)
     assert 0 == last_used_roll_ids.get(position_key, 0)
+    assert "-> เปิดม้วนใหม่: R1 (ยาว 1000 ม., เหลือ 600 ม.)" == result
+
 
     result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids)
     position_key = ('_position', width, material)
@@ -105,6 +107,88 @@ def test_find_and_update_roll_multiple_order_same_material_same_roll():
     assert 'R2' not in used_roll_ids
     assert 'R1' in used_roll_ids
 
+def test_find_and_update_roll_multiple_order_multiple_different_material_multiple_roll():
+    """
+    Tests the case where a single new roll from stock is sufficient.
+    """
+    roll_specs = {
+        '100': {
+            'LA125': {
+                'L1': {'id': 'L1', 'length': 500},
+                'L2': {'id': 'L2', 'length': 500},
+                'L3': {'id': 'L3', 'length': 500},
+                'L4': {'id': 'L4', 'length': 500},
+            },
+            'KA125': {
+                'R1': {'id': 'R1', 'length': 500},
+                'R2': {'id': 'R2', 'length': 500},
+                'R3': {'id': 'R3', 'length': 500},
+                'R4': {'id': 'R4', 'length': 500},
+            },
+        }
+    }
+    width = '100'
+    material = 'KA125'
+    sec_material = 'LA125'
+    required_length = 400
+    used_roll_ids = set()
+    last_used_roll_ids = {}
+    
+    order_number1 = '1'
+    result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids, order_number1)
+    assert "-> เปิดม้วนใหม่: R1 (ยาว 500 ม., เหลือ 100 ม.)" == result
+    assert order_number1 == last_used_roll_ids.get(('_last_order', width, material))
+
+    position_key = ('_position', width, material)
+    assert 0 == last_used_roll_ids.get(position_key, 0)
+
+    result = _find_and_update_roll(roll_specs, width, sec_material, required_length, used_roll_ids, last_used_roll_ids, order_number1)
+    assert "-> เปิดม้วนใหม่: L1 (ยาว 500 ม., เหลือ 100 ม.)" == result
+    assert order_number1 == last_used_roll_ids.get(('_last_order', width, material))
+
+    position_key = ('_position', width, material)
+    assert 0 == last_used_roll_ids.get(position_key, 0)
+
+
+    result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids, order_number1)
+    assert "-> เปิดม้วนใหม่: R2 (ยาว 500 ม., เหลือ 100 ม.)" == result
+    assert order_number1 == last_used_roll_ids.get(('_last_order', width, material))
+
+    position_key = ('_position', width, material)
+    assert 1 == last_used_roll_ids.get(position_key, 0)
+
+
+    order_number2 = '2'
+    result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids, order_number2)
+    assert "-> ใช้ม้วนต่อเนื่อง: R1 (ยาว 100 ม., ใช้หมด) + R3 (ยาว 500 ม., เหลือ 200 ม.)" == result
+    assert order_number2 == last_used_roll_ids.get(('_last_order', width, material))
+   
+    position_key = ('_position', width, material)
+    assert 0 == last_used_roll_ids.get(position_key, 0)
+
+    result = _find_and_update_roll(roll_specs, width, sec_material, required_length, used_roll_ids, last_used_roll_ids, order_number2)
+    assert "-> ใช้ม้วนต่อเนื่อง: L1 (ยาว 100 ม., ใช้หมด) + L2 (ยาว 500 ม., เหลือ 200 ม.)" == result
+    assert order_number2 == last_used_roll_ids.get(('_last_order', width, material))
+
+    position_key = ('_position', width, material)
+    assert 0 == last_used_roll_ids.get(position_key, 0)
+
+
+    result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids, order_number2)
+    assert "-> ใช้ม้วนต่อเนื่อง: R2 (ยาว 100 ม., ใช้หมด) + R4 (ยาว 500 ม., เหลือ 200 ม.)" == result
+    assert order_number2 == last_used_roll_ids.get(('_last_order', width, material))
+   
+    position_key = ('_position', width, material)
+    assert 1 == last_used_roll_ids.get(position_key, 0)
+
+    assert roll_specs['100']['KA125']['R1']['length'] == 0
+    assert roll_specs['100']['KA125']['R2']['length'] == 0
+    assert roll_specs['100']['KA125']['R3']['length'] == 200
+    assert roll_specs['100']['KA125']['R4']['length'] == 200
+    assert 'R1' in used_roll_ids
+    assert 'R2' in used_roll_ids
+    assert 'R3' in used_roll_ids
+    assert 'R4' in used_roll_ids
 
 def test_find_and_update_roll_no_stock():
     """
@@ -166,7 +250,7 @@ async def test_main_algorithm_simple_run():
     Tests main_algorithm with a simple, successful run.
     """
     mock_orders_df = pl.DataFrame({
-        "order_number": ["ORD001"], "width": [10], "length": [100], "quantity": [1],
+        "order_number": ["ORD001"], "width": [10], "length": [100], "quantity": [100],
         "type": ["A"], "component_type": ["compA"], "due_date": ["2025-01-01"],
         "front": ["KA125"], "c": [None], "middle": [None], "b": [None], "back": [None], "die_cut": [None],
     }).with_columns([
@@ -180,7 +264,14 @@ async def test_main_algorithm_simple_run():
          patch("os.makedirs"), \
          patch("polars.DataFrame.write_database"):
 
-        roll_specs = {'54': {'KA125': {'R1': {'id': 'R1', 'length': 10000}}}}
+        roll_specs = {
+            '54': {
+                'KA125': {
+                    'R1': {'id': 'R1', 'length': 1000},
+                    'R2': {'id': 'R2', 'length': 500}
+                },
+            }
+        }
 
         results = await main_algorithm(
             roll_width=54, roll_length=10000, file_path="dummy.csv", roll_specs=roll_specs, front="KA125"
@@ -190,9 +281,10 @@ async def test_main_algorithm_simple_run():
     result = results[0]
     assert result["order_number"] == "ORD001"
     assert "-> (ประมวลผลไม่สำเร็จ" in result["front_roll_info"]
-    assert result["cuts"] == 5
+    assert result["front_roll_info"] == "dog"
+    assert result["cuts"] == 0
     assert result["front"] == "KA125"
-    assert int(result["rem_roll_l"]) == 9994
+    assert int(result["rem_roll_l"]) == 0
 
 
 @pytest.mark.asyncio
