@@ -113,7 +113,7 @@ class WorkerThread(QThread):
                     self.current_iteration_step += 1
                     estimated_progress = min(95, 50 + self.current_iteration_step) # เพิ่มทีละ 1%
                     self.progress_updated.emit(estimated_progress, message)
-            elif "บันทึกผลลัพธ์ลงไฟล์ CSV เรียบร้อย" in message:
+            elif "บันทึกผลลัพธ์ลงฐานข้อมูลเรียบร้อย" in message:
                 self.progress_updated.emit(95, message)
             
         try:
@@ -194,7 +194,7 @@ class CuttingOptimizerUI(QMainWindow):
         factory_layout = QHBoxLayout()
         factory_layout.addWidget(QLabel("โรงงาน:"))
         self.factory_combo = QComboBox()
-        self.factory_combo.addItems(["รวม", "1", "2", "3", "4", "5"])
+        self.factory_combo.addItems(["รวม", "1&2", "3", "4", "5"])
         factory_layout.addWidget(self.factory_combo)
         layout.addLayout(factory_layout)
         
@@ -530,8 +530,8 @@ class CuttingOptimizerUI(QMainWindow):
                 # Cast to string, strip whitespace, then check the numeric value of the prefix.
                 order_num_col = pl.col("order_number").cast(pl.Utf8).str.strip_chars()
 
-                if selected_factory in ["1", "2"]:
-                    self.log_message(f"🏭 Filtering orders for factory {selected_factory}. Only using orders starting with '1218'.")
+                if selected_factory == "1&2":
+                    self.log_message(f"🏭 Filtering orders for factories 1 & 2. Only using orders starting with '1218'.")
                     cleaned_orders_df = cleaned_orders_df.filter(
                         order_num_col.str.slice(0, 4).str.to_integer(strict=False) == 1218
                     )

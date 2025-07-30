@@ -296,7 +296,8 @@ async def solve_linear_program(
     prob += trim_waste <= 5, "TrimUpperBound"
     
     # Remaining length on roll must be at least 100
-    prob += roll_length * z - total_order_len >= 100, "RemainingLengthLowerBound"
+    # not used now because we are not using roll length in the objective function
+    # prob += roll_length * z - total_order_len >= 100, "RemainingLengthLowerBound"
 
     # 5. Solve the problem
     try:
@@ -384,8 +385,22 @@ async def main_algorithm(
     if progress_callback:
         progress_callback("⚙️ กำลังเริ่มการคำนวณ")
 
+    base_filename = os.path.splitext(os.path.basename(file_path))[0]
+    cache_db_path = os.path.join(output_dir, f"{base_filename}.db")
+    table_name = base_filename
+    if os.path.exists(cache_db_path):
+        conn_str = f"sqlite:///{os.path.abspath(cache_db_path)}"
+        query = f'SELECT * FROM "{table_name}"'
+        raw_orders_df = pl.read_database_uri(query, conn_str)
+        if progress_callback:
+            progress_callback(f"💾 โหลดข้อมูลออเดอร์จากแคช {cache_db_path}")
+    else:
+        raw_orders_df = cleaning.load_data(file_path)
+        if progress_callback:
+            progress_callback(f"💾 ไม่พบแคช โหลดข้อมูลออเดอร์จากไฟล์ CSV: {file_path}")
+
     orders_df = cleaning.clean_data(
-        cleaning.load_data(file_path), 
+        raw_orders_df,
         start_date,
         end_date,
         front=front,
@@ -421,6 +436,7 @@ async def main_algorithm(
         rem_orders_df = orders_df.clone()
         roll_cuts = []
         iteration = 0
+        failure_reason = "ไม่สามารถหาผลลัพธ์ที่เหมาะสมได้"
         while not rem_orders_df.is_empty():
             iteration += 1
             if progress_callback:
@@ -443,6 +459,7 @@ async def main_algorithm(
             if status != "Optimal":
                 if progress_callback:
                     progress_callback(f"    ❌ {result.get('message', 'Non-optimal status')}")
+                failure_reason = result.get('message', f'สถานะไม่เหมาะสม: {status}')
                 break
             
             variables = result.get("variables", {})
@@ -539,13 +556,15 @@ async def main_algorithm(
                     progress_callback("    Warning: order_idx is None, cannot remove order. Stopping.")
                 break
 
-        # Save results for the current roll to a CSV file
+        # Save results for the current roll to a sqlite file
         if roll_cuts:
             output_df = pl.DataFrame(roll_cuts)
-            output_filename = os.path.join(output_dir, f"roll_cut_results_{roll['width']}.csv")
-            output_df.write_csv(output_filename)
+            db_path = os.path.join(output_dir, "cache.db")
+            conn_str = f"sqlite:///{os.path.abspath(db_path)}"
+            table_name = f"roll_cut_results_{roll['width']}"
+            output_df.write_database(table_name, connection=conn_str, if_table_exists="replace")
             if progress_callback:
-                progress_callback(f"--- Saved {len(roll_cuts)} cuts for roll {roll['width']} to {output_filename} ---")
+                progress_callback(f"--- Saved {len(roll_cuts)} cuts for roll {roll['width']} to database table '{table_name}' ---")
         elif progress_callback:
             progress_callback(f"--- No cuts made for roll {roll['width']} ---")
 
@@ -553,6 +572,7 @@ async def main_algorithm(
             if progress_callback:
                 progress_callback(f"    Adding {rem_orders_df.shape[0]} failed/infeasible orders to the results.")
             
+            fail_msg = f"-> (ประมวลผลไม่สำเร็จ: {failure_reason})"
             unprocessed_orders = rem_orders_df.to_dicts()
             for order in unprocessed_orders:
                 unprocessed_result = {
@@ -575,19 +595,21 @@ async def main_algorithm(
                     "middle": order.get("middle"),
                     "b": order.get("b"),
                     "back": order.get("back"),
-                    "front_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
-                    "c_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
-                    "middle_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
-                    "b_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
-                    "back_roll_info": "-> (ประมวลผลไม่สำเร็จ)",
+                    "front_roll_info": fail_msg,
+                    "c_roll_info": fail_msg,
+                    "middle_roll_info": fail_msg,
+                    "b_roll_info": fail_msg,
+                    "back_roll_info": fail_msg,
                 }
                 all_results.append(unprocessed_result)
 
-    # Save all cutting results to a single summary CSV file
+    # Save all cutting results to a single summary table in sqlite
     if all_results:
         final_output_df = pl.DataFrame(all_results)
-        final_output_df.write_csv(os.path.join(output_dir, "all_cutting_plan_summary.csv"))
+        db_path = os.path.join(output_dir, "cache.db")
+        conn_str = f"sqlite:///{os.path.abspath(db_path)}"
+        final_output_df.write_database("all_cutting_plan_summary", connection=conn_str, if_table_exists="replace")
         if progress_callback:
-            progress_callback("💾 บันทึกผลลัพธ์ลงไฟล์ CSV เรียบร้อย")
+            progress_callback("💾 บันทึกผลลัพธ์ลงฐานข้อมูลเรียบร้อย")
     
     return all_results
