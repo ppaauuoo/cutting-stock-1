@@ -189,12 +189,9 @@ async def test_main_algorithm_simple_run():
     assert len(results) == 1
     result = results[0]
     assert result["order_number"] == "ORD001"
+    assert "-> เปิดม้วนใหม่: R1 (ยาว 10000 ม., เหลือ 9994 ม.)" in result["front_roll_info"]
     assert result["cuts"] == 5
     assert result["front"] == "KA125"
-    # With quantity=1, demand is ~5.08. Original roll length is 10000.
-    # The string assertion checks the source roll length (10000) and remaining length.
-    assert "-> เปิดม้วนใหม่: R1 (ยาว 10000 ม., เหลือ 9994 ม.)" in result["front_roll_info"]
-    # The rem_roll_l is on the master roll, which is also 10000 long initially.
     assert int(result["rem_roll_l"]) == 9994
 
 

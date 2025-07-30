@@ -296,7 +296,8 @@ async def solve_linear_program(
     prob += trim_waste <= 5, "TrimUpperBound"
     
     # Remaining length on roll must be at least 100
-    prob += roll_length * z - total_order_len >= 100, "RemainingLengthLowerBound"
+    # not used now because we are not using roll length in the objective function
+    # prob += roll_length * z - total_order_len >= 100, "RemainingLengthLowerBound"
 
     # 5. Solve the problem
     try:
