@@ -1,9 +1,8 @@
-import asyncio
-import copy
 import os
 from typing import Callable, Optional
 
 import polars as pl
+from cleaning import clean_data, load_data
 from fastapi import FastAPI
 from pulp import (
     PULP_CBC_CMD,
@@ -16,8 +15,6 @@ from pulp import (
     lpSum,
     value,
 )
-
-import cleaning
 
 
 def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None) -> str:
@@ -395,11 +392,11 @@ async def main_algorithm(
         if progress_callback:
             progress_callback(f"💾 โหลดข้อมูลออเดอร์จากแคช {cache_db_path}")
     else:
-        raw_orders_df = cleaning.load_data(file_path)
+        raw_orders_df = load_data(file_path)
         if progress_callback:
             progress_callback(f"💾 ไม่พบแคช โหลดข้อมูลออเดอร์จากไฟล์ CSV: {file_path}")
 
-    orders_df = cleaning.clean_data(
+    orders_df = clean_data(
         raw_orders_df,
         start_date,
         end_date,

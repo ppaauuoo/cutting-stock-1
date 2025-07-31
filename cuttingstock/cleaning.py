@@ -1,4 +1,3 @@
-import sys
 import unicodedata
 from datetime import date, datetime
 from typing import Optional

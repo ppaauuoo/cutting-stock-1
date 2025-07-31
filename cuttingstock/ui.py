@@ -1,6 +1,5 @@
 import asyncio
 import collections
-import copy
 import csv
 import os
 import re
@@ -8,8 +7,9 @@ import sys
 from math import floor
 
 import polars as pl
+from core import main_algorithm  # Import our modified main module
+from order import OrderManager
 from PyQt5.QtCore import (
-    QDate,
     QDateTime,
     QLocale,
     Qt,
@@ -23,12 +23,10 @@ from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
-    QDateEdit,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -39,10 +37,6 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-import cleaning
-import core  # Import our modified main module
-from order import OrderManager
 from stock import StockManager
 
 
@@ -118,7 +112,7 @@ class WorkerThread(QThread):
             
         try:
             results = loop.run_until_complete(
-                core.main_algorithm(
+                main_algorithm(
                     roll_width=self.width,
                     roll_length=self.length,
                     progress_callback=progress_callback,
