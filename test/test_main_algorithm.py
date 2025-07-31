@@ -46,14 +46,14 @@ async def test_main_algorithm_simple_success_case():
     # 2. Patch dependencies
     # We patch clean_data to return our controlled test data, file/db access,
     # and mock the linear program solver to return a feasible solution.
-    mock_lp_solution = (
-        1,  # status = Optimal (feasible)
-        pl.DataFrame({"order_number": ["ORDER-001"], "cuts": [10]}),
-        0,  # total_waste
-        1,  # total_patterns
-        1000.0,  # total_order_len_val
-        {}  # solution_patterns (not asserted in this test)
-    )
+    mock_lp_solution = {
+        "status": 1,  # Optimal (feasible)
+        "solution_df": pl.DataFrame({"order_number": ["ORDER-001"], "cuts": [10]}),
+        "total_waste": 0,
+        "total_patterns": 1,
+        "total_order_len_val": 1000.0,
+        "solution_patterns": {}  # Not asserted in this test
+    }
 
     with patch('cleaning.load_data'), \
          patch('cleaning.clean_data', return_value=mock_cleaned_df), \
