@@ -271,6 +271,36 @@ async def test_solve_linear_program_simple_case():
     assert result['variables']['trim'] == 5
 
 @pytest.mark.asyncio
+async def test_solve_linear_program_complex_case():
+    """
+    Tests the LP solver with a complex, solvable scenario.
+    """
+    orders_df = pl.DataFrame({
+        "order_number": ["ORDER-001"],
+        "width": [24.0],
+        "length": [100.0],
+        "quantity": [10],
+        "type": ["A"],
+        "component_type": ["None"],
+        "demand": [1000.0],
+        "front": ["FPAPER"],
+        "c": ["CPAPER"],
+        "middle": [None],
+        "b": [None],
+        "back": [None],
+        "due_date": ["2025-01-01"],
+        "die_cut": [None],
+    })
+    roll_width = 75
+    roll_length = 10000
+
+    result = await solve_linear_program(roll_width, roll_length, orders_df)
+    
+    assert result['status'] == 'Optimal'
+    assert result['variables']['cuts'] == 3.0
+    assert result['variables']['trim'] == 3.0
+
+@pytest.mark.asyncio
 async def test_solve_linear_program_infeasible():
     """
     Tests the LP solver with an infeasible scenario (no orders).

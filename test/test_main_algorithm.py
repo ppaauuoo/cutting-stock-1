@@ -28,7 +28,7 @@ async def test_main_algorithm_simple_success_case():
         "front": ["FPAPER"],
         "c": ["CPAPER"],
         "middle": [None],
-        "b": [None],
+        "b": ["BPAPER"],
         "back": [None],
         "due_date": ["2025-01-01"],
         "die_cut": [None],
@@ -39,7 +39,8 @@ async def test_main_algorithm_simple_success_case():
     mock_roll_specs = {
         "48": {
             "FPAPER": {"R1": {"id": "R1", "length": 5000}},
-            "CPAPER": {"R2": {"id": "R2", "length": 5000}}
+            "CPAPER": {"R2": {"id": "R2", "length": 5000}},
+            "BPAPER": {"R3": {"id": "R3", "length": 5000}},
         }
     }
 
@@ -69,10 +70,10 @@ async def test_main_algorithm_simple_success_case():
             "c": "CPAPER",
             "middle": None,
             "back": None,
-            "b": None,
+            "b": "BPAPER",
             "die_cut": None,
             "c_type": "C",
-            "b_type": None,
+            "b_type": "B",
         },
     }
 
@@ -91,6 +92,8 @@ async def test_main_algorithm_simple_success_case():
             front="FPAPER",  # Filter criteria
             c="CPAPER",     # Filter criteria
             c_type="C",
+            b="BPAPER",     # Filter criteria
+            b_type="B",
             max_records=1,
         )
 
@@ -104,6 +107,8 @@ async def test_main_algorithm_simple_success_case():
         assert result["cuts"] > 0
         assert "front_roll_info" in result
         assert "c_roll_info" in result
-        # Check that new rolls were opened, using the Thai text from core.py
-        assert result["front_roll_info"].startswith("-> เปิดม้วนใหม่:")
-        assert result["c_roll_info"].startswith("-> เปิดม้วนใหม่:")
+        assert "b_roll_info" in result
+
+        assert result["front_roll_info"] == "-> เปิดม้วนใหม่: R1 (ยาว 5000 ม., เหลือ 4000 ม.)"
+        assert result["c_roll_info"] == "-> เปิดม้วนใหม่: R2 (ยาว 5000 ม., เหลือ 3550 ม.)"
+        assert result["b_roll_info"] == "-> เปิดม้วนใหม่: R3 (ยาว 5000 ม., เหลือ 3650 ม.)"
