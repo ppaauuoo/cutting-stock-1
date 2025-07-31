@@ -47,12 +47,33 @@ async def test_main_algorithm_simple_success_case():
     # We patch clean_data to return our controlled test data, file/db access,
     # and mock the linear program solver to return a feasible solution.
     mock_lp_solution = {
-        "status": 1,  # Optimal (feasible)
-        "solution_df": pl.DataFrame({"order_number": ["ORDER-001"], "cuts": [10]}),
-        "total_waste": 0,
-        "total_patterns": 1,
-        "total_order_len_val": 1000.0,
-        "solution_patterns": {}  # Not asserted in this test
+        "status": "Optimal",
+        "variables": {
+            "roll_w": 48,
+            "rem_roll_l": 99000.0,
+            "demand_per_cut": 1450.0,
+            "order_w": 10.0,
+            "order_l": 100.0,
+            "order_qty": 10,
+            "order_dmd": 1000.0,
+            "cuts": 4.0,
+            "trim": 8.0,
+            "order_idx": 0,
+            "type": "A",
+            "component_type": "None",
+            "due_date": "2025-01-01",
+        },
+        "material_specs": {
+            "demand": 1000.0,
+            "front": "FPAPER",
+            "c": "CPAPER",
+            "middle": None,
+            "back": None,
+            "b": None,
+            "die_cut": None,
+            "c_type": "C",
+            "b_type": None,
+        },
     }
 
     with patch('cleaning.load_data'), \
