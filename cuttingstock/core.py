@@ -16,6 +16,8 @@ from pulp import (
     value,
 )
 
+# Constants
+INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
 
 def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None) -> str:
     """
@@ -151,49 +153,49 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
     # --- Fallback to original logic if last used roll wasn't applicable ---
     # Greedily find a combination of new rolls, using largest available rolls first.
-    sorted_unused_rolls = sorted(unused_rolls, key=lambda item: item[1]['length'], reverse=True)
+    # sorted_unused_rolls = sorted(unused_rolls, key=lambda item: item[1]['length'], reverse=True)
     
-    rolls_for_combination = []
-    combined_length = 0
-    for roll_key, roll in sorted_unused_rolls:
-        rolls_for_combination.append((roll_key, roll))
-        combined_length += roll.get('length', 0)
-        if combined_length >= required_length:
-            break
+    # rolls_for_combination = []
+    # combined_length = 0
+    # for roll_key, roll in sorted_unused_rolls:
+    #     rolls_for_combination.append((roll_key, roll))
+    #     combined_length += roll.get('length', 0)
+    #     if combined_length >= required_length:
+    #         break
 
-    if combined_length >= required_length:
-        message_parts = []
-        remaining_needed = required_length
-        new_last_used_roll_id = None
+    # if combined_length >= required_length:
+    #     message_parts = []
+    #     remaining_needed = required_length
+    #     new_last_used_roll_id = None
 
-        for i, (roll_key, roll) in enumerate(rolls_for_combination):
-            roll_id = roll.get('id')
-            original_length = roll.get('length', 0)
+    #     for i, (roll_key, roll) in enumerate(rolls_for_combination):
+    #         roll_id = roll.get('id')
+    #         original_length = roll.get('length', 0)
             
-            used_roll_ids.add(roll_id)
+    #         used_roll_ids.add(roll_id)
 
-            if remaining_needed > 0:
-                if original_length >= remaining_needed:
-                    # This is the last roll needed.
-                    roll['length'] -= remaining_needed
-                    message_parts.append(f"{roll_id} (ยาว {int(original_length)} ม., เหลือ {int(roll['length'])} ม.)")
-                    new_last_used_roll_id = roll_id
-                    remaining_needed = 0
-                else:
-                    # Use this roll completely.
-                    roll['length'] = 0
-                    message_parts.append(f"{roll_id} (ยาว {int(original_length)} ม., ใช้หมด)")
-                    remaining_needed -= original_length
-                    # If this is the last available roll in our combination, it becomes the new last used roll.
-                    if i == len(rolls_for_combination) - 1:
-                        new_last_used_roll_id = roll_id
+    #         if remaining_needed > 0:
+    #             if original_length >= remaining_needed:
+    #                 # This is the last roll needed.
+    #                 roll['length'] -= remaining_needed
+    #                 message_parts.append(f"{roll_id} (ยาว {int(original_length)} ม., เหลือ {int(roll['length'])} ม.)")
+    #                 new_last_used_roll_id = roll_id
+    #                 remaining_needed = 0
+    #             else:
+    #                 # Use this roll completely.
+    #                 roll['length'] = 0
+    #                 message_parts.append(f"{roll_id} (ยาว {int(original_length)} ม., ใช้หมด)")
+    #                 remaining_needed -= original_length
+    #                 # If this is the last available roll in our combination, it becomes the new last used roll.
+    #                 if i == len(rolls_for_combination) - 1:
+    #                     new_last_used_roll_id = roll_id
 
-        if new_last_used_roll_id:
-            last_used_roll_ids[(width, material, position)] = new_last_used_roll_id
-            last_used_roll_ids[position_key] = position
-            last_used_roll_ids[last_order_key] = order_number
+    #     if new_last_used_roll_id:
+    #         last_used_roll_ids[(width, material, position)] = new_last_used_roll_id
+    #         last_used_roll_ids[position_key] = position
+    #         last_used_roll_ids[last_order_key] = order_number
 
-        return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
+    #     return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
 
     return "-> (ไม่มีสต็อกที่พอ)"
 
@@ -280,7 +282,7 @@ async def solve_linear_program(
     # Total length of material required for the selected order (using .get with a default value)
     # The sum will effectively pick the one order where y[j]=1
     total_order_len = lpSum(
-        (lengths[j] * 25.4 / 100 * quantities[j] * corr_multiplier * y[j])
+        (lengths[j] * INCH_TO_M * quantities[j] * corr_multiplier * y[j])
         for j in range(num_orders)
     )
 
