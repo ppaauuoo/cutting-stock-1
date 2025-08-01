@@ -139,18 +139,14 @@ def clean_data(df: pl.DataFrame,
         pl.col("die_cut").str.strip_chars().cast(pl.Int64),
    )
 
-    df = df.drop_nulls(subset=["due_date", "order_number", "width", "length", "demand", "quantity", "component_type"])
+    df = df.drop_nulls(subset=["due_date", "order_number", "order_idx", "width", "length", "demand", "quantity", "component_type"])
     df = df.filter(pl.col("demand") > 0)
     df = df.filter(pl.col("width") > 0)
     df = df.filter(pl.col("length") > 0)
-    # order won't come out after this lines AI!
+    # Combine order_number and order_idx for uniqueness
     df = df.with_columns(
-        (pl.col("order_number") + "-" + pl.col("order_idx").cast(pl.Utf8)).alias("order_number")
-    )  # Combine order_number and order_idx for uniqueness
-    df = df.with_columns([
-        (pl.col("width")).alias("width"),
-        (pl.col("length")).alias("length")
-    ]).select([
+        (pl.col("order_number").cast(pl.Utf8) + "-" + pl.col("order_idx").cast(pl.Utf8)).alias("order_number")
+    ).select([
         'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type', 'component_type', 'front', 'c', 'middle', 'b', 'back', 'die_cut' # เพิ่มคอลัมน์วัสดุ
     ])
 
