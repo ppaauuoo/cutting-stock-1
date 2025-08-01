@@ -94,6 +94,7 @@ def clean_data(df: pl.DataFrame,
     thai_col_mapping = {
         normalize_col_name("กำหนดส่ง       "): "due_date",
         normalize_col_name(" เลขที่ใบสั่งขาย"): "order_number",
+        normalize_col_name("ลำดับที่สั่งส่ง"): "order_idx",
         normalize_col_name("กว้าง"): "width",
         normalize_col_name("ยาว"): "length",
         normalize_col_name("จำนวนสั่งส่ง   "): "demand",
@@ -119,7 +120,7 @@ def clean_data(df: pl.DataFrame,
     df = df.rename(rename_dict)
     
     # ตรวจสอบว่ามีคอลัมน์จำเป็นครบ
-    required_cols = ["due_date", "order_number", "width", "length", "demand", "quantity",  "front", "c", "middle", "b", "back", "type", "component_type"]
+    required_cols = ["due_date", "order_number", "order_idx", "width", "length", "demand", "quantity",  "front", "c", "middle", "b", "back", "type", "component_type"]
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
         raise ValueError(f"⚠️ คอลัมน์หาย: {missing} โปรดตรวจสอบชื่อคอลัมน์ในไฟล์ CSV")
@@ -127,6 +128,7 @@ def clean_data(df: pl.DataFrame,
     df = df.with_columns(
         pl.col("due_date").str.strip_chars().str.strptime(pl.Date, "%d/%m/%y", strict=True), # Changed %Y to %y for 2-digit year, kept strict=True for debugging
         pl.col("order_number").str.strip_chars().cast(pl.Int64),
+        pl.col("order_idx").str.strip_chars().cast(pl.Int64),
         pl.col("width").str.strip_chars().cast(pl.Float64),
         pl.col("length").str.strip_chars().cast(pl.Float64),
         # ทำความสะอาดข้อมูล 'demand' และ 'quantity' โดยการลบคอมม่าและแปลงเป็น Int64
@@ -141,6 +143,10 @@ def clean_data(df: pl.DataFrame,
     df = df.filter(pl.col("demand") > 0)
     df = df.filter(pl.col("width") > 0)
     df = df.filter(pl.col("length") > 0)
+    # order won't come out after this lines AI!
+    df = df.with_columns(
+        (pl.col("order_number") + "-" + pl.col("order_idx").cast(pl.Utf8)).alias("order_number")
+    )  # Combine order_number and order_idx for uniqueness
     df = df.with_columns([
         (pl.col("width")).alias("width"),
         (pl.col("length")).alias("length")
