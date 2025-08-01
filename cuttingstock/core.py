@@ -377,6 +377,7 @@ async def main_algorithm(
     back: Optional[str] = None,
     roll_specs: Optional[dict] = None,
     processed_orders: Optional[set] = None,
+    chunk_size: Optional[int] = 200,
 ):
     output_dir = "cache"
     os.makedirs(output_dir, exist_ok=True)
@@ -441,6 +442,12 @@ async def main_algorithm(
             if progress_callback:
                 progress_callback(f"  Iteration {iteration}: Remaining orders: {rem_orders_df.shape[0]} items")
 
+            orders_to_process = rem_orders_df
+            if chunk_size and rem_orders_df.shape[0] > chunk_size:
+                orders_to_process = rem_orders_df.sample(n=chunk_size, with_replacement=False, shuffle=True, seed=iteration)
+                if progress_callback:
+                    progress_callback(f"    Sampling {chunk_size} orders out of {rem_orders_df.shape[0]} for processing.")
+
             if c is None : 
                 c_type = None
             if b is None : 
@@ -449,7 +456,7 @@ async def main_algorithm(
             result = await solve_linear_program(
                 roll['width'],
                 roll['length'],
-                rem_orders_df,
+                orders_to_process,
                 c_type=c_type,
                 b_type=b_type,
             )
