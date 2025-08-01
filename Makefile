@@ -1,7 +1,7 @@
-=====
 .PHONY: help install run test clean
 
 # The first target is the default one when running 'make' without arguments.
+# error missing seperator stop AI!
 help:
     @echo "Available targets:"
     @echo "  install - Install dependencies from requirements.txt"
