@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import polars as pl
 import pytest
 
-from core import main_algorithm
+from cuttingstock.core import main_algorithm
 
 
 @pytest.mark.asyncio
@@ -77,11 +77,11 @@ async def test_main_algorithm_simple_success_case():
         },
     }
 
-    with patch('cleaning.load_data'), \
-         patch('cleaning.clean_data', return_value=mock_cleaned_df), \
+    with patch('cuttingstock.core.load_data'), \
+         patch('cuttingstock.core.clean_data', return_value=mock_cleaned_df), \
          patch('os.path.exists', return_value=False), \
          patch('polars.DataFrame.write_database'), \
-         patch('core.solve_linear_program', return_value=mock_lp_solution):
+         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution):
 
         # 3. Run the algorithm
         results = await main_algorithm(

@@ -8,7 +8,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import polars as pl
 import pytest
 
-from core import _find_and_update_roll, main_algorithm, solve_linear_program
+from cuttingstock.core import (
+    _find_and_update_roll,
+    solve_linear_program,
+)
 
 
 def test_find_and_update_roll_sufficient_single_roll():
