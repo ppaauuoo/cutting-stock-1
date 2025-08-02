@@ -1,4 +1,4 @@
-.PHONY: help install run test clean
+.PHONY: help install run test clean build
 
 # The first target is the default one when running 'make' without arguments.
 help:
@@ -9,14 +9,24 @@ help:
 	@echo "  clean - Remove cache and other generated files"
 
 install:
-	pip install -r requirements.txt
+	pip install virtualenv uv
+	python -m virtualenv .venv
+	${ACTIVATE_ENV}
+	uv pip install -r requirements.txt
 
 run:
+	${ACTIVATE_ENV}
 	python -m cuttingstock.ui
 
 test:
+	${ACTIVATE_ENV}
 	pytest
 
+	
+build:
+	${ACTIVATE_ENV}
+	pyinstaller --onefile --clean --noconfirm --windowed --collect-data pulp --name order-optimizer ui.py
+	
 clean:
 	# Note: These commands use Unix-style tools ('rm', 'find'). On Windows,
 	# you may need to run this from a shell like Git Bash which includes these tools.
