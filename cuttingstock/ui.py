@@ -7,8 +7,6 @@ import sys
 from math import floor
 
 import polars as pl
-from core import main_algorithm  # Import our modified main module
-from order import OrderManager
 from PyQt5.QtCore import (
     QDateTime,
     QLocale,
@@ -37,7 +35,10 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from stock import StockManager
+
+from cuttingstock.core import main_algorithm  # Import our modified main module
+from cuttingstock.order import OrderManager
+from cuttingstock.stock import StockManager
 
 
 class WorkerThread(QThread):

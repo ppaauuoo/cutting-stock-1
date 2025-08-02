@@ -6,7 +6,7 @@ import polars as pl
 from PyQt5.QtCore import QMutex, QMutexLocker, QObject, pyqtSignal
 
 # สมมติว่า cleaning.py อยู่ในไดเรกทอรีเดียวกันและมีฟังก์ชันเหล่านี้
-from cleaning import clean_data, load_data
+from cuttingstock.cleaning import clean_data, load_data
 
 
 class OrderManager(QObject):

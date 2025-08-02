@@ -2,7 +2,6 @@ import os
 from typing import Callable, Optional
 
 import polars as pl
-from cleaning import clean_data, load_data
 from fastapi import FastAPI
 from pulp import (
     PULP_CBC_CMD,
@@ -15,6 +14,8 @@ from pulp import (
     lpSum,
     value,
 )
+
+from cuttingstock.cleaning import clean_data, load_data
 
 # Constants
 INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
