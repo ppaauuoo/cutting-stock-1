@@ -152,7 +152,7 @@ def test_find_and_update_roll_multiple_order_multiple_different_material_multipl
 
     result = _find_and_update_roll(roll_specs, width, sec_material, required_length, used_roll_ids, last_used_roll_ids, order_number1)
     assert "-> เปิดม้วนใหม่: L1 (ยาว 500 ม., เหลือ 100 ม.)" == result
-    assert order_number1 == last_used_roll_ids.get(('_last_order', width, material))
+    assert order_number1 == last_used_roll_ids.get(('_last_order', width, sec_material))
 
     position_key = ('_position', width, material)
     assert 0 == last_used_roll_ids.get(position_key, 0)
@@ -176,7 +176,7 @@ def test_find_and_update_roll_multiple_order_multiple_different_material_multipl
 
     result = _find_and_update_roll(roll_specs, width, sec_material, required_length, used_roll_ids, last_used_roll_ids, order_number2)
     assert "-> ใช้ม้วนต่อเนื่อง: L1 (ยาว 100 ม., ใช้หมด) + L2 (ยาว 500 ม., เหลือ 200 ม.)" == result
-    assert order_number2 == last_used_roll_ids.get(('_last_order', width, material))
+    assert order_number2 == last_used_roll_ids.get(('_last_order', width, sec_material))
 
     position_key = ('_position', width, material)
     assert 0 == last_used_roll_ids.get(position_key, 0)
@@ -255,7 +255,7 @@ def test_find_and_update_roll_multiple_order_multiple_different_material_five_ro
     width = '100'
     material = 'KA125'
     sec_material = 'LA125'
-    thr_material = 'LA125'
+    thr_material = 'CA125'
     required_length = 400
     sec_required_length = 600
     used_roll_ids = set()
@@ -263,10 +263,10 @@ def test_find_and_update_roll_multiple_order_multiple_different_material_five_ro
     
     order_number1 = '1'
     result = _find_and_update_roll(roll_specs, width, sec_material, required_length, used_roll_ids, last_used_roll_ids, order_number1)
-    position_key = ('_position', width, material)
+    position_key = ('_position', width, sec_material)
     assert 0 == last_used_roll_ids.get(position_key, 0)
     assert "-> เปิดม้วนใหม่: L1 (ยาว 500 ม., เหลือ 100 ม.)" == result
-    assert order_number1 == last_used_roll_ids.get(('_last_order', width, material))
+    assert order_number1 == last_used_roll_ids.get(('_last_order', width, sec_material))
 
     result = _find_and_update_roll(roll_specs, width, material, sec_required_length, used_roll_ids, last_used_roll_ids, order_number1)
     position_key = ('_position', width, material)
@@ -296,18 +296,18 @@ def test_find_and_update_roll_multiple_order_multiple_different_material_five_ro
     assert 3 == last_used_roll_ids.get(position_key, 0)
 
     result = _find_and_update_roll(roll_specs, width, thr_material, required_length, used_roll_ids, last_used_roll_ids, order_number1)
-    position_key = ('_position', width, material)
+    position_key = ('_position', width, thr_material)
     assert 0 == last_used_roll_ids.get(position_key, 0)
     assert "-> เปิดม้วนใหม่: C1 (ยาว 500 ม., เหลือ 100 ม.)" == result
-    assert order_number1 == last_used_roll_ids.get(('_last_order', width, material))
+    assert order_number1 == last_used_roll_ids.get(('_last_order', width, thr_material))
 
     
     order_number2 = '2'
     result = _find_and_update_roll(roll_specs, width, sec_material, required_length, used_roll_ids, last_used_roll_ids, order_number2)
-    position_key = ('_position', width, material)
+    position_key = ('_position', width, sec_material)
     assert 0 == last_used_roll_ids.get(position_key, 0)
     assert "-> ใช้ม้วนต่อเนื่อง: L1 (ยาว 100 ม., ใช้หมด) + L2 (ยาว 500 ม., เหลือ 200 ม.)" == result
-    assert order_number2 == last_used_roll_ids.get(('_last_order', width, material))
+    assert order_number2 == last_used_roll_ids.get(('_last_order', width, sec_material))
 
     result = _find_and_update_roll(roll_specs, width, material, sec_required_length, used_roll_ids, last_used_roll_ids, order_number2)
     position_key = ('_position', width, material)
@@ -335,17 +335,17 @@ def test_find_and_update_roll_multiple_order_multiple_different_material_five_ro
     assert order_number2 == last_used_roll_ids.get(('_last_order', width, material))
 
     result = _find_and_update_roll(roll_specs, width, thr_material, required_length, used_roll_ids, last_used_roll_ids, order_number2)
-    position_key = ('_position', width, material)
+    position_key = ('_position', width, thr_material)
     assert 0 == last_used_roll_ids.get(position_key, 0)
     assert "-> ใช้ม้วนต่อเนื่อง: C1 (ยาว 100 ม., ใช้หมด) + C2 (ยาว 500 ม., เหลือ 200 ม.)" == result
-    assert order_number2 == last_used_roll_ids.get(('_last_order', width, material))
+    assert order_number2 == last_used_roll_ids.get(('_last_order', width, thr_material))
 
     order_number3 = '3'
     result = _find_and_update_roll(roll_specs, width, sec_material, required_length, used_roll_ids, last_used_roll_ids, order_number3)
-    position_key = ('_position', width, material)
+    position_key = ('_position', width, sec_material)
     assert 0 == last_used_roll_ids.get(position_key, 0)
     assert "-> ใช้ม้วนต่อเนื่อง: L2 (ยาว 200 ม., ใช้หมด) + L3 (ยาว 500 ม., เหลือ 300 ม.)" == result
-    assert order_number3 == last_used_roll_ids.get(('_last_order', width, material))
+    assert order_number3 == last_used_roll_ids.get(('_last_order', width, sec_material))
     
     result = _find_and_update_roll(roll_specs, width, material, sec_required_length, used_roll_ids, last_used_roll_ids, order_number3)
     position_key = ('_position', width, material)
@@ -372,10 +372,10 @@ def test_find_and_update_roll_multiple_order_multiple_different_material_five_ro
     assert order_number3 == last_used_roll_ids.get(('_last_order', width, material))
 
     result = _find_and_update_roll(roll_specs, width, thr_material, required_length, used_roll_ids, last_used_roll_ids, order_number3)
-    position_key = ('_position', width, material)
+    position_key = ('_position', width, thr_material)
     assert 0 == last_used_roll_ids.get(position_key, 0)
     assert "-> ใช้ม้วนต่อเนื่อง: C2 (ยาว 200 ม., ใช้หมด) + C3 (ยาว 500 ม., เหลือ 300 ม.)" == result
-    assert order_number3 == last_used_roll_ids.get(('_last_order', width, material))
+    assert order_number3 == last_used_roll_ids.get(('_last_order', width, thr_material))
 
     assert roll_specs['100']['KA125']['R1']['length'] == 0
     assert roll_specs['100']['KA125']['R2']['length'] == 0
