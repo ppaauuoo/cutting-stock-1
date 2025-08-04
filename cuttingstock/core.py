@@ -671,8 +671,10 @@ async def main_algorithm(
             fail_msg = f"-> (ประมวลผลไม่สำเร็จ: {failure_reason})"
             unprocessed_orders = rem_orders_df.to_dicts()
             for order in unprocessed_orders:
+                # Add failure reason to the roll_w status to provide more context in test failures
+                status_with_reason = f"{roll_w_status} (Reason: {failure_reason})"
                 unprocessed_result = {
-                    "roll_w": roll_w_status,
+                    "roll_w": status_with_reason,
                     "rem_roll_l": 0,
                     "demand_per_cut": 0,
                     "order_number": order.get("order_number"),
