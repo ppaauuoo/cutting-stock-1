@@ -1,9 +1,9 @@
 import os
+import pickle
 from pathlib import Path
 
-from xgboost import XGBClassifier
 import polars as pl
-import pickle
+from xgboost import XGBClassifier
 
 
 def process(features: pl.DataFrame) -> pl.DataFrame:
@@ -58,11 +58,11 @@ def main():
 
     start_date = None
     end_date = None
-    front = None
-    c = None
-    middle = None
-    b = None
-    back = None
+    front = 'KS231'
+    c = 'CM127'
+    middle = 'CM127'
+    b = 'CM127'
+    back = 'KB160'
     c_type = "C"  # example value
     b_type = "B"  # example value
 
@@ -136,6 +136,7 @@ def main():
     ]
 
     # Print or use predictions
+    print("Order Width:", X["width"].to_list())
     print("Out Model Predictions (Original Labels):", out_predictions_original)
     print(
         "Roll Width Model Predictions (Original Labels):",
