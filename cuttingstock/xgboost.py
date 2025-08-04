@@ -92,7 +92,11 @@ def main():
         )
     )
 
-    model_dir = "model"
+    # Construct paths relative to the project root to ensure models are found.
+    # Assumes 'cuttingstock' and 'model' are sibling directories.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    model_dir = os.path.join(project_root, "model")
     label_out_path = os.path.join(model_dir, "label_mapping_out.pkl")
     label_roll_width_path = os.path.join(model_dir, "label_mapping_roll_width.pkl")
     out_model_path = os.path.join(model_dir, "out.ubj")
