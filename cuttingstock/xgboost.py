@@ -111,12 +111,17 @@ def main():
         label_mapping = pickle.load(f)
     reverse_label_mapping_roll_width = {idx: val for val, idx in label_mapping.items()}
 
-    # Load models
+    # Load models by reading the file into a byte array first
+    # This can help avoid platform-specific file path issues with XGBoost's C-backend.
+    with open(out_model_path, "rb") as f:
+        out_model_bytes = bytearray(f.read())
     out_model = XGBClassifier()
-    out_model.load_model(out_model_path)
+    out_model.load_model(out_model_bytes)
 
+    with open(roll_width_model_path, "rb") as f:
+        roll_width_model_bytes = bytearray(f.read())
     roll_width_model = XGBClassifier()
-    roll_width_model.load_model(roll_width_model_path)
+    roll_width_model.load_model(roll_width_model_bytes)
 
     # Get predictions
     out_predictions = out_model.predict(X)
