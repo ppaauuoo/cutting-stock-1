@@ -16,6 +16,7 @@ from pulp import (
 )
 
 from cuttingstock.cleaning import clean_data, load_data
+from cuttingstock.xgboost import predict_with_xgboost
 
 # Constants
 INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
@@ -454,13 +455,93 @@ async def main_algorithm(
             if b is None : 
                 b_type = None         
 
-            result = await solve_linear_program(
-                roll['width'],
-                roll['length'],
-                orders_to_process,
-                c_type=c_type,
-                b_type=b_type,
-            )
+            result = None
+            try:
+                if progress_callback:
+                    progress_callback("    🤖 Trying XGBoost for a quick solution...")
+                
+                xgb_cuts_preds, xgb_roll_w_preds = predict_with_xgboost(orders_to_process)
+                
+                orders_with_preds = orders_to_process.with_columns(
+                    pl.Series("xgb_cuts", xgb_cuts_preds, dtype=pl.Int64),
+                    pl.Series("xgb_roll_w", xgb_roll_w_preds, dtype=pl.Int64),
+                )
+                
+                candidate_orders = orders_with_preds.filter(pl.col("xgb_roll_w") == roll['width'])
+                
+                if not candidate_orders.is_empty():
+                    if progress_callback:
+                        progress_callback(f"    Found {len(candidate_orders)} candidates from XGBoost for roll {roll['width']}\".")
+
+                    for order in candidate_orders.iter_rows(named=True):
+                        cuts = order.get('xgb_cuts')
+                        order_w = order.get('width')
+                        if not cuts or not order_w:
+                            continue
+                        
+                        trim = roll['width'] - (order_w * cuts)
+                        
+                        if 1 <= trim <= 5:
+                            if progress_callback:
+                                progress_callback(f"    ✅ XGBoost found a valid solution for order_idx {order.get('original_idx')}.")
+                            
+                            sel_order = order
+                            z_val = cuts
+                            
+                            corr_multiplier = 1.0
+                            if c_type == 'C':
+                                corr_multiplier = CORRUGATE_MULTIPLIERS['C']
+                            elif b_type == 'B':
+                                corr_multiplier = CORRUGATE_MULTIPLIERS['B']
+                            elif c_type == 'E' or b_type == 'E':
+                                corr_multiplier = CORRUGATE_MULTIPLIERS['E']
+
+                            total_len_val = sel_order.get('length') * INCH_TO_M * sel_order.get('quantity') * corr_multiplier
+                            demand_per_cut = round(total_len_val / z_val, 4) if z_val > 0 else 0
+                            rem_roll_len = round(roll['length'] - demand_per_cut, 4)
+
+                            material_keys = ['demand', 'front', 'middle', 'back', 'c', 'b', 'die_cut']
+                            material_specs = {key: sel_order.get(key) for key in material_keys if sel_order.get(key)}
+                            material_specs.update({'c_type': c_type, 'b_type': b_type})
+                            
+                            result = {
+                                "status": "Optimal",
+                                "objective_value": trim,
+                                "variables": {
+                                    "roll_w": roll['width'],
+                                    "rem_roll_l": rem_roll_len,
+                                    "demand_per_cut": demand_per_cut,
+                                    "order_w": sel_order.get('width'),
+                                    "order_l": sel_order.get('length'),
+                                    "order_qty": sel_order.get('quantity'),
+                                    "order_dmd": sel_order.get('demand'),
+                                    "cuts": z_val,
+                                    "trim": trim,
+                                    "order_idx": sel_order.get('original_idx'),
+                                    "type": sel_order.get('type'),
+                                    "component_type": sel_order.get('component_type'),
+                                    "due_date": sel_order.get('due_date'),
+                                },
+                                "material_specs": material_specs,
+                                "message": "XGBoost solution found."
+                            }
+                            break
+            except Exception as e:
+                if progress_callback:
+                    progress_callback(f"    ⚠️ XGBoost prediction failed: {e}. Falling back to linear solver.")
+                result = None
+
+            if result is None:
+                if progress_callback:
+                    progress_callback("    XGBoost did not find a solution. Falling back to linear solver.")
+                
+                result = await solve_linear_program(
+                    roll['width'],
+                    roll['length'],
+                    orders_to_process,
+                    c_type=c_type,
+                    b_type=b_type,
+                )
 
             status = result.get("status")
             if status != "Optimal":

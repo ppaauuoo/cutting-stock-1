@@ -1,6 +1,7 @@
 import os
 import pickle
 from pathlib import Path
+from typing import Tuple
 
 import polars as pl
 from xgboost import XGBClassifier
@@ -41,6 +42,92 @@ def process(features: pl.DataFrame) -> pl.DataFrame:
     return features.with_columns(expressions)
 
 
+_models_cache = {}
+
+
+def load_models() -> dict:
+    """Loads XGBoost models and label mappings from disk and caches them."""
+    if _models_cache:
+        return _models_cache
+
+    script_dir = Path(__file__).resolve().parent
+    project_root = script_dir.parent
+    model_dir = project_root / "model"
+    label_out_path = model_dir / "label_mapping_out.pkl"
+    label_roll_width_path = model_dir / "label_mapping_roll_width.pkl"
+    out_model_path = model_dir / "out.ubj"
+    roll_width_model_path = model_dir / "roll_width.ubj"
+
+    with open(label_out_path, "rb") as f:
+        label_mapping_out = pickle.load(f)
+    _models_cache["reverse_label_mapping_out"] = {
+        idx: val for val, idx in label_mapping_out.items()
+    }
+
+    with open(label_roll_width_path, "rb") as f:
+        label_mapping_roll_width = pickle.load(f)
+    _models_cache["reverse_label_mapping_roll_width"] = {
+        idx: val for val, idx in label_mapping_roll_width.items()
+    }
+
+    with open(out_model_path, "rb") as f:
+        out_model_bytes = bytearray(f.read())
+    out_model = XGBClassifier()
+    out_model.load_model(out_model_bytes)
+    _models_cache["out_model"] = out_model
+
+    with open(roll_width_model_path, "rb") as f:
+        roll_width_model_bytes = bytearray(f.read())
+    roll_width_model = XGBClassifier()
+    roll_width_model.load_model(roll_width_model_bytes)
+    _models_cache["roll_width_model"] = roll_width_model
+
+    return _models_cache
+
+
+def predict_with_xgboost(orders_df: pl.DataFrame) -> Tuple[list, list]:
+    """
+    Takes an order DataFrame, preprocesses it, and returns predictions from cached models.
+    """
+    models = load_models()
+    out_model = models["out_model"]
+    roll_width_model = models["roll_width_model"]
+    reverse_label_mapping_out = models["reverse_label_mapping_out"]
+    reverse_label_mapping_roll_width = models["reverse_label_mapping_roll_width"]
+
+    feature_cols = [
+        "component_type",
+        "width",
+        "length",
+        "quantity",
+        "front",
+        "c",
+        "middle",
+        "b",
+        "back",
+        "type",
+    ]
+    # Ensure all required columns exist, filling with null if not.
+    for col in feature_cols:
+        if col not in orders_df.columns:
+            orders_df = orders_df.with_columns(pl.lit(None).alias(col))
+
+    X = process(orders_df.select(feature_cols))
+
+    out_predictions = out_model.predict(X)
+    roll_width_predictions = roll_width_model.predict(X)
+
+    out_predictions_original = [
+        reverse_label_mapping_out.get(pred) for pred in out_predictions
+    ]
+    roll_width_predictions_original = [
+        reverse_label_mapping_roll_width.get(pred)
+        for pred in roll_width_predictions
+    ]
+
+    return out_predictions_original, roll_width_predictions_original
+
+
 def main():
     from cuttingstock.cleaning import clean_data, load_data
 
@@ -76,67 +163,14 @@ def main():
         b=b if b_type in ["B", "E"] else None,
         back=back,
     )
-    X = process(
-        orders_df.select(
-            [
-                "component_type",
-                "width",
-                "length",
-                "quantity",
-                "front",
-                "c",
-                "middle",
-                "b",
-                "back",
-                "type",
-            ]
-        )
-    )
 
-    # Construct paths relative to the project root to ensure models are found.
-    # Assumes 'cuttingstock' and 'model' are sibling directories.
-    script_dir = Path(__file__).resolve().parent
-    project_root = script_dir.parent
-    model_dir = project_root / "model"
-    label_out_path = model_dir / "label_mapping_out.pkl"
-    label_roll_width_path = model_dir / "label_mapping_roll_width.pkl"
-    out_model_path = model_dir / "out.ubj"
-    roll_width_model_path = model_dir / "roll_width.ubj"
-
-    with open(label_out_path, "rb") as f:
-        label_mapping = pickle.load(f)
-    reverse_label_mapping_out = {idx: val for val, idx in label_mapping.items()}
-
-    with open(label_roll_width_path, "rb") as f:
-        label_mapping = pickle.load(f)
-    reverse_label_mapping_roll_width = {idx: val for val, idx in label_mapping.items()}
-
-    # Load models by reading the file into a byte array first
-    # This can help avoid platform-specific file path issues with XGBoost's C-backend.
-    with open(out_model_path, "rb") as f:
-        out_model_bytes = bytearray(f.read())
-    out_model = XGBClassifier()
-    out_model.load_model(out_model_bytes)
-
-    with open(roll_width_model_path, "rb") as f:
-        roll_width_model_bytes = bytearray(f.read())
-    roll_width_model = XGBClassifier()
-    roll_width_model.load_model(roll_width_model_bytes)
-
-    # Get predictions
-    out_predictions = out_model.predict(X)
-    roll_width_predictions = roll_width_model.predict(X)
-
-    # Convert predictions to original labels
-    out_predictions_original = [
-        reverse_label_mapping_out[pred] for pred in out_predictions
-    ]
-    roll_width_predictions_original = [
-        reverse_label_mapping_roll_width[pred] for pred in roll_width_predictions
-    ]
+    (
+        out_predictions_original,
+        roll_width_predictions_original,
+    ) = predict_with_xgboost(orders_df)
 
     # Print or use predictions
-    print("Order Width:", X["width"].to_list())
+    print("Order Width:", orders_df["width"].to_list())
     print("Out Model Predictions (Original Labels):", out_predictions_original)
     print(
         "Roll Width Model Predictions (Original Labels):",
