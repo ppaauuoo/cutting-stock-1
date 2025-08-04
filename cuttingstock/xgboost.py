@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from xgboost import XGBClassifier
 import polars as pl
@@ -94,13 +95,13 @@ def main():
 
     # Construct paths relative to the project root to ensure models are found.
     # Assumes 'cuttingstock' and 'model' are sibling directories.
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
-    model_dir = os.path.join(project_root, "model")
-    label_out_path = os.path.join(model_dir, "label_mapping_out.pkl")
-    label_roll_width_path = os.path.join(model_dir, "label_mapping_roll_width.pkl")
-    out_model_path = os.path.join(model_dir, "out.ubj")
-    roll_width_model_path = os.path.join(model_dir, "roll_width.ubj")
+    script_dir = Path(__file__).resolve().parent
+    project_root = script_dir.parent
+    model_dir = project_root / "model"
+    label_out_path = model_dir / "label_mapping_out.pkl"
+    label_roll_width_path = model_dir / "label_mapping_roll_width.pkl"
+    out_model_path = model_dir / "out.ubj"
+    roll_width_model_path = model_dir / "roll_width.ubj"
 
     with open(label_out_path, "rb") as f:
         label_mapping = pickle.load(f)
