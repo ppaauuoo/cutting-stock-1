@@ -366,7 +366,7 @@ async def main_algorithm(
     roll_width: int,
     roll_length: int,
     file_path: str = "order2024.csv",
-    max_records: Optional[int] = 2000,
+    max_records: Optional[int] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -379,7 +379,7 @@ async def main_algorithm(
     back: Optional[str] = None,
     roll_specs: Optional[dict] = None,
     processed_orders: Optional[set] = None,
-    chunk_size: Optional[int] = 200,
+    chunk_size: Optional[int] = 100,
 ):
     output_dir = "cache"
     os.makedirs(output_dir, exist_ok=True)
