@@ -4,6 +4,7 @@ import csv
 import os
 import re
 import sys
+import time
 from math import floor
 
 import polars as pl
@@ -582,7 +583,9 @@ class CuttingOptimizerUI(QMainWindow):
             return []
 
     def start_main_loop(self):
-        self.log_message("🚀 Starting automated calculation process...")
+        self.start_time = time.time()
+        timestamp = convert_thai_digits_to_arabic(QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
+        self.log_message(f"[{timestamp}] 🚀 Starting automated calculation process...")
         self.run_button.setEnabled(False)
 
         self.results_data.clear()
@@ -607,7 +610,13 @@ class CuttingOptimizerUI(QMainWindow):
 
     def run_next_calculation(self):
         if self.current_suggestion_index >= len(self.suggestions_list):
-            self.log_message("✅ All suggestions processed. Automated calculation finished.")
+            timestamp = convert_thai_digits_to_arabic(QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
+            self.log_message(f"[{timestamp}] ✅ All suggestions processed. Automated calculation finished.")
+
+            if hasattr(self, 'start_time'):
+                end_time = time.time()
+                elapsed_time = end_time - self.start_time
+                self.log_message(f"⏱️ Total elapsed time: {elapsed_time:.2f} seconds.")
 
             if self.results_data:
                 self.log_message("Sorting final results by roll width...")
