@@ -9,37 +9,68 @@ import pickle
 
 
 def process(features: pl.DataFrame) -> pl.DataFrame:
-    numerical_features = features.select_dtypes(
-        include=["int32", "int64", "float32", "float64"]
-    ).columns.tolist()
-    categorical_features = features.select_dtypes(
-        include=["object", "category"]
-    ).columns.tolist()
-    boolean_features = features.select_dtypes(
-        include=["bool"]
-    ).columns.tolist()  # CryoSleep, VIP
+    # Use polars selectors to identify column types.
+    # Note: pandas 'object' dtype is usually a string in polars.
+    numerical_cols = features.select(pl.selectors.numeric()).columns
+    categorical_cols = features.select(
+        pl.selectors.string() | pl.selectors.categorical()
+    ).columns
+    boolean_cols = features.select(pl.selectors.boolean()).columns
 
-    for col in categorical_features:
+    expressions = []
+    # Process categorical features
+    for col in categorical_cols:
         # Fill nulls with a placeholder value (e.g., 'missing')
-        features[col] = features[col].fillna("None")
-        # Convert to categorical and encode
-        features[col] = features[col].astype("category").cat.codes
+        # Convert to categorical and encode to integer representation
+        expressions.append(
+            pl.col(col).fill_null("None").cast(pl.Categorical).to_physical().alias(col)
+        )
 
-    for col in numerical_features:
-        features[col] = features[col].fillna(0)
+    # Process numerical features
+    for col in numerical_cols:
+        expressions.append(pl.col(col).fill_null(0).alias(col))
 
-    for col in boolean_features:
-        features[col] = features[col].astype(
-            "int8"
-        )  # Convert bool to int8 for CuPy compatibility
-        features[col] = features[col].fillna(
-            0
+    # Process boolean features
+    for col in boolean_cols:
+        # Convert bool to int8 for CuPy compatibility
+        expressions.append(
+            pl.col(col)
+            .cast(pl.Int8)
+            .fill_null(0)
+            .alias(col)
         )  # Fill nulls with False (or True, depending on your data)
 
-    return features
+    if not expressions:
+        return features
+
+    return features.with_columns(expressions)
 
 
 def main():
+    from cuttingstock.cleaning import clean_data, load_data
+
+    # Example usage:
+    # These would be your inputs
+    try:
+        # Using a raw string for the path is safer on Windows
+        raw_orders_df = load_data(r"D:\order.csv")
+    except FileNotFoundError:
+        print("Error: The file D:\\order.csv was not found.")
+        return
+    except Exception as e:
+        print(f"An error occurred while loading the data: {e}")
+        return
+
+    start_date = None
+    end_date = None
+    front = None
+    c = None
+    middle = None
+    b = None
+    back = None
+    c_type = "C"  # example value
+    b_type = "B"  # example value
+
     orders_df = clean_data(
         raw_orders_df,
         start_date,
@@ -102,3 +133,7 @@ def main():
         "Roll Width Model Predictions (Original Labels):",
         roll_width_predictions_original,
     )
+
+
+if __name__ == "__main__":
+    main()
