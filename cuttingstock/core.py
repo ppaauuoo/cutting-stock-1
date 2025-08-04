@@ -439,6 +439,7 @@ async def main_algorithm(
         roll_cuts = []
         iteration = 0
         failure_reason = "ไม่สามารถหาผลลัพธ์ที่เหมาะสมได้"
+        final_status = None
         while not rem_orders_df.is_empty():
             iteration += 1
             if progress_callback:
@@ -544,6 +545,7 @@ async def main_algorithm(
                 )
 
             status = result.get("status")
+            final_status = status
             if status != "Optimal":
                 if progress_callback:
                     progress_callback(f"    ❌ {result.get('message', 'Non-optimal status')}")
@@ -657,14 +659,20 @@ async def main_algorithm(
             progress_callback(f"--- No cuts made for roll {roll['width']} ---")
 
         if not rem_orders_df.is_empty():
+            roll_w_status = "Failed"
+            if final_status == "Infeasible":
+                roll_w_status = "Infeasible"
+
             if progress_callback:
-                progress_callback(f"    Adding {rem_orders_df.shape[0]} failed/infeasible orders to the results.")
-            
+                progress_callback(
+                    f"    Adding {rem_orders_df.shape[0]} {roll_w_status.lower()} orders to the results."
+                )
+
             fail_msg = f"-> (ประมวลผลไม่สำเร็จ: {failure_reason})"
             unprocessed_orders = rem_orders_df.to_dicts()
             for order in unprocessed_orders:
                 unprocessed_result = {
-                    "roll_w": "Failed/Infeasible",
+                    "roll_w": roll_w_status,
                     "rem_roll_l": 0,
                     "demand_per_cut": 0,
                     "order_number": order.get("order_number"),
