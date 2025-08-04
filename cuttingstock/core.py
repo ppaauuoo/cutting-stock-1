@@ -53,7 +53,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
     # If the order number is new for this material, reset the position.
     # Otherwise, load the last known position.
-    if order_number and order_number != last_order_number:
+    if order_number and order_number != last_order_number and not (order_number and (order_number, material) in seen_orders):
         position = 0
     else:
         position = last_used_roll_ids.get(position_key, 0)

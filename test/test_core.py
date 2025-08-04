@@ -192,8 +192,8 @@ def test_find_and_update_roll_multiple_order_multiple_different_material_multipl
     assert roll_specs['100']['KA125']['R1']['length'] == 0
     assert roll_specs['100']['KA125']['R2']['length'] == 0
     assert roll_specs['100']['KA125']['R3']['length'] == 0
-    assert roll_specs['100']['KA125']['R4']['length'] == 300
-    assert roll_specs['100']['KA125']['R5']['length'] == 200
+    assert roll_specs['100']['KA125']['R4']['length'] == 0
+    assert roll_specs['100']['KA125']['R5']['length'] == 0
     assert 'R1' in used_roll_ids
     assert 'R2' in used_roll_ids
     assert 'R3' in used_roll_ids
