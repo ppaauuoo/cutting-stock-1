@@ -11,3 +11,4 @@ cutting_results*
 *.spec
 *.db
 .env
+.crush
