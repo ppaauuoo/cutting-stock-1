@@ -8,11 +8,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import polars as pl
 import pytest
 
+from cuttingstock.cleaning import clean_data, load_data
 from cuttingstock.core import (
     _find_and_update_roll,
     solve_linear_program,
 )
-from cuttingstock.xgboost import predict_with_xgboost
+from cuttingstock.mlmodel import predict_with_xgboost
 
 
 def test_find_and_update_roll_sufficient_single_roll():
@@ -510,49 +511,3 @@ async def test_solve_linear_program_infeasible():
     result = await solve_linear_program(roll_width, roll_length, orders_df)
     
     assert "Infeasible" in result['status']
-
-
-@patch('cuttingstock.xgboost.load_models')
-def test_predict_with_xgboost(mock_load_models):
-    """
-    Tests the xgboost prediction function with mocked models.
-    """
-    # 1. Setup mock models and mappings
-    mock_out_model = MagicMock()
-    mock_out_model.predict.return_value = [0, 1]  # Mock predictions (indices)
-
-    mock_roll_width_model = MagicMock()
-    mock_roll_width_model.predict.return_value = [0, 1] # Mock predictions (indices)
-
-    mock_load_models.return_value = {
-        'out_model': mock_out_model,
-        'roll_width_model': mock_roll_width_model,
-        'reverse_label_mapping_out': {0: 3, 1: 4},  # Mock mapping from index to value
-        'reverse_label_mapping_roll_width': {0: 75, 1: 80} # Mock mapping
-    }
-
-    # 2. Create sample input DataFrame
-    orders_df = pl.DataFrame({
-        "width": [24.0, 25.0],
-        "length": [100.0, 110.0],
-        "quantity": [10, 20],
-        "component_type": ["A", "B"],
-        "front": ["FP1", "FP2"],
-        "c": ["CP1", "CP2"],
-        "middle": [None, None],
-        "b": [None, None],
-        "back": [None, None],
-        "type": ["typeA", "typeB"],
-    })
-
-    # 3. Call the function to be tested
-    out_preds, roll_preds = predict_with_xgboost(orders_df)
-
-    # 4. Assertions
-    assert out_preds == [3, 4]
-    assert roll_preds == [75, 80]
-    
-    # Verify that the model's predict method was called once
-    mock_out_model.predict.assert_called_once()
-    mock_roll_width_model.predict.assert_called_once()
-

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Tuple
 
 import polars as pl
-from xgboost import XGBClassifier
+import xgboost as xgb
 
 
 def process(features: pl.DataFrame) -> pl.DataFrame:
@@ -72,13 +72,13 @@ def load_models() -> dict:
 
     with open(out_model_path, "rb") as f:
         out_model_bytes = bytearray(f.read())
-    out_model = XGBClassifier()
+    out_model = xgb.XGBClassifier()
     out_model.load_model(out_model_bytes)
     _models_cache["out_model"] = out_model
 
     with open(roll_width_model_path, "rb") as f:
         roll_width_model_bytes = bytearray(f.read())
-    roll_width_model = XGBClassifier()
+    roll_width_model = xgb.XGBClassifier()
     roll_width_model.load_model(roll_width_model_bytes)
     _models_cache["roll_width_model"] = roll_width_model
 
@@ -170,11 +170,11 @@ def main():
     ) = predict_with_xgboost(orders_df)
 
     # Print or use predictions
-    print("Order Width:", orders_df["width"].to_list())
-    print("Out Model Predictions (Original Labels):", out_predictions_original)
+    print("Order Width:", orders_df["width"].to_list()[0])
+    print("Out Model Predictions (Original Labels):", out_predictions_original[0])
     print(
         "Roll Width Model Predictions (Original Labels):",
-        roll_width_predictions_original,
+        roll_width_predictions_original[0],
     )
 
 

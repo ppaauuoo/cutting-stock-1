@@ -16,7 +16,7 @@ from pulp import (
 )
 
 from cuttingstock.cleaning import clean_data, load_data
-from cuttingstock.xgboost import predict_with_xgboost
+from cuttingstock.mlmodel import predict_with_xgboost
 
 # Constants
 INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
