@@ -1,7 +1,4 @@
 import os
-import sys
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from xgboost import XGBClassifier
 import polars as pl
@@ -34,10 +31,7 @@ def process(features: pl.DataFrame) -> pl.DataFrame:
     for col in boolean_cols:
         # Convert bool to int8 for CuPy compatibility
         expressions.append(
-            pl.col(col)
-            .cast(pl.Int8)
-            .fill_null(0)
-            .alias(col)
+            pl.col(col).cast(pl.Int8).fill_null(0).alias(col)
         )  # Fill nulls with False (or True, depending on your data)
 
     if not expressions:
@@ -98,22 +92,28 @@ def main():
         )
     )
 
-    with open("./model/label_mapping_out.pkl", "rb") as f:
+    model_dir = "model"
+    label_out_path = os.path.join(model_dir, "label_mapping_out.pkl")
+    label_roll_width_path = os.path.join(model_dir, "label_mapping_roll_width.pkl")
+    out_model_path = os.path.join(model_dir, "out.ubj")
+    roll_width_model_path = os.path.join(model_dir, "roll_width.ubj")
+
+    with open(label_out_path, "rb") as f:
         label_mapping = pickle.load(f)
     reverse_label_mapping_out = {idx: val for val, idx in label_mapping.items()}
 
-    with open("./model/label_mapping_roll_width.pkl", "rb") as f:
+    with open(label_roll_width_path, "rb") as f:
         label_mapping = pickle.load(f)
     reverse_label_mapping_roll_width = {idx: val for val, idx in label_mapping.items()}
 
     # Load models
     out_model = XGBClassifier()
     out_model.n_classes_ = 1
-    out_model.load_model("./model/out.ubj")
+    out_model.load_model(out_model_path)
 
     roll_width_model = XGBClassifier()
     roll_width_model.n_classes_ = 1
-    roll_width_model.load_model("./model/roll_width.ubj")
+    roll_width_model.load_model(roll_width_model_path)
 
     # Get predictions
     out_predictions = out_model.predict(X)
