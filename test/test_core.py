@@ -395,6 +395,58 @@ def test_find_and_update_roll_multiple_order_multiple_different_material_five_ro
     assert 'R4' in used_roll_ids
     assert 'R5' in used_roll_ids
 
+
+def test_find_and_update_roll_order_switching_and_positioning():
+    """
+    Tests the logic of switching between orders and tracking material position within an order.
+    - An order using the same material multiple times should use a new roll each time.
+    - A new order should continue using a roll from a previous order if possible.
+    """
+    roll_specs = {
+        '100': {
+            'MAT_A': {
+                'R1': {'id': 'R1', 'length': 1000},
+                'R2': {'id': 'R2', 'length': 1000},
+                'R3': {'id': 'R3', 'length': 1000},
+            }
+        }
+    }
+    width = '100'
+    material = 'MAT_A'
+    required_length = 400
+    used_roll_ids = set()
+    last_used_roll_ids = {}
+    
+    # --- Order 1 ---
+    # First component of Order 1, Material A
+    order_number1 = 'ORDER_1'
+    result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids, order_number1)
+    assert "-> เปิดม้วนใหม่: R1 (ยาว 1000 ม., เหลือ 600 ม.)" == result
+    assert roll_specs['100']['MAT_A']['R1']['length'] == 600
+    position_key = ('_position', width, material)
+    assert 0 == last_used_roll_ids.get(position_key, 0) # position starts at 0
+
+    # Second component of Order 1, same Material A -> should use a NEW roll
+    result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids, order_number1)
+    assert "-> เปิดม้วนใหม่: R2 (ยาว 1000 ม., เหลือ 600 ม.)" == result
+    assert roll_specs['100']['MAT_A']['R2']['length'] == 600
+    assert 1 == last_used_roll_ids.get(position_key, 0) # position increments
+
+    # --- Order 2 ---
+    # First component of Order 2, Material A -> should CONTINUE using last roll (R2)
+    order_number2 = 'ORDER_2'
+    result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids, order_number2)
+    assert "-> ใช้ม้วนต่อเนื่อง: R2 (ยาว 600 ม., เหลือ 200 ม.)" == result
+    assert roll_specs['100']['MAT_A']['R2']['length'] == 200
+    assert 0 == last_used_roll_ids.get(position_key, 0) # position resets for new order
+
+    # Second component of Order 2, same Material A -> should use a NEW roll (R3)
+    result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids, order_number2)
+    assert "-> เปิดม้วนใหม่: R3 (ยาว 1000 ม., เหลือ 600 ม.)" == result
+    assert roll_specs['100']['MAT_A']['R3']['length'] == 600
+    assert 1 == last_used_roll_ids.get(position_key, 0) # position increments
+
+
 def test_find_and_update_roll_no_stock():
     """
     Tests the case where there is no stock for the requested material.
