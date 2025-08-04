@@ -108,11 +108,9 @@ def main():
 
     # Load models
     out_model = XGBClassifier()
-    out_model.n_classes_ = 1
     out_model.load_model(out_model_path)
 
     roll_width_model = XGBClassifier()
-    roll_width_model.n_classes_ = 1
     roll_width_model.load_model(roll_width_model_path)
 
     # Get predictions
