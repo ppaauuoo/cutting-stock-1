@@ -22,11 +22,21 @@ test:
 	${ACTIVATE_ENV}
 	python -m pytest
 
-	
+
 build:
 	${ACTIVATE_ENV}
-	python -m pyinstaller --onefile --clean --noconfirm --windowed --collect-data pulp --name order-optimizer ui.py
-	
+	pyinstaller --log-level DEBUG --onefile --clean --noconfirm --windowed \
+	    --collect-data pulp \
+	    --hidden-import scipy \
+	    --hidden-import scipy.optimize \
+	    --hidden-import scipy.special \
+	    --hidden-import scipy.sparse \
+	    --hidden-import scipy._cyutility \
+	    --collect-all xgboost \
+	    --collect-all connectorx \
+	    --add-data "./model;model" \
+	    --name order-optimizer cuttingstock\ui.py
+
 clean:
 	# Note: These commands use Unix-style tools ('rm', 'find'). On Windows,
 	# you may need to run this from a shell like Git Bash which includes these tools.
