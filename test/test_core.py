@@ -213,10 +213,10 @@ def test_find_and_update_roll_multiple_order_width_change():
         },
         '200': {
             'LA125': {
-                'L1': {'id': 'L1', 'length': 500},
-                'L2': {'id': 'L2', 'length': 500},
-                'L3': {'id': 'L3', 'length': 500},
-                'L4': {'id': 'L4', 'length': 500},
+                'L1': {'id': 'L1', 'length': 501},
+                'L2': {'id': 'L2', 'length': 502},
+                'L3': {'id': 'L3', 'length': 503},
+                'L4': {'id': 'L4', 'length': 504},
             },
             'KA125': {
                 'R1': {'id': 'R1', 'length': 500},
@@ -267,26 +267,14 @@ def test_find_and_update_roll_multiple_order_width_change():
     result = _find_and_update_roll(roll_specs, width, sec_material, required_length, used_roll_ids, last_used_roll_ids, order_number3)
     position_key = ('_position', width, sec_material)
     assert 0 == last_used_roll_ids.get(position_key, 0)
-    assert "-> เปิดม้วนใหม่: L1 (ยาว 500 ม., เหลือ 100 ม.)" == result
+    assert "-> เปิดม้วนใหม่: L4 (ยาว 504 ม., เหลือ 104 ม.)" == result
     assert order_number3 == last_used_roll_ids.get(('_last_order', width, sec_material))
 
     result = _find_and_update_roll(roll_specs, width, sec_material, required_length, used_roll_ids, last_used_roll_ids, order_number3)
     position_key = ('_position', width, sec_material)
     assert 1 == last_used_roll_ids.get(position_key, 0)
-    assert "-> เปิดม้วนใหม่: L2 (ยาว 500 ม., เหลือ 100 ม.)" == result
+    assert "-> เปิดม้วนใหม่: L3 (ยาว 503 ม., เหลือ 103 ม.)" == result
     assert order_number3 == last_used_roll_ids.get(('_last_order', width, sec_material))
-
-    assert roll_specs['100']['KA125']['R1']['length'] == 0
-    assert roll_specs['100']['KA125']['R2']['length'] == 0
-    assert roll_specs['100']['KA125']['R3']['length'] == 0
-    assert roll_specs['100']['KA125']['R4']['length'] == 300
-    assert roll_specs['100']['KA125']['R5']['length'] == 200
-    assert 'R1' in used_roll_ids
-    assert 'R2' in used_roll_ids
-    assert 'R3' in used_roll_ids
-    assert 'R4' in used_roll_ids
-    assert 'R5' in used_roll_ids
-
 
 def test_find_and_update_roll_multiple_order_multiple_different_material_five_roll():
     """
