@@ -73,8 +73,15 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     # --- For a new order, try to find ANY partially used roll first ---
     if is_new_order:
         # Find rolls that have been used but still have length, sort by ID for deterministic behavior.
+        # We need to find rolls that have been used for THIS SPECIFIC WIDTH.
+        # last_used_roll_ids tracks this. A key like ('100', 'KA125', 0) maps to a roll ID.
+        used_ids_for_this_width = {
+            v for k, v in last_used_roll_ids.items()
+            if isinstance(k, tuple) and len(k) == 3 and k[0] == width
+        }
+
         partial_rolls = sorted(
-            [(k, r) for k, r in material_rolls_dict.items() if r.get('id') in used_roll_ids and r.get('length', 0) > 0],
+            [(k, r) for k, r in material_rolls_dict.items() if r.get('id') in used_ids_for_this_width and r.get('length', 0) > 0],
             key=lambda item: item[0]
         )
 
