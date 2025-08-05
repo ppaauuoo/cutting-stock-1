@@ -77,7 +77,7 @@ class WorkerThread(QThread):
     def run(self):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
         def progress_callback(message: str):
             if self.isInterruptionRequested():
                 # Raise an exception to break out of the blocking call
@@ -111,7 +111,7 @@ class WorkerThread(QThread):
                     self.progress_updated.emit(estimated_progress, message)
             elif "บันทึกผลลัพธ์ลงฐานข้อมูลเรียบร้อย" in message:
                 self.progress_updated.emit(95, message)
-            
+
         try:
             results = loop.run_until_complete(
                 main_algorithm(
@@ -178,7 +178,7 @@ class CuttingOptimizerUI(QMainWindow):
 
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
-        
+
         # Default file paths
         self.order_file_path = "order.csv"
         self.stock_file_path = "stock.csv"
@@ -193,7 +193,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.factory_combo.addItems(["รวม", "1&2", "3", "4", "5"])
         factory_layout.addWidget(self.factory_combo)
         layout.addLayout(factory_layout)
-        
+
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)  # ตั้งค่าระยะ 0-100%
@@ -201,7 +201,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.progress_bar.setAlignment(Qt.AlignCenter)
         self.progress_bar.setFormat("กำลังรอการเริ่มต้น...") # ตั้งค่าข้อความเริ่มต้น
         layout.addWidget(self.progress_bar)
-        
+
         # Buttons layout
         buttons_layout = QHBoxLayout()
 
@@ -221,9 +221,9 @@ class CuttingOptimizerUI(QMainWindow):
         self.show_unprocessed_checkbox.setChecked(True)
         self.show_unprocessed_checkbox.toggled.connect(self._refresh_results_display)
         buttons_layout.addWidget(self.show_unprocessed_checkbox)
-        
+
         layout.addLayout(buttons_layout)
-        
+
         # Log display (Collapsible)
         self.log_group_box = QGroupBox("Show Logs:")
         self.log_group_box.setCheckable(True) # ทำให้ GroupBox ยุบ/ขยายได้
@@ -234,9 +234,9 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_display.setReadOnly(True)
         log_layout.addWidget(self.log_display)
         self.log_group_box.setLayout(log_layout)
-        
+
         layout.addWidget(self.log_group_box)
-        
+
         # เชื่อมต่อ signal เพื่อซ่อน/แสดง log_display
         self.log_group_box.toggled.connect(self.log_display.setVisible)
         self.log_display.setVisible(False) # ตรวจสอบให้แน่ใจว่าสถานะเริ่มต้นตรงกัน
@@ -247,7 +247,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.result_table.setColumnCount(12)
         self.result_table.setHorizontalHeaderLabels([
             "ความกว้างม้วน", "หมายเลขออเดอร์", "กำหนดส่ง", "ชนิดส่วนประกอบ", "ความกว้างออเดอร์", "จำนวนออก", "เศษเหลือ",
-            "ความยาวออเดอร์", "จำนวนสั่งส่ง", "ผลิตได้", "จำนวนสั่งผลิต", "ปริมาณตัด"  
+            "ความยาวออเดอร์", "จำนวนสั่งส่ง", "ผลิตได้", "จำนวนสั่งผลิต", "ปริมาณตัด"
             #, "กระดาษที่ใช้", "กระดาษคงเหลือ"
         ])
         self.result_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -255,9 +255,9 @@ class CuttingOptimizerUI(QMainWindow):
         self.result_table.setSelectionMode(QTableWidget.SingleSelection)
         self.result_table.setSelectionBehavior(QTableWidget.SelectRows)
         layout.addWidget(self.result_table)
-        
+
         self.setCentralWidget(central_widget)
-        
+
         # เพิ่มตัวแปรสำหรับเก็บข้อมูลผลลัพธ์ทั้งหมด
         self.results_data = []
         self.display_data = []
@@ -280,10 +280,10 @@ class CuttingOptimizerUI(QMainWindow):
         self.order_manager.order_updated.connect(self.update_order_data)
         self.order_manager.error_signal.connect(self.handle_order_error)
         self.order_manager.file_not_found_signal.connect(self.handle_order_file_not_found)
-        
+
         # เชื่อมต่อสัญญาณของเธรด
         self.order_thread.started.connect(self.order_manager.run)
-        
+
         # เริ่มการทำงานของเธรด
         self.order_thread.start()
 
@@ -291,8 +291,8 @@ class CuttingOptimizerUI(QMainWindow):
         """แสดงกล่องคำเตือนแบบ modal เมื่อไม่พบไฟล์ออเดอร์"""
         self.log_message(f"⚠️ ไม่พบไฟล์ออเดอร์: {file_path}. กรุณาตรวจสอบตำแหน่งไฟล์.")
         QMessageBox.warning(
-            self, 
-            "ไม่พบไฟล์", 
+            self,
+            "ไม่พบไฟล์",
             f"ไม่พบไฟล์ออเดอร์ที่ระบุ:\n{file_path}\n\nโปรแกรมจะพยายามโหลดไฟล์อีกครั้งในภายหลัง"
         )
 
@@ -358,7 +358,7 @@ class CuttingOptimizerUI(QMainWindow):
             # Add state verification
             if self.order_thread.isRunning():
                 self.log_message("❌ Thread still running after termination")
-                return  # Block deletion until thread is fully stopped 
+                return  # Block deletion until thread is fully stopped
             self.order_manager.deleteLater()
             self.order_thread.deleteLater()
             self.order_manager = None
@@ -395,10 +395,10 @@ class CuttingOptimizerUI(QMainWindow):
         self.stock_manager.stock_updated.connect(self.update_stock_data)
         self.stock_manager.error_signal.connect(self.handle_stock_error)
         self.stock_manager.file_not_found_signal.connect(self.handle_stock_file_not_found)
-        
+
         # เชื่อมต่อสัญญาณของเธรด
         self.stock_thread.started.connect(self.stock_manager.run)
-        
+
         # เริ่มการทำงานของเธรด
         self.stock_thread.start()
 
@@ -406,8 +406,8 @@ class CuttingOptimizerUI(QMainWindow):
         """แสดงกล่องคำเตือนแบบ modal เมื่อไม่พบไฟล์สต็อก"""
         self.log_message(f"⚠️ ไม่พบไฟล์สต็อก: {file_path}. กรุณาตรวจสอบตำแหน่งไฟล์.")
         QMessageBox.warning(
-            self, 
-            "ไม่พบไฟล์", 
+            self,
+            "ไม่พบไฟล์",
             f"ไม่พบไฟล์สต็อกที่ระบุ:\n{file_path}\n\nโปรแกรมจะพยายามโหลดไฟล์อีกครั้งในภายหลัง"
         )
 
@@ -433,15 +433,15 @@ class CuttingOptimizerUI(QMainWindow):
                         width = str(row['roll_size']).strip()
                         material = str(row['roll_type']).strip()
                         length = row['length']
-                        
+
                         if width not in new_roll_specs:
                             new_roll_specs[width] = {}
                         if material not in new_roll_specs[width]:
                             new_roll_specs[width][material] = {}
-                        
+
                         # ใช้ key ที่เพิ่มขึ้นเรื่อยๆ สำหรับแต่ละม้วนภายใต้ width/material เดียวกัน
                         roll_key = len(new_roll_specs[width][material]) + 1
-                        
+
                         new_roll_specs[width][material][roll_key] = {
                             'id': roll_number,
                             'length': length
@@ -468,17 +468,17 @@ class CuttingOptimizerUI(QMainWindow):
             spec.get('b', ''),
             spec.get('back', '')
         ]
-        
+
         material_counts = collections.Counter(m for m in selected_materials if m)
         unique_materials = list(material_counts.keys())
 
         effective_lengths = []
         if not unique_materials or not width:
             return 0
-            
+
         if width not in self.ROLL_SPECS:
             return 0
-            
+
         stock_data_for_width = self.ROLL_SPECS[width]
         for material in unique_materials:
             material_rolls = stock_data_for_width.get(material)
@@ -486,14 +486,14 @@ class CuttingOptimizerUI(QMainWindow):
                 min_length = min(roll['length'] for roll in material_rolls.values())
                 usage_count = material_counts[material]
                 if usage_count == 0: continue
-                
+
                 roll_used = floor(len(material_rolls) / usage_count)
                 effective_length = min_length * roll_used
                 effective_lengths.append(effective_length)
             else:
                 # If any required material is not in stock for this width, this suggestion is invalid for calculation.
                 return 0
-        
+
         if effective_lengths:
             min_effective_length = min(effective_lengths)
             # return int(min_effective_length)
@@ -506,7 +506,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_display.verticalScrollBar().setValue(
             self.log_display.verticalScrollBar().maximum()
         )
-        
+
     def get_all_suggestions(self):
         """
         Generates a list of all possible calculation settings based on order frequency and stock.
@@ -549,7 +549,7 @@ class CuttingOptimizerUI(QMainWindow):
             )
 
             all_specs_df = spec_df.group_by(existing_cols).count().sort("count", descending=True)
-            
+
             if all_specs_df.is_empty():
                 self.log_message("ℹ️ No material specs could be grouped from the order file.")
                 return []
@@ -566,7 +566,7 @@ class CuttingOptimizerUI(QMainWindow):
                     for width, materials_in_stock in self.ROLL_SPECS.items():
                         if spec_materials.issubset(materials_in_stock.keys()):
                             available_widths.append(width)
-                
+
                 if available_widths:
                     sorted_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
                     for width in sorted_widths:
@@ -662,22 +662,22 @@ class CuttingOptimizerUI(QMainWindow):
         middle_material = spec.get('middle') or None
         b_material = spec.get('b') or None
         back_material = spec.get('back') or None
-        
+
         c_type = 'C' if c_material else None
         b_type = 'B' if b_material else None
 
         spec_str = ", ".join(f"{k}: {v}" for k, v in spec.items() if v)
         self.log_message(f"--- Running Suggestion {self.current_suggestion_index + 1}/{len(self.suggestions_list)} ---")
         self.log_message(f"Width: {width}, Length: {length}, Spec: {spec_str}")
-        
+
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat(f"Processing suggestion {self.current_suggestion_index + 1}...")
 
         self.worker = WorkerThread(
             width, length, None, None, self.order_file_path,
-            front_material, 
+            front_material,
             c_type, c_material,
-            middle_material, 
+            middle_material,
             b_type, b_material,
             back_material,
             self.ROLL_SPECS,
@@ -712,7 +712,7 @@ class CuttingOptimizerUI(QMainWindow):
             for result in results:
                 if order_num := result.get('order_number'):
                     self.processed_order_numbers.add(order_num)
-        
+
         self.current_suggestion_index += 1
         sender_thread = self.sender()
         if sender_thread:
@@ -767,6 +767,7 @@ class CuttingOptimizerUI(QMainWindow):
         if self.show_unprocessed_checkbox.isChecked():
             self.display_data = self.results_data
         else:
+            # check if 'Infeasible' in in 'roll_w' or not AI!
             self.display_data = [r for r in self.results_data if r.get('roll_w') != "Failed/Infeasible"]
 
         # Repopulate the entire table
@@ -783,7 +784,7 @@ class CuttingOptimizerUI(QMainWindow):
                 if "ไม่มี" in result.get(key, ''):
                     has_no_suitable_roll = True
                     break
-            
+
             cuts = result.get('cuts')
             order_qty = result.get('order_qty')
             demand_per_cut_val = ""
@@ -808,7 +809,7 @@ class CuttingOptimizerUI(QMainWindow):
             ]):
                 item = QTableWidgetItem(value)
                 item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                
+
                 # Apply colors based on status (red takes precedence)
                 if has_no_suitable_roll or is_unprocessed:
                     item.setBackground(QColor(255, 224, 224))  # Red for invalid rolls
@@ -941,7 +942,7 @@ class CuttingOptimizerUI(QMainWindow):
                                     c_value = f"{demand_per_cut:.2f}"
                             c_str = c_material
                             c_roll_info = self._format_roll_usage_for_csv(result.get('c_roll_info', ''))
-                        
+
                         # แผ่นกลาง
                         middle_str, middle_value, middle_roll_info = "", "", ""
                         if result.get('middle'):
@@ -951,7 +952,7 @@ class CuttingOptimizerUI(QMainWindow):
                                 middle_value = f"{demand_per_cut / type_demand:.2f}"
                             middle_str = middle_material
                             middle_roll_info = self._format_roll_usage_for_csv(result.get('middle_roll_info', ''))
-                        
+
                         # ลอน B
                         b_str, b_value, b_roll_info = "", "", ""
                         if result.get('b'):
@@ -969,7 +970,7 @@ class CuttingOptimizerUI(QMainWindow):
                                     b_value = f"{demand_per_cut:.2f}"
                             b_str = b_material
                             b_roll_info = self._format_roll_usage_for_csv(result.get('b_roll_info', ''))
-                        
+
                         # แผ่นหลัง
                         back_str, back_value, back_roll_info = "", "", ""
                         if result.get('back'):
@@ -989,9 +990,9 @@ class CuttingOptimizerUI(QMainWindow):
                             result.get('type', ''),
                             result.get('component_type', '')
                         ]
-                        
+
                         writer.writerow(row_data + detail_data)
-                
+
                 self.log_message(f"✅ ส่งออกผลลัพธ์ไปยัง {file_path} เรียบร้อยแล้ว")
                 QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกผลลัพธ์ไปยัง:\n{file_path} เรียบร้อยแล้ว")
 
@@ -1011,12 +1012,12 @@ class CuttingOptimizerUI(QMainWindow):
         parts = roll_info_str.split(': ', 1)
         if len(parts) < 2:
             return roll_info_str  # Fallback for unexpected format
-        
+
         status_text = parts[0].replace('-> ', '').strip()
         roll_details_str = parts[1]
 
         roll_strings = roll_details_str.split(' + ')
-        
+
         # Using a more robust regex to handle various whitespace and characters in roll ID
         roll_pattern = re.compile(r'(.+?)\s*\(ยาว\s*(\d+)\s*ม\.,\s*(?:เหลือ\s*(\d+)\s*ม\.|(ใช้หมด))\)')
 
@@ -1026,14 +1027,14 @@ class CuttingOptimizerUI(QMainWindow):
             if match:
                 roll_id = match.group(1).strip()
                 original_len = int(match.group(2))
-                
+
                 if match.group(4) and match.group(4) == "ใช้หมด":
                     remaining_len = 0
                 else:
                     remaining_len = int(match.group(3)) if match.group(3) else 0
-                
+
                 used_len = original_len - remaining_len
-                
+
                 table_rows.append(f'<tr><td style="padding-right:10px;">{roll_id}</td><td align="right" style="padding-right:10px;">{original_len:,}</td><td align="right" style="padding-right:10px;">{used_len:,}</td><td align="right">{remaining_len:,}</td></tr>')
             else:
                 # Fallback for unexpected format
@@ -1046,7 +1047,7 @@ class CuttingOptimizerUI(QMainWindow):
         html += '<tr><th align="left" style="padding-right:10px; border-bottom: 1px solid black;">ID ม้วน</th><th align="right" style="padding-right:10px; border-bottom: 1px solid black;">ยาวเดิม (ม.)</th><th align="right" style="padding-right:10px; border-bottom: 1px solid black;">ใช้ไป (ม.)</th><th align="right" style="border-bottom: 1px solid black;">คงเหลือ (ม.)</th></tr>'
         html += "".join(table_rows)
         html += '</table>'
-        
+
         return f"<i>{status_text}:</i>{html}"
 
     def _format_roll_usage_for_csv(self, roll_info_str: str) -> str:
@@ -1065,7 +1066,7 @@ class CuttingOptimizerUI(QMainWindow):
         roll_details_str = parts[1]
 
         roll_strings = roll_details_str.split(' + ')
-        
+
         roll_pattern = re.compile(r'(.+?)\s*\(ยาว\s*(\d+)\s*ม\.,\s*(?:เหลือ\s*(\d+)\s*ม\.|(ใช้หมด))\)')
 
         csv_parts = [f"{status_text}:"]
@@ -1074,14 +1075,14 @@ class CuttingOptimizerUI(QMainWindow):
             if match:
                 roll_id = match.group(1).strip()
                 original_len = int(match.group(2))
-                
+
                 if match.group(4) and match.group(4) == "ใช้หมด":
                     remaining_len = 0
                 else:
                     remaining_len = int(match.group(3)) if match.group(3) else 0
-                
+
                 used_len = original_len - remaining_len
-                
+
                 csv_parts.append(f"  ID: {roll_id}, ยาวเดิม: {original_len}, ใช้ไป: {used_len}, คงเหลือ: {remaining_len}")
             else:
                 csv_parts.append(f"  (ข้อมูลไม่สมบูรณ์: {roll_str.strip()})")
@@ -1115,7 +1116,7 @@ class CuttingOptimizerUI(QMainWindow):
             type_details.append(f"<b>ประเภททับเส้น:</b> {result['type']}")
         if result.get('component_type'):
             type_details.append(f"<b>ชนิดส่วนประกอบ:</b> {result['component_type']}")
-        
+
         if type_details:
             details.append("<br/><b>📌 ข้อมูลประเภท:</b>")
             details.extend(type_details)
@@ -1135,7 +1136,7 @@ class CuttingOptimizerUI(QMainWindow):
         if result.get('front'):
             value = result.get('demand_per_cut', 0) / type_demand
             material_details_parts.append(create_material_html("แผ่นหน้า", result.get('front'), value, result.get('front_roll_info', '')))
-            
+
         if result.get('c'):
             c_material = result.get('c')
             if c_type == 'C':
@@ -1149,7 +1150,7 @@ class CuttingOptimizerUI(QMainWindow):
         if result.get('middle'):
             value = result.get('demand_per_cut', 0) / type_demand
             material_details_parts.append(create_material_html("แผ่นกลาง", result.get('middle'), value, result.get('middle_roll_info', '')))
-           
+
         if result.get('b'):
             b_material = result.get('b')
             demand = result.get('demand_per_cut', 0)
@@ -1163,7 +1164,7 @@ class CuttingOptimizerUI(QMainWindow):
         if result.get('back'):
             value = result.get('demand_per_cut', 0) / type_demand
             material_details_parts.append(create_material_html("แผ่นหลัง", result.get('back'), value, result.get('back_roll_info', '')))
-        
+
         if material_details_parts:
             details.append("<br/><b>⚙️ ข้อมูลแผ่นและลอน:</b>")
             details.append("<br/><br/>".join(material_details_parts))
@@ -1189,18 +1190,17 @@ if __name__ == "__main__":
     if sys.platform == "win32":
         os.environ["QT_QPA_PLATFORM"] = "windows:fontengine=freetype"
         os.environ["PYTHONIOENCODING"] = "utf-8"
-    
+
     # ตั้งค่า encoding สำหรับแอปพลิเคชัน
     QTextCodec.setCodecForLocale(QTextCodec.codecForName("UTF-8"))
-    
+
     # แก้ไขตรงนี้: ใช้ QLocale.setDefault() แทน app.setLocale()
     thai_locale = QLocale(QLocale.Thai, QLocale.Thailand)
     QLocale.setDefault(thai_locale)
-    
+
     app = QApplication(sys.argv)
     app.setFont(QFont('Tahoma', 9))  # ตั้งค่าฟอนต์ภาษาไทย
-    
+
     window = CuttingOptimizerUI()
     window.show()
     sys.exit(app.exec_())
-
