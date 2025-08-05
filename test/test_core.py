@@ -543,6 +543,49 @@ def test_find_and_update_roll_order_switching_and_positioning():
     assert 1 == last_used_roll_ids.get(position_key, 0) # position increments
 
 
+def test_find_and_update_roll_no_duplicate_roll_id_in_same_order():
+    """
+    Tests that a single roll ID is not used for different materials within the same order processing cut.
+    """
+    roll_specs = {
+        '100': {
+            'MAT_A': {
+                'R1_key': {'id': 'ID1', 'length': 500},
+                'R2_key': {'id': 'ID2', 'length': 500},
+            },
+            'MAT_B': {
+                'R3_key': {'id': 'ID1', 'length': 500}, # Same ID as R1_key
+                'R4_key': {'id': 'ID3', 'length': 500},
+            }
+        }
+    }
+    width = '100'
+    material_A = 'MAT_A'
+    material_B = 'MAT_B'
+    required_length = 400
+    used_roll_ids = set()
+    last_used_roll_ids = {}
+    order_number = 'ORDER_1'
+
+    # First call for material A. Should use ID1.
+    result_A = _find_and_update_roll(roll_specs, width, material_A, required_length, used_roll_ids, last_used_roll_ids, order_number)
+    assert "ID1" in result_A
+    assert 'ID1' in used_roll_ids
+    assert 'ID2' not in used_roll_ids
+    assert 'ID3' not in used_roll_ids
+    assert roll_specs['100']['MAT_A']['R1_key']['length'] == 100
+
+    # Second call for material B. Should NOT use ID1 again. It should use ID3.
+    # Because ID1 is already in used_roll_ids
+    result_B = _find_and_update_roll(roll_specs, width, material_B, required_length, used_roll_ids, last_used_roll_ids, order_number)
+    assert "ID1" not in result_B
+    assert "ID3" in result_B
+    assert 'ID1' in used_roll_ids
+    assert 'ID3' in used_roll_ids
+    assert roll_specs['100']['MAT_B']['R3_key']['length'] == 500 # Unchanged
+    assert roll_specs['100']['MAT_B']['R4_key']['length'] == 100
+
+
 def test_find_and_update_roll_no_stock():
     """
     Tests the case where there is no stock for the requested material.
