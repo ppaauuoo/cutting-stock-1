@@ -81,7 +81,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         }
 
         partial_rolls = sorted(
-            [(k, r) for k, r in material_rolls_dict.items() if r.get('id') in used_ids_for_this_width and r.get('length', 0) > 0],
+            [(k, r) for k, r in material_rolls_dict.items() if r.get('id') in used_ids_for_this_width and r.get('id') not in used_roll_ids and r.get('length', 0) > 0],
             key=lambda item: item[0]
         )
 
