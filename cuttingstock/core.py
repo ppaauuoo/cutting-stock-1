@@ -455,7 +455,6 @@ async def main_algorithm(
 
             orders_to_process = rem_orders_df
             if chunk_size and rem_orders_df.shape[0] > chunk_size:
-                # will this broke my sequential order? AI!
                 orders_to_process = rem_orders_df.sample(n=chunk_size, with_replacement=False, shuffle=True, seed=iteration)
                 if progress_callback:
                     progress_callback(f"    Sampling {chunk_size} orders out of {rem_orders_df.shape[0]} for processing.")
