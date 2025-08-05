@@ -35,7 +35,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
     # Get available rolls, sorted by length.
     all_available_rolls = sorted(material_rolls_dict.items(), key=lambda item: item[1]['length'])
-    
+
     # Filter out already used rolls for this specific cut.
     unused_rolls = [
         (k, r) for k, r in all_available_rolls if r.get('id') not in used_roll_ids
@@ -45,7 +45,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     # We only apply roll continuation logic for orders that have appeared before in this run.
     # We track seen orders within the stateful `last_used_roll_ids` dictionary.
     seen_orders = last_used_roll_ids.setdefault('_seen_orders', set())
-    
+
     # Get the current roll position for this specific material.
     position_key = ('_position', width, material)
     last_order_key = ('_last_order', width, material)
@@ -75,7 +75,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         # Find rolls that have been used but still have length, sort by ID for deterministic behavior.
         partial_rolls = sorted(
             [(k, r) for k, r in material_rolls_dict.items() if r.get('id') in used_roll_ids and r.get('length', 0) > 0],
-            key=lambda item: item[0] 
+            key=lambda item: item[0]
         )
 
         for _roll_key, roll in partial_rolls:
@@ -97,13 +97,13 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         if last_roll_data and last_roll_id in used_roll_ids and order_number == last_order_number and not (order_number and (order_number, material) in seen_orders):
             position += 1
             last_roll_id = last_used_roll_ids.get((width, material, position))
-            last_roll_data = None 
+            last_roll_data = None
             if last_roll_id:
                  last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
 
         if last_roll_data:
             _last_roll_key, last_roll = last_roll_data
-            
+
             if last_roll['length'] >= required_length:
                 original_length = last_roll['length']
                 last_roll['length'] -= required_length
@@ -115,13 +115,13 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
             else:
                 needed_from_another = required_length - last_roll['length']
                 original_len_roll1 = last_roll['length']
-                
+
                 supplement_rolls = sorted(
                     [(k, r) for k, r in unused_rolls if r.get('id') != last_roll_id],
                     key=lambda item: item[1]['length'],
                     reverse=True
                 )
-                
+
                 rolls_for_combination = []
                 length_from_supplements = 0
                 for supp_key, supp_roll in supplement_rolls:
@@ -152,7 +152,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                                 remaining_needed -= original_supp_length
                                 if i == len(rolls_for_combination) - 1:
                                     new_last_used_roll_id = supp_id
-                    
+
                     if new_last_used_roll_id:
                         last_used_roll_ids[(width, material, position)] = new_last_used_roll_id
                         last_used_roll_ids[position_key] = position
@@ -163,7 +163,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     # --- Fallback to opening a new roll ---
     # Greedily find a combination of new rolls, using largest available rolls first.
     sorted_unused_rolls = sorted(unused_rolls, key=lambda item: item[1]['length'], reverse=True)
-    
+
     rolls_for_combination = []
     combined_length = 0
     for roll_key, roll in sorted_unused_rolls:
@@ -180,7 +180,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         for i, (roll_key, roll) in enumerate(rolls_for_combination):
             roll_id = roll.get('id')
             original_length = roll.get('length', 0)
-            
+
             used_roll_ids.add(roll_id)
 
             if remaining_needed > 0:
@@ -287,7 +287,7 @@ async def solve_linear_program(
 
     # 4. Define objective function and related constraints
     corr_multiplier = CORRUGATE_MULTIPLIERS.get(most_demand_type, 1.0)
-    
+
     # Total length of material required for the selected order (using .get with a default value)
     # The sum will effectively pick the one order where y[j]=1
     total_order_len = lpSum(
@@ -302,7 +302,7 @@ async def solve_linear_program(
     # Constraints
     prob += trim_waste >= 1, "TrimLowerBound"
     prob += trim_waste <= 5, "TrimUpperBound"
-    
+
     # Remaining length on roll must be at least 100
     # not used now because we are not using roll length in the objective function
     # prob += roll_length * z - total_order_len >= 100, "RemainingLengthLowerBound"
@@ -312,7 +312,7 @@ async def solve_linear_program(
         prob.solve(PULP_CBC_CMD(msg=False))
     except Exception as e:
         return {"status": "Solver Error", "message": f"Solver failed: {str(e)}"}
-    
+
     # 6. Retrieve and format results
     return await _format_lp_solution(
         prob, y, z, orders_df, roll_width, roll_length, total_order_len, c_type, b_type
@@ -328,7 +328,7 @@ async def _format_lp_solution(
     obj_val = round(value(prob.objective), 4) if value(prob.objective) is not None else None
 
     sel_idx = next((j for j, v in y.items() if v.varValue == 1), -1)
-    
+
     if sel_idx == -1:
         return {"status": status, "message": "No optimal solution found or order selected."}
 
@@ -337,7 +337,7 @@ async def _format_lp_solution(
     sel_order = orders_data[sel_idx]
 
     sel_order_w = sel_order.get('width')
-    
+
     total_len_val = value(total_order_len) or 0
     demand_per_cut = round(total_len_val / z_val, 4) if z_val > 0 else 0
     rem_roll_len = round(roll_length - demand_per_cut, 4)
@@ -430,7 +430,8 @@ async def main_algorithm(
     if max_records:
         orders_df = orders_df.head(max_records)
     orders_df = orders_df.with_row_index("original_idx")
-    
+
+    # rolls per specs (set of materials)
     rolls = [{"width": roll_width, "length": roll_length}]
     all_results = []
 
@@ -441,7 +442,7 @@ async def main_algorithm(
         used_roll_ids_for_cut = set()
         if progress_callback:
             progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
-        
+
         rem_orders_df = orders_df.clone()
         roll_cuts = []
         iteration = 0
@@ -454,29 +455,30 @@ async def main_algorithm(
 
             orders_to_process = rem_orders_df
             if chunk_size and rem_orders_df.shape[0] > chunk_size:
+                # will this broke my sequential order? AI!
                 orders_to_process = rem_orders_df.sample(n=chunk_size, with_replacement=False, shuffle=True, seed=iteration)
                 if progress_callback:
                     progress_callback(f"    Sampling {chunk_size} orders out of {rem_orders_df.shape[0]} for processing.")
 
-            if c is None : 
+            if c is None :
                 c_type = None
-            if b is None : 
-                b_type = None         
+            if b is None :
+                b_type = None
 
             result = None
             try:
                 if progress_callback:
                     progress_callback("    🤖 Trying XGBoost for a quick solution...")
-                
+
                 xgb_cuts_preds, xgb_roll_w_preds = predict_with_xgboost(orders_to_process)
-                
+
                 orders_with_preds = orders_to_process.with_columns(
                     pl.Series("xgb_cuts", xgb_cuts_preds, dtype=pl.Int64),
                     pl.Series("xgb_roll_w", xgb_roll_w_preds, dtype=pl.Int64),
                 )
-                
+
                 candidate_orders = orders_with_preds.filter(pl.col("xgb_roll_w") == roll['width'])
-                
+
                 if not candidate_orders.is_empty():
                     if progress_callback:
                         progress_callback(f"    Found {len(candidate_orders)} candidates from XGBoost for roll {roll['width']}\".")
@@ -486,16 +488,16 @@ async def main_algorithm(
                         order_w = order.get('width')
                         if not cuts or not order_w:
                             continue
-                        
+
                         trim = roll['width'] - (order_w * cuts)
-                        
+
                         if 1 <= trim <= 5:
                             if progress_callback:
                                 progress_callback(f"    ✅ XGBoost found a valid solution for order_idx {order.get('original_idx')}.")
-                            
+
                             sel_order = order
                             z_val = cuts
-                            
+
                             corr_multiplier = 1.0
                             if c_type == 'C':
                                 corr_multiplier = CORRUGATE_MULTIPLIERS['C']
@@ -511,7 +513,7 @@ async def main_algorithm(
                             material_keys = ['demand', 'front', 'middle', 'back', 'c', 'b', 'die_cut']
                             material_specs = {key: sel_order.get(key) for key in material_keys if sel_order.get(key)}
                             material_specs.update({'c_type': c_type, 'b_type': b_type})
-                            
+
                             result = {
                                 "status": "Optimal",
                                 "objective_value": trim,
@@ -542,7 +544,7 @@ async def main_algorithm(
             if result is None:
                 if progress_callback:
                     progress_callback("    XGBoost did not find a solution. Falling back to linear solver.")
-                
+
                 result = await solve_linear_program(
                     roll['width'],
                     roll['length'],
@@ -558,7 +560,7 @@ async def main_algorithm(
                     progress_callback(f"    ❌ {result.get('message', 'Non-optimal status')}")
                 failure_reason = result.get('message', f'สถานะไม่เหมาะสม: {status}')
                 break
-            
+
             variables = result.get("variables", {})
             order_idx = variables.get("order_idx")
 
@@ -567,7 +569,7 @@ async def main_algorithm(
                 progress_callback(f"    Selected order width: {variables.get('order_w')} (Index: {order_idx}), Cuts: {variables.get('cuts')}")
 
             order_number = orders_df.row(int(order_idx))[order_num_col_idx] if order_idx is not None else None
-            
+
             material_specs = result.get("material_specs", {})
             variables = result.get("variables", {})
             roll_info = {}
@@ -716,5 +718,5 @@ async def main_algorithm(
         final_output_df.write_database("all_cutting_plan_summary", connection=conn_str, if_table_exists="replace")
         if progress_callback:
             progress_callback("💾 บันทึกผลลัพธ์ลงฐานข้อมูลเรียบร้อย")
-    
+
     return all_results
