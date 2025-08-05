@@ -61,7 +61,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     last_roll_id = last_used_roll_ids.get((width, material, position))
     if order_number and (order_number, material) in seen_orders:
         # This is a recurrent order, so we advance our position to look for the next roll.
-        position += 1
+        position = last_used_roll_ids.get(position_key, 0) + 1
         last_roll_id = last_used_roll_ids.get((width, material, position))
 
     # Mark this order number and material combination as seen for subsequent items.
