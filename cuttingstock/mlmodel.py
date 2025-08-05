@@ -6,6 +6,17 @@ from typing import Tuple
 import polars as pl
 import xgboost as xgb
 
+import sys
+
+def resource_path(relative_path):
+    """Get the absolute path to a resource, works for development and PyInstaller."""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller creates a temp folder and stores files there
+        base_path = sys._MEIPASS
+    else:
+        # Use the current working directory during development
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 def process(features: pl.DataFrame) -> pl.DataFrame:
     # Use polars selectors to identify column types.
@@ -59,13 +70,13 @@ def load_models() -> dict:
     roll_width_model_path = model_dir / "roll_width.ubj"
 
     with open(label_out_path, "rb") as f:
-        label_mapping_out = pickle.load(f)
+        label_mapping_out = pickle.load(resource_path(f))
     _models_cache["reverse_label_mapping_out"] = {
         idx: val for val, idx in label_mapping_out.items()
     }
 
     with open(label_roll_width_path, "rb") as f:
-        label_mapping_roll_width = pickle.load(f)
+        label_mapping_roll_width = pickle.load(resource_path(f))
     _models_cache["reverse_label_mapping_roll_width"] = {
         idx: val for val, idx in label_mapping_roll_width.items()
     }
@@ -73,13 +84,13 @@ def load_models() -> dict:
     with open(out_model_path, "rb") as f:
         out_model_bytes = bytearray(f.read())
     out_model = xgb.XGBClassifier()
-    out_model.load_model(out_model_bytes)
+    out_model.load_model(resource_path(out_model_bytes))
     _models_cache["out_model"] = out_model
 
     with open(roll_width_model_path, "rb") as f:
         roll_width_model_bytes = bytearray(f.read())
     roll_width_model = xgb.XGBClassifier()
-    roll_width_model.load_model(roll_width_model_bytes)
+    roll_width_model.load_model(resource_path(roll_width_model_bytes))
     _models_cache["roll_width_model"] = roll_width_model
 
     return _models_cache
