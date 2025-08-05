@@ -767,8 +767,7 @@ class CuttingOptimizerUI(QMainWindow):
         if self.show_unprocessed_checkbox.isChecked():
             self.display_data = self.results_data
         else:
-            # check if 'Infeasible' in in 'roll_w' or not AI!
-            self.display_data = [r for r in self.results_data if r.get('roll_w') != "Failed/Infeasible"]
+            self.display_data = [r for r in self.results_data if not isinstance(r.get('roll_w'), str)]
 
         # Repopulate the entire table
         self.result_table.setRowCount(0)
@@ -776,7 +775,7 @@ class CuttingOptimizerUI(QMainWindow):
 
         for row_idx, result in enumerate(self.display_data):
             is_duplicate = id(result) not in best_results_ids
-            is_unprocessed = result.get('roll_w') == "Failed/Infeasible"
+            is_unprocessed = isinstance(result.get('roll_w'), str)
 
             has_no_suitable_roll = False
             roll_info_keys = ['front_roll_info', 'c_roll_info', 'middle_roll_info', 'b_roll_info', 'back_roll_info']
