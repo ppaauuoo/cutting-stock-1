@@ -61,36 +61,29 @@ def load_models() -> dict:
     if _models_cache:
         return _models_cache
 
-    script_dir = Path(__file__).resolve().parent
-    project_root = script_dir.parent
-    model_dir = project_root / "model"
-    label_out_path = model_dir / "label_mapping_out.pkl"
-    label_roll_width_path = model_dir / "label_mapping_roll_width.pkl"
-    out_model_path = model_dir / "out.ubj"
-    roll_width_model_path = model_dir / "roll_width.ubj"
+    label_out_path = resource_path("model/label_mapping_out.pkl")
+    label_roll_width_path = resource_path("model/label_mapping_roll_width.pkl")
+    out_model_path = resource_path("model/out.ubj")
+    roll_width_model_path = resource_path("model/roll_width.ubj")
 
     with open(label_out_path, "rb") as f:
-        label_mapping_out = pickle.load(resource_path(f))
+        label_mapping_out = pickle.load(f)
     _models_cache["reverse_label_mapping_out"] = {
         idx: val for val, idx in label_mapping_out.items()
     }
 
     with open(label_roll_width_path, "rb") as f:
-        label_mapping_roll_width = pickle.load(resource_path(f))
+        label_mapping_roll_width = pickle.load(f)
     _models_cache["reverse_label_mapping_roll_width"] = {
         idx: val for val, idx in label_mapping_roll_width.items()
     }
 
-    with open(out_model_path, "rb") as f:
-        out_model_bytes = bytearray(f.read())
     out_model = xgb.XGBClassifier()
-    out_model.load_model(resource_path(out_model_bytes))
+    out_model.load_model(out_model_path)
     _models_cache["out_model"] = out_model
 
-    with open(roll_width_model_path, "rb") as f:
-        roll_width_model_bytes = bytearray(f.read())
     roll_width_model = xgb.XGBClassifier()
-    roll_width_model.load_model(resource_path(roll_width_model_bytes))
+    roll_width_model.load_model(roll_width_model_path)
     _models_cache["roll_width_model"] = roll_width_model
 
     return _models_cache
