@@ -72,7 +72,7 @@ class StockManager(QObject):
                             # Strip string columns, then clean the data.
                             # clean_stock also renames columns to English, making them safe for SQLite.
                             cleaned_stock_df = clean_stock(
-                                raw_stock_df.with_columns(pl.col(pl.Utf8).str.strip())
+                                raw_stock_df.with_columns(pl.col(pl.Utf8).str.strip_chars())
                             )
 
                             # บันทึกข้อมูลลงในฐานข้อมูล SQLite เพื่อใช้เป็นแคช
