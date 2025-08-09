@@ -554,7 +554,6 @@ class CuttingOptimizerUI(QMainWindow):
                 self.log_message("ℹ️ No material specs could be grouped from the order file.")
                 return []
 
-            #make the suggestion for 1&2 factory, focus on roll_width of 82-97 first then 73-79 AI!
             suggestions = []
             for spec_row in all_specs_df.iter_rows(named=True):
                 spec_materials = {m for k, m in spec_row.items() if k != 'count' and m}
@@ -569,7 +568,19 @@ class CuttingOptimizerUI(QMainWindow):
                             available_widths.append(width)
 
                 if available_widths:
-                    sorted_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
+                    if selected_factory == "1&2":
+                        def sort_key_factory_1_2(width_str):
+                            width_int = int(re.sub(r'\D', '', width_str) or 0)
+                            if 82 <= width_int <= 97:
+                                return (0, width_int)
+                            elif 73 <= width_int <= 79:
+                                return (1, width_int)
+                            else:
+                                return (2, width_int)
+                        sorted_widths = sorted(available_widths, key=sort_key_factory_1_2)
+                    else:
+                        sorted_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
+
                     for width in sorted_widths:
                         full_spec = {k: v for k, v in spec_row.items() if k != 'count'}
                         suggestion = {'width': width, 'spec': full_spec}
