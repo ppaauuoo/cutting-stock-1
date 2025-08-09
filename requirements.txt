@@ -12,3 +12,4 @@ pyarrow
 pandas
 connectorx
 sqlalchemy
+xgboost

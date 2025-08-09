@@ -12,3 +12,4 @@ cutting_results*
 *.db
 .env
 .crush
+.zed

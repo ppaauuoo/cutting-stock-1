@@ -69,6 +69,12 @@ class StockManager(QObject):
                         os.remove(temp_csv_path)  # ลบไฟล์ชั่วคราว
 
                         if raw_stock_df is not None and not raw_stock_df.is_empty():
+                            # Strip string columns, then clean the data.
+                            # clean_stock also renames columns to English, making them safe for SQLite.
+                            cleaned_stock_df = clean_stock(
+                                raw_stock_df.with_columns(pl.col(pl.Utf8).str.strip_chars())
+                            )
+
                             # บันทึกข้อมูลลงในฐานข้อมูล SQLite เพื่อใช้เป็นแคช
                             cache_dir = "cache"
                             os.makedirs(cache_dir, exist_ok=True)
@@ -76,10 +82,10 @@ class StockManager(QObject):
                             cache_db_path = os.path.join(cache_dir, f"{base_filename}.db")
                             table_name = base_filename
                             conn_str = f"sqlite:///{os.path.abspath(cache_db_path)}"
-                            raw_stock_df.write_database(table_name, connection=conn_str, if_table_exists="replace")
+                            cleaned_stock_df.write_database(
+                                table_name, connection=conn_str, if_table_exists="replace"
+                            )
 
-                            # ประมวลผลข้อมูลที่โหลดมา
-                            cleaned_stock_df = clean_stock(raw_stock_df)
                             self.stock_updated.emit(cleaned_stock_df)
                         else:
                             # หากไฟล์ต้นฉบับว่างเปล่า ให้ส่ง DataFrame ที่ว่างเปล่า
