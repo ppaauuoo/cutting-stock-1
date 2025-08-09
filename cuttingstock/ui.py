@@ -548,8 +548,7 @@ class CuttingOptimizerUI(QMainWindow):
                 [pl.col(c).fill_null("").str.strip_chars() for c in existing_cols]
             )
 
-            # DeprecationWarning: `GroupBy.count` was renamed; use `GroupBy.len` instead AI!
-            all_specs_df = spec_df.group_by(existing_cols).count().sort("count", descending=True)
+            all_specs_df = spec_df.group_by(existing_cols).len().sort("len", descending=True)
 
             if all_specs_df.is_empty():
                 self.log_message("ℹ️ No material specs could be grouped from the order file.")
@@ -557,7 +556,7 @@ class CuttingOptimizerUI(QMainWindow):
 
             suggestions = []
             for spec_row in all_specs_df.iter_rows(named=True):
-                spec_materials = {m for k, m in spec_row.items() if k != 'count' and m}
+                spec_materials = {m for k, m in spec_row.items() if k != 'len' and m}
 
                 if not spec_materials:
                     continue
@@ -583,7 +582,7 @@ class CuttingOptimizerUI(QMainWindow):
                         sorted_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
 
                     for width in sorted_widths:
-                        full_spec = {k: v for k, v in spec_row.items() if k != 'count'}
+                        full_spec = {k: v for k, v in spec_row.items() if k != 'len'}
                         suggestion = {'width': width, 'spec': full_spec}
                         suggestions.append(suggestion)
 
