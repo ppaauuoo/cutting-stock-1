@@ -45,7 +45,7 @@ def load_data(file_path: str) -> pl.DataFrame:
                 has_header=True, # Assume header is on the first line
                 truncate_ragged_lines=True
             )
-            
+
         print(f"Successfully loaded data from {file_path}")
         print(f"Data shape: {df.shape[0]} rows, {df.shape[1]} columns")
         print("Columns:", df.columns)
@@ -57,8 +57,8 @@ def load_data(file_path: str) -> pl.DataFrame:
         print(f"Error loading data from {file_path}: {e}")
         raise
 
-def clean_data(df: pl.DataFrame, 
-               start_date: Optional[str] = None, 
+def clean_data(df: pl.DataFrame,
+               start_date: Optional[str] = None,
                end_date: Optional[str] = None,
                front: Optional[str] = None, # เพิ่มพารามิเตอร์สำหรับกรองวัสดุ
                c: Optional[str] = None,
@@ -85,11 +85,11 @@ def clean_data(df: pl.DataFrame,
         pl.DataFrame: The cleaned DataFrame.
     """
     print("Starting data cleaning...")
-    
+
     # แปลงชื่อคอลัมน์ให้เป็นรูปแบบ Unicode มาตรฐานและตัดช่องว่าง
     def normalize_col_name(col: str) -> str:
         return unicodedata.normalize('NFC', col.strip())
-    
+
     # สร้าง mapping สำหรับคอลัมน์ไทยพร้อมชื่อที่แปลงแล้ว
     thai_col_mapping = {
         normalize_col_name("กำหนดส่ง       "): "due_date",
@@ -108,23 +108,23 @@ def clean_data(df: pl.DataFrame,
         normalize_col_name("ประเภทกล่อง"): "component_type",
         normalize_col_name("ผลิตได้"): "die_cut"
    }
-    
+
     # สร้าง dictionary สำหรับเปลี่ยนชื่อคอลัมน์
     rename_dict = {}
     for orig_col in df.columns:
         normalized = normalize_col_name(orig_col)
         if normalized in thai_col_mapping:
             rename_dict[orig_col] = thai_col_mapping[normalized]
-    
+
     # เปลี่ยนชื่อคอลัมน์
     df = df.rename(rename_dict)
-    
+
     # ตรวจสอบว่ามีคอลัมน์จำเป็นครบ
     required_cols = ["due_date", "order_number", "order_idx", "width", "length", "demand", "quantity",  "front", "c", "middle", "b", "back", "type", "component_type"]
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
         raise ValueError(f"⚠️ คอลัมน์หาย: {missing} โปรดตรวจสอบชื่อคอลัมน์ในไฟล์ CSV")
-    
+
     df = df.with_columns(
         pl.col("due_date").str.strip_chars().str.strptime(pl.Date, "%d/%m/%y", strict=True), # Changed %Y to %y for 2-digit year, kept strict=True for debugging
         pl.col("order_number").str.strip_chars().cast(pl.Int64),
@@ -170,9 +170,9 @@ def clean_data(df: pl.DataFrame,
                 return datetime.strptime(date_str, "%Y-%m-%d").date()
             except ValueError:
                 raise ValueError(f"Invalid date format for filter: '{date_str}'. Expected YYYY-MM-DD.")
-        
+
         conditions = []
-        
+
         if start_date:
             start = parse_date(start_date)
             conditions.append(pl.col("due_date") >= start)
@@ -181,11 +181,11 @@ def clean_data(df: pl.DataFrame,
             end = parse_date(end_date)
             conditions.append(pl.col("due_date") <= end)
             print(f"พารามิเตอร์ตัวกรอง 'end_date' แยกวิเคราะห์ได้เป็น: {end}")
-        
+
         df = df.filter(pl.all_horizontal(conditions))
 
     print("Data after date filtering:")
-    print(df.head(5))  
+    print(df.head(5))
 
     # เพิ่มการกรองตามวัสดุหากกำหนดมา (รองรับกรณีเป็น None/Null ด้วย)
     print("Filtering data based on material specifications...")
@@ -219,7 +219,7 @@ def clean_data(df: pl.DataFrame,
 
     print("Data cleaning complete.")
     print(f"Cleaned data shape: {df.shape[0]} rows, {df.shape[1]} columns")
-    print("Columns after cleaning:", df.columns)    
+    print("Columns after cleaning:", df.columns)
     print("Sample cleaned data:")
     print(df.head(5))
     return df
@@ -238,11 +238,11 @@ def clean_stock(df: pl.DataFrame) -> pl.DataFrame:
         pl.DataFrame: DataFrame ที่ทำความสะอาดแล้ว
     """
     print("Starting stock data cleaning...")
-    
+
     # แปลงชื่อคอลัมน์ให้เป็นรูปแบบ Unicode มาตรฐานและตัดช่องว่าง
     def normalize_col_name(col: str) -> str:
         return unicodedata.normalize('NFC', col.strip())
-    
+
     # สร้าง mapping สำหรับคอลัมน์ไทยพร้อมชื่อที่แปลงแล้ว
     thai_col_mapping = {
         normalize_col_name("โรงงาน  "): "factory",
@@ -253,14 +253,14 @@ def clean_stock(df: pl.DataFrame) -> pl.DataFrame:
         normalize_col_name("        ความหนา "): "thickness",
          normalize_col_name("      ความยาว "): "length",
   }
-    
+
     # สร้าง dictionary สำหรับเปลี่ยนชื่อคอลัมน์
     rename_dict = {}
     for orig_col in df.columns:
         normalized = normalize_col_name(orig_col)
         if normalized in thai_col_mapping:
             rename_dict[orig_col] = thai_col_mapping[normalized]
-    
+
     # เปลี่ยนชื่อคอลัมน์
     df = df.rename(rename_dict)
 
@@ -279,12 +279,12 @@ def clean_stock(df: pl.DataFrame) -> pl.DataFrame:
         pl.col("length").cast(pl.Utf8).str.replace_all(",", "").str.strip_chars().cast(pl.Float64, strict=False).floor().cast(pl.Int64, strict=False),
         pl.col("roll_size").cast(pl.Utf8).str.replace_all(",", "").str.strip_chars().cast(pl.Float64, strict=False).floor().cast(pl.Int64, strict=False),
     )
-    
+
     # กรองแถวที่มีค่า null หรือไม่ถูกต้องในคอลัมน์หลักออก
     df = df.drop_nulls(subset=required_cols)
     df = df.filter(pl.col("length") > 0)
-    df = df.filter((pl.col("roll_size") >= 75) & (pl.col("roll_size") <= 97))
-  
+    df = df.filter((pl.col("roll_size") >= 73) & (pl.col("roll_size") <= 97))
+
     print(f"Stock data cleaning complete. Shape after cleaning: {df.shape}")
     # เลือกเฉพาะคอลัมน์ที่จำเป็นสำหรับแอปพลิเคชัน
     return df.select(required_cols)
@@ -292,7 +292,7 @@ def clean_stock(df: pl.DataFrame) -> pl.DataFrame:
 #depracted
 if __name__ == "__main__":
     input_file = "order2024.csv"  # Assuming this file is in the same directory
-    
+
     # Load the data
     raw_df = load_data(input_file)
 
@@ -305,9 +305,9 @@ if __name__ == "__main__":
 
         print("\nCleaned Data Head:")
         print(cleaned_df.head())
-        
+
         # Write cleaned data to CSV
         cleaned_df.write_csv(
-            "clean_order2024.csv", 
+            "clean_order2024.csv",
             include_header=True,
         )
