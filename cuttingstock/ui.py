@@ -548,6 +548,7 @@ class CuttingOptimizerUI(QMainWindow):
                 [pl.col(c).fill_null("").str.strip_chars() for c in existing_cols]
             )
 
+            # DeprecationWarning: `GroupBy.count` was renamed; use `GroupBy.len` instead AI!
             all_specs_df = spec_df.group_by(existing_cols).count().sort("count", descending=True)
 
             if all_specs_df.is_empty():
