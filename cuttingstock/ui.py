@@ -4,6 +4,7 @@ import csv
 import os
 import re
 import sys
+import threading
 import time
 from math import floor
 
@@ -25,6 +26,7 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -37,16 +39,17 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from cuttingstock.core import main_algorithm  # Import our modified main module
+from cuttingstock.core import OutOfStockError, main_algorithm
 from cuttingstock.order import OrderManager
 from cuttingstock.stock import StockManager
 
 
 class WorkerThread(QThread):
     update_signal = pyqtSignal(str)
-    progress_updated = pyqtSignal(int, str)  # เพิ่มสัญญาณใหม่สำหรับอัปเดตโปรเกรสบาร์
+    progress_updated = pyqtSignal(int, str)
     calculation_succeeded = pyqtSignal(list)
     error_signal = pyqtSignal(str)
+    out_of_stock_signal = pyqtSignal(dict)
 
     def __init__(self, width, length, start_date, end_date, file_path,
                  front_material,
@@ -58,6 +61,8 @@ class WorkerThread(QThread):
                  processed_orders,
                  parent=None):
         super().__init__(parent)
+        self._wait_for_input_event = threading.Event()
+        self._user_choice = None
         self.width = width
         self.length = length
         self.start_date = start_date
@@ -72,7 +77,26 @@ class WorkerThread(QThread):
         self.back_material = back_material
         self.roll_specs = roll_specs
         self.processed_orders = processed_orders
-        self.current_iteration_step = 0 # เพิ่มตัวแปรสำหรับติดตามความคืบหน้าการวนซ้ำ
+        self.current_iteration_step = 0
+
+    def set_user_choice(self, choice):
+        """Called from the UI thread to provide the user's choice."""
+        self._user_choice = choice
+        self._wait_for_input_event.set()
+
+    def out_of_stock_handler(self, e: OutOfStockError):
+        """
+        This handler is called from within main_algorithm in the worker thread.
+        It signals the UI and blocks until the user makes a choice.
+        """
+        self._wait_for_input_event.clear()
+        self.out_of_stock_signal.emit({
+            "width": e.width,
+            "material": e.material,
+            "required_length": e.required_length,
+        })
+        self._wait_for_input_event.wait()  # Block until set_user_choice is called
+        return self._user_choice
 
     def run(self):
         loop = asyncio.new_event_loop()
@@ -118,6 +142,7 @@ class WorkerThread(QThread):
                     roll_width=self.width,
                     roll_length=self.length,
                     progress_callback=progress_callback,
+                    out_of_stock_handler=self.out_of_stock_handler,
                     start_date=self.start_date,
                     end_date=self.end_date,
                     file_path=self.file_path,
@@ -128,8 +153,8 @@ class WorkerThread(QThread):
                     b_type=self.corrugate_b_type,
                     b=self.corrugate_b_material_name,
                     back=self.back_material,
-                   roll_specs=self.roll_specs,
-                   processed_orders=self.processed_orders,
+                    roll_specs=self.roll_specs,
+                    processed_orders=self.processed_orders,
                 )
             )
             if not self.isInterruptionRequested():
@@ -699,10 +724,41 @@ class CuttingOptimizerUI(QMainWindow):
         self.worker.progress_updated.connect(self.update_progress_bar)
         self.worker.calculation_succeeded.connect(self.on_calculation_finished)
         self.worker.error_signal.connect(self.on_calculation_error)
+        self.worker.out_of_stock_signal.connect(self.handle_out_of_stock)
         # เชื่อมต่อสัญญาณ destroyed เพื่อให้แน่ใจว่าเธรดเก่าถูกลบอย่างสมบูรณ์
         # ก่อนที่จะเริ่มการคำนวณครั้งถัดไปโดยอัตโนมัติ
         self.worker.destroyed.connect(self.run_next_calculation)
         self.worker.start()
+
+    def handle_out_of_stock(self, details: dict):
+        """Shows a dialog to the user to select a new material."""
+        width = details.get("width")
+        material = details.get("material")
+
+        available_materials = []
+        if width and str(width) in self.ROLL_SPECS:
+            available_materials = sorted(list(self.ROLL_SPECS[str(width)].keys()))
+
+        if not available_materials:
+            QMessageBox.warning(self, "ไม่มีสต็อก", f"ไม่มีวัสดุอื่นสำหรับความกว้าง {width} นิ้ว ในสต็อก")
+            self.worker.set_user_choice(None)
+            return
+
+        item, ok = QInputDialog.getItem(
+            self,
+            "สต็อกไม่พอ",
+            f"วัสดุ '{material}' สำหรับความกว้าง {width} นิ้วไม่พอ\nกรุณาเลือกวัสดุทดแทน:",
+            available_materials,
+            0,
+            False # editable
+        )
+
+        if ok and item:
+            self.log_message(f"ผู้ใช้เลือกวัสดุทดแทน: {item}")
+            self.worker.set_user_choice(item)
+        else:
+            self.log_message("ผู้ใช้ยกเลิกการเลือกวัสดุทดแทน")
+            self.worker.set_user_choice(None)
 
     def update_progress_bar(self, value: int, message: str):
         """Updates the progress bar."""
