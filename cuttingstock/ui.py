@@ -24,6 +24,10 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QDialog,
+    QDialogButtonBox,
+    QDialog,
+    QDialogButtonBox,
     QGroupBox,
     QHBoxLayout,
     QInputDialog,
@@ -183,6 +187,82 @@ class CustomTableWidget(QTableWidget):
                 self.enterPressed.emit()
                 return
         super().keyPressEvent(event) # เรียกเมธอดของคลาสพื้นฐานสำหรับปุ่มอื่นๆ
+
+class MaterialSubstitutionDialog(QDialog):
+    def __init__(self, parent, message, available_materials, out_of_stock_material):
+        super().__init__(parent)
+        self.setWindowTitle("สต็อกไม่พอ")
+
+        layout = QVBoxLayout(self)
+
+        self.message_label = QLabel(message)
+        layout.addWidget(self.message_label)
+
+        self.combo_box = QComboBox()
+        self.combo_box.addItems(available_materials)
+
+        # Find and disable the out-of-stock item
+        try:
+            index = available_materials.index(out_of_stock_material)
+            # To disable an item, we need to access its model item
+            item = self.combo_box.model().item(index)
+            if item:
+                item.setEnabled(False)
+        except (ValueError, AttributeError):
+            # This handles cases where the item isn't found or the model is unusual
+            pass
+
+        layout.addWidget(self.combo_box)
+
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            Qt.Horizontal, self
+        )
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+
+    def selected_material(self):
+        return self.combo_box.currentText()
+
+
+class MaterialSubstitutionDialog(QDialog):
+    def __init__(self, parent, message, available_materials, out_of_stock_material):
+        super().__init__(parent)
+        self.setWindowTitle("สต็อกไม่พอ")
+
+        layout = QVBoxLayout(self)
+
+        self.message_label = QLabel(message)
+        layout.addWidget(self.message_label)
+
+        self.combo_box = QComboBox()
+        self.combo_box.addItems(available_materials)
+
+        # Find and disable the out-of-stock item
+        try:
+            index = available_materials.index(out_of_stock_material)
+            # To disable an item, we need to access its model item
+            item = self.combo_box.model().item(index)
+            if item:
+                item.setEnabled(False)
+        except (ValueError, AttributeError):
+            # This handles cases where the item isn't found or the model is unusual
+            pass
+
+        layout.addWidget(self.combo_box)
+
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            Qt.Horizontal, self
+        )
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+
+    def selected_material(self):
+        return self.combo_box.currentText()
+
 
 class CuttingOptimizerUI(QMainWindow):
 
@@ -731,7 +811,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.worker.start()
 
     def handle_out_of_stock(self, details: dict):
-        """Shows a dialog to the user to select a new material."""
+        """Shows a custom dialog to the user to select a new material."""
         width = details.get("width")
         material = details.get("material")
 
@@ -744,16 +824,11 @@ class CuttingOptimizerUI(QMainWindow):
             self.worker.set_user_choice(None)
             return
 
-        item, ok = QInputDialog.getItem(
-            self,
-            "สต็อกไม่พอ",
-            f"วัสดุ '{material}' สำหรับความกว้าง {width} นิ้วไม่พอ\nกรุณาเลือกวัสดุทดแทน:",
-            available_materials,
-            0,
-            False # editable
-        )
+        message = f"วัสดุ '{material}' สำหรับความกว้าง {width} นิ้วไม่พอ\nกรุณาเลือกวัสดุทดแทน:"
+        dialog = MaterialSubstitutionDialog(self, message, available_materials, material)
 
-        if ok and item:
+        if dialog.exec_() == QDialog.Accepted:
+            item = dialog.selected_material()
             self.log_message(f"ผู้ใช้เลือกวัสดุทดแทน: {item}")
             self.worker.set_user_choice(item)
         else:
