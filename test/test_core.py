@@ -10,6 +10,7 @@ import pytest
 
 from cuttingstock.cleaning import clean_data, load_data
 from cuttingstock.core import (
+    OutOfStockError,
     _find_and_update_roll,
     solve_linear_program,
 )
@@ -256,11 +257,11 @@ def test_find_and_update_roll_multiple_order_width_change():
 
     order_number2 = '2'
     width = '120'
-    result = _find_and_update_roll(roll_specs, width, material, sec_required_length, used_roll_ids, last_used_roll_ids, order_number2)
-    position_key = ('_position', width, material)
-    assert 0 == last_used_roll_ids.get(position_key, 0)
-    assert "-> (ไม่มีข้อมูลสต็อก)" == result
-    assert None == last_used_roll_ids.get(('_last_order', width, material))
+    with pytest.raises(OutOfStockError) as excinfo:
+        _find_and_update_roll(roll_specs, width, material, sec_required_length, used_roll_ids, last_used_roll_ids, order_number2)
+    assert "ไม่มีข้อมูลสต็อก" in str(excinfo.value)
+    assert excinfo.value.width == width
+    assert excinfo.value.material == material
 
     order_number3 = '3'
     width = '200'
@@ -601,9 +602,11 @@ def test_find_and_update_roll_no_stock():
     used_roll_ids = set()
     last_used_roll_ids = {}
 
-    result = _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids)
-
-    assert "-> (ไม่มีข้อมูลสต็อก)" == result
+    with pytest.raises(OutOfStockError) as excinfo:
+        _find_and_update_roll(roll_specs, width, material, required_length, used_roll_ids, last_used_roll_ids)
+    assert "ไม่มีข้อมูลสต็อก" in str(excinfo.value)
+    assert excinfo.value.width == width
+    assert excinfo.value.material == material
 
 def test_sqlite_basic_operations():
     """

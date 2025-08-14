@@ -15,6 +15,7 @@ async def test_main_algorithm_out_of_stock_with_substitution(tmp_path):
     # Both orders require 'KA125', which is out of stock.
     orders_df = pl.DataFrame({
         "order_number": ["ORDER-1", "ORDER-2"],
+        "order_idx": [1, 2],
         "width": [20, 20],
         "length": [100, 100],
         "quantity": [10, 10],
@@ -83,6 +84,7 @@ async def test_main_algorithm_out_of_stock_user_cancel(tmp_path):
     order_file = tmp_path / "orders.csv"
     orders_df = pl.DataFrame({
         "order_number": ["ORDER-3"],
+        "order_idx": [3],
         "width": [20], "length": [100], "quantity": [10], "demand": [1000],
         "front": ["KA125"], "due_date": ["2025-01-01"], "type": ["A"],
         "component_type": ["sheet"], "die_cut": [None], "c": [None],
