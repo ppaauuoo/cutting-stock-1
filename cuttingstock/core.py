@@ -21,16 +21,17 @@ from cuttingstock.mlmodel import predict_with_xgboost
 
 class OutOfStockError(Exception):
     """Custom exception for out-of-stock events."""
-    def __init__(self, message, width, material, required_length):
+    def __init__(self, message, width, material, required_length, material_specs=None):
         super().__init__(message)
         self.width = width
         self.material = material
         self.required_length = required_length
+        self.material_specs = material_specs or {}
 
 # Constants
 INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
 
-def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None) -> str:
+def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None, material_specs: Optional[dict] = None) -> str:
     """
     Finds a suitable roll, prioritizing the last used roll for the same material to ensure sequential use.
     If one roll is not enough, it tries to combine with another available roll.
@@ -40,7 +41,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
     material_rolls_dict = roll_specs.get(str(width), {}).get(material, {})
     if not material_rolls_dict:
-        raise OutOfStockError("ไม่มีข้อมูลสต็อก", width, material, required_length)
+        raise OutOfStockError("ไม่มีข้อมูลสต็อก", width, material, required_length, material_specs)
 
     # Get available rolls, sorted by length.
     all_available_rolls = sorted(material_rolls_dict.items(), key=lambda item: item[1]['length'])
@@ -222,7 +223,7 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
         return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
 
-    raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length)
+    raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs)
 
 
 app = FastAPI()
@@ -614,7 +615,7 @@ async def main_algorithm(
                     while True:
                         try:
                             value = value_calculator()
-                            info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
+                            info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, material_specs)
                             roll_info[f'{spec_key}_roll_info'] = info
                             if original_material != material:
                                 material_specs[spec_key] = material # Persist changed material
