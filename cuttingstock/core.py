@@ -456,6 +456,7 @@ async def main_algorithm(
 
     for roll in rolls:
         last_used_roll_ids = {}
+        material_substitutions = {} # To store user's choices for material swaps
         used_roll_ids_for_cut = set()
         if progress_callback:
             progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
@@ -600,33 +601,52 @@ async def main_algorithm(
                     if calculation_failed or not material_specs.get(spec_key):
                         return
 
-                    material = str(material_specs.get(spec_key)).strip()
+                    original_material = str(material_specs.get(spec_key)).strip()
+                    
+                    # Check if there is an existing substitution for this material
+                    if original_material in material_substitutions:
+                        material = material_substitutions[original_material]
+                        if progress_callback:
+                            progress_callback(f"    🔄 Using substitution '{material}' for '{original_material}'.")
+                    else:
+                        material = original_material
+
                     while True:
                         try:
                             value = value_calculator()
                             info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number)
                             roll_info[f'{spec_key}_roll_info'] = info
-                            if material_specs.get(spec_key) != material:
+                            if original_material != material:
                                 material_specs[spec_key] = material # Persist changed material
                             return
                         except OutOfStockError as e:
-                            if out_of_stock_handler:
+                            # Only ask the user if we haven't already asked for this material
+                            if out_of_stock_handler and e.material not in material_substitutions:
                                 if progress_callback:
                                     progress_callback(f"    ⚠️ สต็อกสำหรับ '{e.material}' (หน้ากว้าง {e.width}) ไม่พอ, รอการตัดสินใจจากผู้ใช้...")
                                 new_material = out_of_stock_handler(e)
                                 if new_material:
                                     if progress_callback:
-                                        progress_callback(f"    🔄 ลองใหม่อีกครั้งด้วยวัสดุ '{new_material}'...")
-                                    material = new_material
+                                        progress_callback(f"    ✅ User chose '{new_material}' to replace '{e.material}'. Applying to all future calculations.")
+                                    # Store the decision
+                                    material_substitutions[e.material] = new_material
+                                    material = new_material # Try again with the new material
                                     continue
                                 else:
                                     if progress_callback:
                                         progress_callback(f"    ❌ ผู้ใช้ยกเลิก, ไม่สามารถหาวัสดุสำหรับ '{e.material}' ได้")
+                                    # Store that user chose to cancel for this material
+                                    material_substitutions[e.material] = None
                                     roll_info[f'{spec_key}_roll_info'] = f"-> (ผู้ใช้ยกเลิก)"
                                     calculation_failed = True
                                     return
                             else:
-                                roll_info[f'{spec_key}_roll_info'] = f"-> ({e.args[0]})"
+                                # This handles cases where the handler isn't provided,
+                                # or when a substitute material also runs out of stock.
+                                fail_reason = f"-> ({e.args[0]})"
+                                if e.material in material_substitutions:
+                                    fail_reason = f"-> (วัสดุทดแทน '{material}' สต็อกไม่พอ)"
+                                roll_info[f'{spec_key}_roll_info'] = fail_reason
                                 calculation_failed = True
                                 return
 
