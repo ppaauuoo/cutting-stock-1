@@ -626,6 +626,13 @@ async def main_algorithm(
                                 if progress_callback:
                                     progress_callback(f"    ⚠️ สต็อกสำหรับ '{e.material}' (หน้ากว้าง {e.width}) ไม่พอ, รอการตัดสินใจจากผู้ใช้...")
                                 new_material = out_of_stock_handler(e)
+
+                                # Check if user selected a material that has previously run out of stock.
+                                if new_material and new_material in material_substitutions:
+                                    if progress_callback:
+                                        progress_callback(f"    ❌ User chose '{new_material}', which is known to be out of stock. Cancelling for '{e.material}'.")
+                                    new_material = None # Treat this as a cancellation
+
                                 if new_material:
                                     if progress_callback:
                                         progress_callback(f"    ✅ User chose '{new_material}' to replace '{e.material}'. Applying to all future calculations.")
