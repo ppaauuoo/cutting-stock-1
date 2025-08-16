@@ -21,17 +21,18 @@ from cuttingstock.mlmodel import predict_with_xgboost
 
 class OutOfStockError(Exception):
     """Custom exception for out-of-stock events."""
-    def __init__(self, message, width, material, required_length, material_specs=None):
+    def __init__(self, message, width, material, required_length, material_specs=None, known_out_of_stock=None):
         super().__init__(message)
         self.width = width
         self.material = material
         self.required_length = required_length
         self.material_specs = material_specs or {}
+        self.known_out_of_stock = known_out_of_stock or []
 
 # Constants
 INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
 
-def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None, material_specs: Optional[dict] = None) -> str:
+def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None, material_specs: Optional[dict] = None, material_substitutions: Optional[dict] = None) -> str:
     """
     Finds a suitable roll, prioritizing the last used roll for the same material to ensure sequential use.
     If one roll is not enough, it tries to combine with another available roll.
@@ -41,7 +42,8 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
     material_rolls_dict = roll_specs.get(str(width), {}).get(material, {})
     if not material_rolls_dict:
-        raise OutOfStockError("ไม่มีข้อมูลสต็อก", width, material, required_length, material_specs)
+        known_out_of_stock = list((material_substitutions or {}).keys())
+        raise OutOfStockError("ไม่มีข้อมูลสต็อก", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
 
     # Get available rolls, sorted by length.
     all_available_rolls = sorted(material_rolls_dict.items(), key=lambda item: item[1]['length'])
@@ -223,7 +225,8 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
         return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
 
-    raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs)
+    known_out_of_stock = list((material_substitutions or {}).keys())
+    raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
 
 
 app = FastAPI()
@@ -615,7 +618,7 @@ async def main_algorithm(
                     while True:
                         try:
                             value = value_calculator()
-                            info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, material_specs)
+                            info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, material_specs, material_substitutions=material_substitutions)
                             roll_info[f'{spec_key}_roll_info'] = info
                             if original_material != material:
                                 material_specs[spec_key] = material # Persist changed material
@@ -628,7 +631,7 @@ async def main_algorithm(
                                 new_material = out_of_stock_handler(e)
 
                                 # Check if user selected a material that has previously run out of stock.
-                                if new_material and new_material in material_substitutions:
+                                if new_material and new_material in (e.known_out_of_stock or []):
                                     if progress_callback:
                                         progress_callback(f"    ❌ User chose '{new_material}', which is known to be out of stock. Cancelling for '{e.material}'.")
                                     new_material = None # Treat this as a cancellation
