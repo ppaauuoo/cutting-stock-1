@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Callable, Optional
 
 import polars as pl
@@ -227,6 +228,78 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
     known_out_of_stock = list((material_substitutions or {}).keys())
     raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
+
+
+def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_factory: str) -> list:
+    """
+    Generates a list of all possible calculation settings based on order frequency and stock.
+    """
+    if orders_df is None or orders_df.is_empty():
+        return []
+
+    # Filter orders based on factory selection
+    if "order_number" in orders_df.columns:
+        # Use a more robust numeric check for order number prefixes.
+        # Cast to string, strip whitespace, then check the numeric value of the prefix.
+        order_num_col = pl.col("order_number").cast(pl.Utf8).str.strip_chars()
+
+        if selected_factory == "1&2":
+            orders_df = orders_df.filter(
+                order_num_col.str.slice(0, 4).str.to_integer(strict=False) == 1218
+            )
+        elif selected_factory in ["3", "4", "5"]:
+            orders_df = orders_df.filter(
+                order_num_col.str.slice(0, 1).str.to_integer(strict=False) == int(selected_factory)
+            )
+
+    material_cols = ['front', 'c', 'middle', 'b', 'back']
+    existing_cols = [col for col in material_cols if col in orders_df.columns]
+
+    if not existing_cols:
+        return []
+
+    spec_df = orders_df.with_columns(
+        [pl.col(c).fill_null("").str.strip_chars() for c in existing_cols]
+    )
+
+    all_specs_df = spec_df.group_by(existing_cols).len().sort("len", descending=True)
+
+    if all_specs_df.is_empty():
+        return []
+
+    suggestions = []
+    for spec_row in all_specs_df.iter_rows(named=True):
+        spec_materials = {m for k, m in spec_row.items() if k != 'len' and m}
+
+        if not spec_materials:
+            continue
+
+        available_widths = []
+        if roll_specs:
+            for width, materials_in_stock in roll_specs.items():
+                if spec_materials.issubset(materials_in_stock.keys()):
+                    available_widths.append(width)
+
+        if available_widths:
+            if selected_factory == "1&2":
+                def sort_key_factory_1_2(width_str):
+                    width_int = int(re.sub(r'\D', '', width_str) or 0)
+                    if 82 <= width_int <= 97:
+                        return (0, width_int)
+                    elif 73 <= width_int <= 79:
+                        return (1, width_int)
+                    else:
+                        return (2, width_int)
+                sorted_widths = sorted(available_widths, key=sort_key_factory_1_2)
+            else:
+                sorted_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
+
+            for width in sorted_widths:
+                full_spec = {k: v for k, v in spec_row.items() if k != 'len'}
+                suggestion = {'width': width, 'spec': full_spec}
+                suggestions.append(suggestion)
+
+    return suggestions
 
 
 app = FastAPI()

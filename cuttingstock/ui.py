@@ -43,7 +43,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from cuttingstock.core import OutOfStockError, main_algorithm
+from cuttingstock.core import OutOfStockError, generate_suggestions, main_algorithm
 from cuttingstock.order import OrderManager
 from cuttingstock.stock import StockManager
 
@@ -599,7 +599,7 @@ class CuttingOptimizerUI(QMainWindow):
 
     def get_all_suggestions(self):
         """
-        Generates a list of all possible calculation settings based on order frequency and stock.
+        Delegates suggestion generation to the core module and handles UI feedback.
         """
         if self.cleaned_orders_df is None or self.cleaned_orders_df.is_empty():
             self.log_message("⚠️ Cannot generate suggestions: No order data available.")
@@ -607,74 +607,12 @@ class CuttingOptimizerUI(QMainWindow):
 
         self.log_message("🤔 Analyzing orders to generate all possible settings...")
         try:
-            cleaned_orders_df = self.cleaned_orders_df
-
-            # Filter orders based on factory selection
             selected_factory = self.factory_combo.currentText()
-            if "order_number" in cleaned_orders_df.columns:
-                # Use a more robust numeric check for order number prefixes.
-                # Cast to string, strip whitespace, then check the numeric value of the prefix.
-                order_num_col = pl.col("order_number").cast(pl.Utf8).str.strip_chars()
+            self.log_message(f"🏭 Using factory filter: '{selected_factory}'")
 
-                if selected_factory == "1&2":
-                    self.log_message(f"🏭 Filtering orders for factories 1 & 2. Only using orders starting with '1218'.")
-                    cleaned_orders_df = cleaned_orders_df.filter(
-                        order_num_col.str.slice(0, 4).str.to_integer(strict=False) == 1218
-                    )
-                elif selected_factory in ["3", "4", "5"]:
-                    self.log_message(f"🏭 Filtering orders for factory {selected_factory}. Only using orders starting with '{selected_factory}'.")
-                    cleaned_orders_df = cleaned_orders_df.filter(
-                        order_num_col.str.slice(0, 1).str.to_integer(strict=False) == int(selected_factory)
-                    )
-
-            material_cols = ['front', 'c', 'middle', 'b', 'back']
-            existing_cols = [col for col in material_cols if col in cleaned_orders_df.columns]
-
-            if not existing_cols:
-                self.log_message("⚠️ No material columns (front, c, etc.) found in order file.")
-                return []
-
-            spec_df = cleaned_orders_df.with_columns(
-                [pl.col(c).fill_null("").str.strip_chars() for c in existing_cols]
+            suggestions = generate_suggestions(
+                self.cleaned_orders_df, self.ROLL_SPECS, selected_factory
             )
-
-            all_specs_df = spec_df.group_by(existing_cols).len().sort("len", descending=True)
-
-            if all_specs_df.is_empty():
-                self.log_message("ℹ️ No material specs could be grouped from the order file.")
-                return []
-
-            suggestions = []
-            for spec_row in all_specs_df.iter_rows(named=True):
-                spec_materials = {m for k, m in spec_row.items() if k != 'len' and m}
-
-                if not spec_materials:
-                    continue
-
-                available_widths = []
-                if self.ROLL_SPECS:
-                    for width, materials_in_stock in self.ROLL_SPECS.items():
-                        if spec_materials.issubset(materials_in_stock.keys()):
-                            available_widths.append(width)
-
-                if available_widths:
-                    if selected_factory == "1&2":
-                        def sort_key_factory_1_2(width_str):
-                            width_int = int(re.sub(r'\D', '', width_str) or 0)
-                            if 82 <= width_int <= 97:
-                                return (0, width_int)
-                            elif 73 <= width_int <= 79:
-                                return (1, width_int)
-                            else:
-                                return (2, width_int)
-                        sorted_widths = sorted(available_widths, key=sort_key_factory_1_2)
-                    else:
-                        sorted_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
-
-                    for width in sorted_widths:
-                        full_spec = {k: v for k, v in spec_row.items() if k != 'len'}
-                        suggestion = {'width': width, 'spec': full_spec}
-                        suggestions.append(suggestion)
 
             self.log_message(f"✅ Generated {len(suggestions)} potential settings to test.")
             return suggestions
