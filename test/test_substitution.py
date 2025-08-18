@@ -188,3 +188,49 @@ async def test_get_roll_for_material_atomic_substitution():
         assert "R-C-1" in res["front_roll_info"]
         assert res["back"] == "MAT_D"
         assert "R-D-1" in res["back_roll_info"]
+
+
+@pytest.mark.asyncio
+async def test_roll_specs_length_deduction_on_substitution():
+    """
+    Tests that roll_specs length is correctly deducted from the NEW material
+    after a substitution, not the original out-of-stock one.
+    """
+    mock_orders_df = pl.DataFrame({
+        "order_number": ["ORDER-SUB"], "order_idx": [0], "front": ["MAT_A"],
+    })
+    # MAT_A has no stock. MAT_B is the substitute.
+    mock_roll_specs = {
+        "80": {
+            "MAT_A": {},
+            "MAT_B": {1: {"id": "R-B-1", "length": 1000}},
+        }
+    }
+    mock_lp_solution = {
+        "status": "Optimal",
+        "variables": {"roll_w": 80, "demand_per_cut": 300, "order_idx": 0},
+        "material_specs": {"front": "MAT_A"},
+    }
+
+    def mock_out_of_stock_handler(e: OutOfStockError):
+        assert e.material == "MAT_A"
+        return {"front": "MAT_B"}
+
+    with patch('cuttingstock.core.load_data'), \
+         patch('cuttingstock.core.clean_data', return_value=mock_orders_df), \
+         patch('os.path.exists', return_value=False), \
+         patch('polars.DataFrame.write_database'), \
+         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution):
+
+        await main_algorithm(
+            roll_width=80,
+            roll_length=100000,
+            file_path="dummy.csv",
+            roll_specs=mock_roll_specs,
+            out_of_stock_handler=mock_out_of_stock_handler,
+            processed_orders=set(),
+            front="MAT_A",
+        )
+
+        # The key assertion: Check that the length was deducted from the substitute material's roll.
+        assert mock_roll_specs["80"]["MAT_B"][1]["length"] == 700
