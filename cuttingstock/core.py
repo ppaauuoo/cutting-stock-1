@@ -689,6 +689,7 @@ async def main_algorithm(
 
                 get_roll_for_material('back', lambda: demand_per_cut / type_demand_divisor)
 
+            # i didn't cancle anything, why did it say I cancel it? ai!
             if calculation_failed:
                 if progress_callback:
                     progress_callback(f"    ❌ การคำนวณสำหรับ {order_number} ล้มเหลวเนื่องจากสต็อกไม่พอและผู้ใช้ยกเลิก")
