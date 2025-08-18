@@ -209,11 +209,19 @@ class MaterialSubstitutionDialog(QDialog):
         spec_label.setTextFormat(Qt.RichText)
         layout.addWidget(spec_label)
 
-        message = f"วัสดุ '{out_of_stock_material}' สำหรับความกว้าง {width} นิ้วไม่พอ"
+        all_known_oos_materials = set()
         if known_out_of_stock:
-            other_oos = [m for m in known_out_of_stock if m != out_of_stock_material]
-            if other_oos:
-                message += f"\nวัสดุต่อไปนี้ก็อาจไม่พอ: {', '.join(other_oos)}"
+            for item in known_out_of_stock:
+                if isinstance(item, tuple):  # It's a spec tuple
+                    for _, material_name in item:
+                        all_known_oos_materials.add(material_name)
+                elif isinstance(item, str):  # Fallback for just a material name
+                    all_known_oos_materials.add(item)
+
+        message = f"วัสดุ '{out_of_stock_material}' สำหรับความกว้าง {width} นิ้วไม่พอ"
+        other_oos_to_display = sorted(list(all_known_oos_materials - {out_of_stock_material}))
+        if other_oos_to_display:
+            message += f"\nวัสดุต่อไปนี้ก็อาจไม่พอ: {', '.join(other_oos_to_display)}"
         message += "\n\nคุณสามารถเลือกวัสดุทดแทนสำหรับแต่ละรายการได้:"
 
         self.message_label = QLabel(message)
@@ -246,10 +254,9 @@ class MaterialSubstitutionDialog(QDialog):
         spec_group.setLayout(spec_layout)
         layout.addWidget(spec_group)
 
-        known_out_of_stock = known_out_of_stock or []
-        materials_to_disable = [out_of_stock_material] + known_out_of_stock
+        materials_to_disable = all_known_oos_materials | {out_of_stock_material}
 
-        for material_to_disable in set(materials_to_disable):
+        for material_to_disable in materials_to_disable:
             for combo in self.combos.values():
                 try:
                     index = combo.findText(material_to_disable)
