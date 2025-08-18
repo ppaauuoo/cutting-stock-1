@@ -606,7 +606,7 @@ async def main_algorithm(
                         return
 
                     original_material = str(material_specs.get(spec_key)).strip()
-                    
+
                     # Check if there is an existing substitution for this material
                     if original_material in material_substitutions:
                         material = material_substitutions[original_material]
@@ -634,6 +634,7 @@ async def main_algorithm(
                                 if new_material and new_material in (e.known_out_of_stock or []):
                                     if progress_callback:
                                         progress_callback(f"    ❌ User chose '{new_material}', which is known to be out of stock. Cancelling for '{e.material}'.")
+                                    # don't treat this as a canclelation AI!
                                     new_material = None # Treat this as a cancellation
 
                                 if new_material:
