@@ -234,3 +234,60 @@ async def test_roll_specs_length_deduction_on_substitution():
 
         # The key assertion: Check that the length was deducted from the substitute material's roll.
         assert mock_roll_specs["80"]["MAT_B"][1]["length"] == 700
+
+
+@pytest.mark.asyncio
+async def test_roll_specs_deduction_on_multi_material_substitution():
+    """
+    Tests that roll_specs are correctly updated when multiple materials are
+    substituted at once in response to a single out-of-stock event.
+    """
+    mock_orders_df = pl.DataFrame({
+        "order_number": ["ORDER-MULTI-SUB"], "order_idx": [0],
+        "front": ["MAT_A"], "middle": ["MAT_B"], "back": ["MAT_C"],
+    })
+    # MAT_A is out of stock. User will change all three materials.
+    mock_roll_specs = {
+        "80": {
+            "MAT_A": {}, # Empty
+            "MAT_B": {1: {"id": "R-B-1", "length": 1000}},
+            "MAT_C": {1: {"id": "R-C-1", "length": 1000}},
+            "SUB_A": {1: {"id": "R-SA-1", "length": 1000}}, # Substitute for A
+            "SUB_B": {1: {"id": "R-SB-1", "length": 1000}}, # Substitute for B
+            "SUB_C": {1: {"id": "R-SC-1", "length": 1000}}, # Substitute for C
+        }
+    }
+    mock_lp_solution = {
+        "status": "Optimal",
+        "variables": {"roll_w": 80, "demand_per_cut": 200, "order_idx": 0},
+        "material_specs": {"front": "MAT_A", "middle": "MAT_B", "back": "MAT_C"},
+    }
+
+    def mock_out_of_stock_handler(e: OutOfStockError):
+        assert e.material == "MAT_A"
+        # User changes all three materials
+        return {"front": "SUB_A", "middle": "SUB_B", "back": "SUB_C"}
+
+    with patch('cuttingstock.core.load_data'), \
+         patch('cuttingstock.core.clean_data', return_value=mock_orders_df), \
+         patch('os.path.exists', return_value=False), \
+         patch('polars.DataFrame.write_database'), \
+         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution):
+
+        await main_algorithm(
+            roll_width=80,
+            roll_length=100000,
+            file_path="dummy.csv",
+            roll_specs=mock_roll_specs,
+            out_of_stock_handler=mock_out_of_stock_handler,
+            processed_orders=set(),
+            front="MAT_A", middle="MAT_B", back="MAT_C",
+        )
+
+        # Assert that lengths were deducted from the NEW substitute materials
+        assert mock_roll_specs["80"]["SUB_A"][1]["length"] == 800
+        assert mock_roll_specs["80"]["SUB_B"][1]["length"] == 800
+        assert mock_roll_specs["80"]["SUB_C"][1]["length"] == 800
+        # Assert that original materials (that had stock) were untouched
+        assert mock_roll_specs["80"]["MAT_B"][1]["length"] == 1000
+        assert mock_roll_specs["80"]["MAT_C"][1]["length"] == 1000
