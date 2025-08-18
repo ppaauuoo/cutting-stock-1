@@ -64,6 +64,7 @@ class WorkerThread(QThread):
                  back_material,
                  roll_specs,
                  processed_orders,
+                 material_substitutions,
                  parent=None):
         super().__init__(parent)
         self._wait_for_input_event = threading.Event()
@@ -82,6 +83,7 @@ class WorkerThread(QThread):
         self.back_material = back_material
         self.roll_specs = roll_specs
         self.processed_orders = processed_orders
+        self.material_substitutions = material_substitutions
         self.current_iteration_step = 0
 
     def set_user_choice(self, choice):
@@ -89,7 +91,6 @@ class WorkerThread(QThread):
         self._user_choice = choice
         self._wait_for_input_event.set()
 
-    # let's user change every material eg. front,middle,back,etc., ai!
     def out_of_stock_handler(self, e: OutOfStockError):
         """
         This handler is called from within main_algorithm in the worker thread.
@@ -163,6 +164,7 @@ class WorkerThread(QThread):
                     back=self.back_material,
                     roll_specs=self.roll_specs,
                     processed_orders=self.processed_orders,
+                    material_substitutions=self.material_substitutions,
                 )
             )
             if not self.isInterruptionRequested():
@@ -202,6 +204,11 @@ class MaterialSubstitutionDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
+        spec_str = ", ".join(f"{k.title().replace('_', ' ')}: {v}" for k, v in self.original_specs.items() if v)
+        spec_label = QLabel(f"<b>Current Spec:</b><br>{spec_str}")
+        spec_label.setTextFormat(Qt.RichText)
+        layout.addWidget(spec_label)
+
         message = f"วัสดุ '{out_of_stock_material}' สำหรับความกว้าง {width} นิ้วไม่พอ"
         if known_out_of_stock:
             other_oos = [m for m in known_out_of_stock if m != out_of_stock_material]
@@ -222,16 +229,19 @@ class MaterialSubstitutionDialog(QDialog):
             if value: # Only show rows for materials that are part of the spec
                 combo = QComboBox()
                 combo.addItems(available_materials)
-                # combo box was never found the specs even if it was there ai!
                 try:
-                    index = combo.findText(value)
+                    # Find by exact match first, trimming any whitespace
+                    index = combo.findText(str(value).strip(), Qt.MatchFixedString)
                     if index != -1:
                         combo.setCurrentIndex(index)
                 except (ValueError, AttributeError):
                     pass # Keep default if not found
 
                 self.combos[key] = combo
-                spec_layout.addRow(f"{key.replace('_', ' ').title()}:", combo)
+                label = QLabel(f"{key.replace('_', ' ').title()}:")
+                if value == self.out_of_stock_material:
+                    label.setStyleSheet("font-weight: bold; color: red;")
+                spec_layout.addRow(label, combo)
 
         spec_group.setLayout(spec_layout)
         layout.addWidget(spec_group)
@@ -299,6 +309,7 @@ class CuttingOptimizerUI(QMainWindow):
         self.suggestions_list = []
         self.current_suggestion_index = 0
         self.processed_order_numbers = set()
+        self.material_substitutions = {}
 
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
@@ -664,6 +675,7 @@ class CuttingOptimizerUI(QMainWindow):
 
         self.results_data.clear()
         self.processed_order_numbers.clear()
+        self.material_substitutions.clear()
         self.result_table.setRowCount(0)
 
         self.log_display.clear()
@@ -755,7 +767,8 @@ class CuttingOptimizerUI(QMainWindow):
             b_type, b_material,
             back_material,
             self.ROLL_SPECS,
-            self.processed_order_numbers.copy()
+            self.processed_order_numbers.copy(),
+            self.material_substitutions
         )
         self.worker.update_signal.connect(self.log_message)
         self.worker.progress_updated.connect(self.update_progress_bar)
@@ -945,6 +958,7 @@ class CuttingOptimizerUI(QMainWindow):
             self.results_data.clear()
             self.display_data.clear()
             self.processed_order_numbers.clear()
+            self.material_substitutions.clear()
             self.result_table.setRowCount(0)
             self.log_message("🧹 ผลลัพธ์ทั้งหมดถูกล้างแล้ว")
 

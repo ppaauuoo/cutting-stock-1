@@ -20,6 +20,15 @@ from cuttingstock.cleaning import clean_data, load_data
 from cuttingstock.mlmodel import predict_with_xgboost
 
 
+def _spec_to_key(spec: dict) -> tuple:
+    """Converts a spec dictionary to a hashable tuple key."""
+    if not spec:
+        return tuple()
+    # Filter out None values and keys that are not material names
+    valid_keys = {'front', 'c', 'middle', 'b', 'back'}
+    return tuple(sorted((k, v) for k, v in spec.items() if k in valid_keys and v))
+
+
 class OutOfStockError(Exception):
     """Custom exception for out-of-stock events."""
     def __init__(self, message, width, material, required_length, material_specs=None, known_out_of_stock=None):
@@ -480,6 +489,7 @@ async def main_algorithm(
     back: Optional[str] = None,
     roll_specs: Optional[dict] = None,
     processed_orders: Optional[set] = None,
+    material_substitutions: Optional[dict] = None,
     chunk_size: Optional[int] = 100,
 ):
     output_dir = "cache"
@@ -531,9 +541,11 @@ async def main_algorithm(
 
     order_num_col_idx = orders_df.columns.index("order_number")
 
+    if material_substitutions is None:
+        material_substitutions = {}
+
     for roll in rolls:
         last_used_roll_ids = {}
-        material_substitutions = {} # To store user's choices for material swaps
         used_roll_ids_for_cut = set()
         if progress_callback:
             progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
@@ -665,6 +677,22 @@ async def main_algorithm(
             order_number = orders_df.row(int(order_idx))[order_num_col_idx] if order_idx is not None else None
 
             material_specs = result.get("material_specs", {}).copy() # Use a copy to allow modification
+
+            # Apply spec-level substitution if one exists
+            spec_key = _spec_to_key(material_specs)
+            if material_substitutions and spec_key in material_substitutions:
+                substituted_spec = material_substitutions[spec_key]
+                if substituted_spec is None: # User cancelled this spec before
+                    if progress_callback:
+                        progress_callback(f"    ❌ User previously cancelled substitution for this spec. Failing order.")
+                    failure_reason = "ผู้ใช้ยกเลิกสำหรับสเปคนี้"
+                    break # Stop processing this roll, move to failed orders
+
+                if progress_callback:
+                     changes_str = ", ".join([f"{k.title()}: {v}" for k, v in substituted_spec.items() if material_specs.get(k) != v])
+                     progress_callback(f"    🔄 Applying stored substitution for spec: {changes_str}")
+                material_specs = substituted_spec.copy()
+
             original_material_specs = material_specs.copy()
             variables = result.get("variables", {})
             roll_info = {}
@@ -679,23 +707,13 @@ async def main_algorithm(
                     if calculation_failed_reason or not material_specs.get(spec_key):
                         return
 
-                    original_material_for_roll = str(material_specs.get(spec_key)).strip()
-
-                    # Check if there is an existing substitution for this material
-                    if original_material_for_roll in material_substitutions:
-                        material = material_substitutions[original_material_for_roll]
-                        if progress_callback:
-                            progress_callback(f"    🔄 Using substitution '{material}' for '{original_material_for_roll}'.")
-                    else:
-                        material = original_material_for_roll
+                    material = str(material_specs.get(spec_key)).strip()
 
                     while True:
                         try:
                             value = value_calculator()
                             info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, material_specs, material_substitutions=material_substitutions)
                             roll_info[f'{spec_key}_roll_info'] = info
-                            if original_material_for_roll != material:
-                                material_specs[spec_key] = material # Persist changed material
                             return
                         except OutOfStockError as e:
                             if out_of_stock_handler:
@@ -710,25 +728,33 @@ async def main_algorithm(
                                     if progress_callback:
                                         progress_callback(f"    ✅ User chose new materials: {changes_str}. Applying to all future calculations.")
 
-                                    # Update global substitutions based on changes
-                                    for key, new_val in new_material_specs.items():
-                                        old_val = original_material_specs.get(key)
-                                        if old_val and new_val != old_val:
-                                            material_substitutions[old_val] = new_val
+                                    # Update spec-level substitutions
+                                    original_spec_key = _spec_to_key(original_material_specs)
+                                    material_substitutions[original_spec_key] = new_material_specs
 
-                                    # Update current order's specs
-                                    for key, new_val in new_material_specs.items():
-                                        material_specs[key] = new_val
+                                    # Update any chains of substitutions
+                                    for key, value in list(material_substitutions.items()):
+                                        if value is not None and _spec_to_key(value) == original_spec_key:
+                                            material_substitutions[key] = new_material_specs
 
-                                    # For the retry, update the material for the current spec_key
-                                    material = new_material_specs.get(spec_key, material)
-                                    continue # Retry with new material for the current spec_key
+                                    # Update current order's specs for retry
+                                    material_specs.clear()
+                                    material_specs.update(new_material_specs)
+                                    material = material_specs.get(spec_key, material)
+                                    continue # Retry with new material spec
                                 else:
                                     # User cancelled from UI
                                     if progress_callback:
                                         progress_callback(f"    ❌ ผู้ใช้ยกเลิก, ไม่สามารถหาวัสดุสำหรับ '{e.material}' ได้")
-                                    # Store that user chose to cancel for this material
-                                    material_substitutions[e.material] = None
+                                    # Store that user chose to cancel for this spec
+                                    original_spec_key = _spec_to_key(original_material_specs)
+                                    material_substitutions[original_spec_key] = None
+
+                                    # Update any chains
+                                    for key, value in list(material_substitutions.items()):
+                                        if value is not None and _spec_to_key(value) == original_spec_key:
+                                            material_substitutions[key] = None
+
                                     roll_info[f'{spec_key}_roll_info'] = f"-> (ผู้ใช้ยกเลิก)"
                                     calculation_failed_reason = "ผู้ใช้ยกเลิก"
                                     return
