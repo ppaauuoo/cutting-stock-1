@@ -702,6 +702,7 @@ async def main_algorithm(
                 roll_w_str = str(variables.get("roll_w", "")).strip()
                 demand_per_cut = variables.get("demand_per_cut", 0)
 
+                #the material changed perfectly but the roll_id is still the same as previous material which is not possible AI!
                 def get_roll_for_material(spec_key: str, value_calculator: Callable[[], float]):
                     nonlocal calculation_failed_reason
                     if calculation_failed_reason or not material_specs.get(spec_key):
