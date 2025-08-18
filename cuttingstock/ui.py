@@ -4,6 +4,7 @@ import csv
 import os
 import re
 import sys
+import threading
 import time
 from math import floor
 
@@ -23,8 +24,13 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QDialog,
+    QDialogButtonBox,
+    QDialog,
+    QDialogButtonBox,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -37,16 +43,17 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from cuttingstock.core import main_algorithm  # Import our modified main module
+from cuttingstock.core import OutOfStockError, main_algorithm
 from cuttingstock.order import OrderManager
 from cuttingstock.stock import StockManager
 
 
 class WorkerThread(QThread):
     update_signal = pyqtSignal(str)
-    progress_updated = pyqtSignal(int, str)  # เพิ่มสัญญาณใหม่สำหรับอัปเดตโปรเกรสบาร์
+    progress_updated = pyqtSignal(int, str)
     calculation_succeeded = pyqtSignal(list)
     error_signal = pyqtSignal(str)
+    out_of_stock_signal = pyqtSignal(dict)
 
     def __init__(self, width, length, start_date, end_date, file_path,
                  front_material,
@@ -58,6 +65,8 @@ class WorkerThread(QThread):
                  processed_orders,
                  parent=None):
         super().__init__(parent)
+        self._wait_for_input_event = threading.Event()
+        self._user_choice = None
         self.width = width
         self.length = length
         self.start_date = start_date
@@ -72,7 +81,28 @@ class WorkerThread(QThread):
         self.back_material = back_material
         self.roll_specs = roll_specs
         self.processed_orders = processed_orders
-        self.current_iteration_step = 0 # เพิ่มตัวแปรสำหรับติดตามความคืบหน้าการวนซ้ำ
+        self.current_iteration_step = 0
+
+    def set_user_choice(self, choice):
+        """Called from the UI thread to provide the user's choice."""
+        self._user_choice = choice
+        self._wait_for_input_event.set()
+
+    def out_of_stock_handler(self, e: OutOfStockError):
+        """
+        This handler is called from within main_algorithm in the worker thread.
+        It signals the UI and blocks until the user makes a choice.
+        """
+        self._wait_for_input_event.clear()
+        self.out_of_stock_signal.emit({
+            "width": e.width,
+            "material": e.material,
+            "required_length": e.required_length,
+            "material_specs": e.material_specs,
+            "known_out_of_stock": e.known_out_of_stock,
+        })
+        self._wait_for_input_event.wait()  # Block until set_user_choice is called
+        return self._user_choice
 
     def run(self):
         loop = asyncio.new_event_loop()
@@ -118,6 +148,7 @@ class WorkerThread(QThread):
                     roll_width=self.width,
                     roll_length=self.length,
                     progress_callback=progress_callback,
+                    out_of_stock_handler=self.out_of_stock_handler,
                     start_date=self.start_date,
                     end_date=self.end_date,
                     file_path=self.file_path,
@@ -128,8 +159,8 @@ class WorkerThread(QThread):
                     b_type=self.corrugate_b_type,
                     b=self.corrugate_b_material_name,
                     back=self.back_material,
-                   roll_specs=self.roll_specs,
-                   processed_orders=self.processed_orders,
+                    roll_specs=self.roll_specs,
+                    processed_orders=self.processed_orders,
                 )
             )
             if not self.isInterruptionRequested():
@@ -158,6 +189,65 @@ class CustomTableWidget(QTableWidget):
                 self.enterPressed.emit()
                 return
         super().keyPressEvent(event) # เรียกเมธอดของคลาสพื้นฐานสำหรับปุ่มอื่นๆ
+
+class MaterialSubstitutionDialog(QDialog):
+    def __init__(self, parent, message, available_materials, out_of_stock_material, material_specs, known_out_of_stock=None):
+        super().__init__(parent)
+        self.setWindowTitle("สต็อกไม่พอ")
+
+        layout = QVBoxLayout(self)
+
+        self.message_label = QLabel(message)
+        layout.addWidget(self.message_label)
+
+        # Display material specs
+        if material_specs:
+            spec_group = QGroupBox("รายละเอียดสเปค:")
+            spec_layout = QVBoxLayout()
+            spec_text = ""
+            for key, value in material_specs.items():
+                if value and key != 'demand':
+                    spec_text += f"<b>{key.replace('_', ' ').title()}:</b> {value}<br>"
+            spec_label = QLabel(spec_text)
+            spec_label.setTextFormat(Qt.RichText)
+            spec_layout.addWidget(spec_label)
+            spec_group.setLayout(spec_layout)
+            layout.addWidget(spec_group)
+
+        self.combo_box = QComboBox()
+        self.combo_box.addItems(available_materials)
+
+        known_out_of_stock = known_out_of_stock or []
+        materials_to_disable = [out_of_stock_material] + known_out_of_stock
+
+        # Find and disable the out-of-stock items
+        for material_to_disable in set(materials_to_disable):
+            try:
+                index = self.combo_box.findText(material_to_disable)
+                if index != -1:
+                    # To disable an item, we need to access its model item
+                    item = self.combo_box.model().item(index)
+                    if item:
+                        item.setEnabled(False)
+            except (ValueError, AttributeError):
+                # This handles cases where the item isn't found or the model is unusual
+                pass
+
+        layout.addWidget(self.combo_box)
+
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            Qt.Horizontal, self
+        )
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+
+    def selected_material(self):
+        return self.combo_box.currentText()
+
+
+
 
 class CuttingOptimizerUI(QMainWindow):
 
@@ -699,10 +789,38 @@ class CuttingOptimizerUI(QMainWindow):
         self.worker.progress_updated.connect(self.update_progress_bar)
         self.worker.calculation_succeeded.connect(self.on_calculation_finished)
         self.worker.error_signal.connect(self.on_calculation_error)
+        self.worker.out_of_stock_signal.connect(self.handle_out_of_stock)
         # เชื่อมต่อสัญญาณ destroyed เพื่อให้แน่ใจว่าเธรดเก่าถูกลบอย่างสมบูรณ์
         # ก่อนที่จะเริ่มการคำนวณครั้งถัดไปโดยอัตโนมัติ
         self.worker.destroyed.connect(self.run_next_calculation)
         self.worker.start()
+
+    def handle_out_of_stock(self, details: dict):
+        """Shows a custom dialog to the user to select a new material."""
+        width = details.get("width")
+        material = details.get("material")
+        material_specs = details.get("material_specs", {})
+        known_out_of_stock = details.get("known_out_of_stock", [])
+
+        available_materials = []
+        if width and str(width) in self.ROLL_SPECS:
+            available_materials = sorted(list(self.ROLL_SPECS[str(width)].keys()))
+
+        if not available_materials:
+            QMessageBox.warning(self, "ไม่มีสต็อก", f"ไม่มีวัสดุอื่นสำหรับความกว้าง {width} นิ้ว ในสต็อก")
+            self.worker.set_user_choice(None)
+            return
+
+        message = f"วัสดุ '{material}' สำหรับความกว้าง {width} นิ้วไม่พอ\nกรุณาเลือกวัสดุทดแทน:"
+        dialog = MaterialSubstitutionDialog(self, message, available_materials, material, material_specs, known_out_of_stock)
+
+        if dialog.exec_() == QDialog.Accepted:
+            item = dialog.selected_material()
+            self.log_message(f"ผู้ใช้เลือกวัสดุทดแทน: {item}")
+            self.worker.set_user_choice(item)
+        else:
+            self.log_message("ผู้ใช้ยกเลิกการเลือกวัสดุทดแทน")
+            self.worker.set_user_choice(None)
 
     def update_progress_bar(self, value: int, message: str):
         """Updates the progress bar."""
