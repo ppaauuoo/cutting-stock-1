@@ -594,15 +594,15 @@ async def main_algorithm(
             material_specs = result.get("material_specs", {}).copy() # Use a copy to allow modification
             variables = result.get("variables", {})
             roll_info = {}
-            calculation_failed = False
+            calculation_failed_reason = None
 
             if roll_specs:
                 roll_w_str = str(variables.get("roll_w", "")).strip()
                 demand_per_cut = variables.get("demand_per_cut", 0)
 
                 def get_roll_for_material(spec_key: str, value_calculator: Callable[[], float]):
-                    nonlocal calculation_failed
-                    if calculation_failed or not material_specs.get(spec_key):
+                    nonlocal calculation_failed_reason
+                    if calculation_failed_reason or not material_specs.get(spec_key):
                         return
 
                     original_material = str(material_specs.get(spec_key)).strip()
@@ -651,16 +651,16 @@ async def main_algorithm(
                                     # Store that user chose to cancel for this material
                                     material_substitutions[e.material] = None
                                     roll_info[f'{spec_key}_roll_info'] = f"-> (ผู้ใช้ยกเลิก)"
-                                    calculation_failed = True
+                                    calculation_failed_reason = "ผู้ใช้ยกเลิก"
                                     return
                             else:
                                 # This handles cases where the handler isn't provided,
                                 # or when a substitute material also runs out of stock.
-                                fail_reason = f"-> ({e.args[0]})"
+                                fail_reason_msg = e.args[0]
                                 if e.material in material_substitutions:
-                                    fail_reason = f"-> (วัสดุทดแทน '{material}' สต็อกไม่พอ)"
-                                roll_info[f'{spec_key}_roll_info'] = fail_reason
-                                calculation_failed = True
+                                    fail_reason_msg = f"วัสดุทดแทน '{material}' สต็อกไม่พอ"
+                                roll_info[f'{spec_key}_roll_info'] = f"-> ({fail_reason_msg})"
+                                calculation_failed_reason = fail_reason_msg
                                 return
 
                 c_type_spec = material_specs.get('c_type')
@@ -689,11 +689,10 @@ async def main_algorithm(
 
                 get_roll_for_material('back', lambda: demand_per_cut / type_demand_divisor)
 
-            # i didn't cancle anything, why did it say I cancel it? ai!
-            if calculation_failed:
+            if calculation_failed_reason:
                 if progress_callback:
-                    progress_callback(f"    ❌ การคำนวณสำหรับ {order_number} ล้มเหลวเนื่องจากสต็อกไม่พอและผู้ใช้ยกเลิก")
-                failure_reason = "สต็อกไม่พอและผู้ใช้ยกเลิก"
+                    progress_callback(f"    ❌ การคำนวณสำหรับ {order_number} ล้มเหลวเนื่องจาก: {calculation_failed_reason}")
+                failure_reason = calculation_failed_reason
                 break
 
             cut_info = {
