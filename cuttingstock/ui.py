@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox,
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QInputDialog,
@@ -192,60 +193,92 @@ class CustomTableWidget(QTableWidget):
         super().keyPressEvent(event) # เรียกเมธอดของคลาสพื้นฐานสำหรับปุ่มอื่นๆ
 
 class MaterialSubstitutionDialog(QDialog):
-    def __init__(self, parent, message, available_materials, out_of_stock_material, material_specs, known_out_of_stock=None):
+    def __init__(self, parent, width: str, available_materials: list, out_of_stock_material: str, material_specs: dict, known_out_of_stock: list = None):
         super().__init__(parent)
-        self.setWindowTitle("สต็อกไม่พอ")
+        self.setWindowTitle("แก้ไข/เปลี่ยนวัสดุ")
+        self.original_specs = material_specs.copy()
+        self.out_of_stock_material = out_of_stock_material
+        self.combos = {}
 
         layout = QVBoxLayout(self)
+
+        message = f"วัสดุ '{out_of_stock_material}' สำหรับความกว้าง {width} นิ้วไม่พอ"
+        if known_out_of_stock:
+            other_oos = [m for m in known_out_of_stock if m != out_of_stock_material]
+            if other_oos:
+                message += f"\nวัสดุต่อไปนี้ก็อาจไม่พอ: {', '.join(other_oos)}"
+        message += "\n\nคุณสามารถเลือกวัสดุทดแทนสำหรับแต่ละรายการได้:"
 
         self.message_label = QLabel(message)
         layout.addWidget(self.message_label)
 
-        # Display material specs
-        if material_specs:
-            spec_group = QGroupBox("รายละเอียดสเปค:")
-            spec_layout = QVBoxLayout()
-            spec_text = ""
-            for key, value in material_specs.items():
-                if value and key != 'demand':
-                    spec_text += f"<b>{key.replace('_', ' ').title()}:</b> {value}<br>"
-            spec_label = QLabel(spec_text)
-            spec_label.setTextFormat(Qt.RichText)
-            spec_layout.addWidget(spec_label)
-            spec_group.setLayout(spec_layout)
-            layout.addWidget(spec_group)
+        spec_group = QGroupBox("เลือกวัสดุ:")
+        spec_layout = QFormLayout()
 
-        self.combo_box = QComboBox()
-        self.combo_box.addItems(available_materials)
+        # Define a consistent order for materials
+        material_types_ordered = ['front', 'c', 'middle', 'b', 'back']
+        for key in material_types_ordered:
+            value = self.original_specs.get(key)
+            if value: # Only show rows for materials that are part of the spec
+                combo = QComboBox()
+                combo.addItems(available_materials)
+
+                try:
+                    index = combo.findText(value)
+                    if index != -1:
+                        combo.setCurrentIndex(index)
+                except (ValueError, AttributeError):
+                    pass # Keep default if not found
+
+                self.combos[key] = combo
+                spec_layout.addRow(f"{key.replace('_', ' ').title()}:", combo)
+
+        spec_group.setLayout(spec_layout)
+        layout.addWidget(spec_group)
 
         known_out_of_stock = known_out_of_stock or []
         materials_to_disable = [out_of_stock_material] + known_out_of_stock
 
-        # Find and disable the out-of-stock items
         for material_to_disable in set(materials_to_disable):
-            try:
-                index = self.combo_box.findText(material_to_disable)
-                if index != -1:
-                    # To disable an item, we need to access its model item
-                    item = self.combo_box.model().item(index)
-                    if item:
-                        item.setEnabled(False)
-            except (ValueError, AttributeError):
-                # This handles cases where the item isn't found or the model is unusual
-                pass
+            for combo in self.combos.values():
+                try:
+                    index = combo.findText(material_to_disable)
+                    if index != -1:
+                        item = combo.model().item(index)
+                        if item:
+                            item.setEnabled(False)
+                except (ValueError, AttributeError):
+                    pass
 
-        layout.addWidget(self.combo_box)
-
-        self.buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
-            Qt.Horizontal, self
-        )
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
 
-    def selected_material(self):
-        return self.combo_box.currentText()
+    def get_selected_specs(self) -> dict:
+        """Returns the full new material spec dictionary."""
+        new_specs = self.original_specs.copy()
+        for key, combo in self.combos.items():
+            new_specs[key] = combo.currentText()
+        return new_specs
+
+    def accept(self):
+        """Overrides accept to check if the out-of-stock material was changed."""
+        new_specs = self.get_selected_specs()
+
+        # Find which spec key corresponds to the out-of-stock material
+        oos_spec_key = None
+        for key, value in self.original_specs.items():
+            if value == self.out_of_stock_material:
+                oos_spec_key = key
+                break
+
+        if oos_spec_key and new_specs.get(oos_spec_key) == self.out_of_stock_material:
+            QMessageBox.warning(self, "ยังคงเลือกวัสดุที่หมด",
+                                f"วัสดุ '{self.out_of_stock_material}' ไม่พอใช้\nกรุณาเลือกวัสดุทดแทนสำหรับรายการนี้ หรือกดยกเลิก")
+            return # Do not close the dialog
+
+        super().accept()
 
 
 
@@ -750,13 +783,14 @@ class CuttingOptimizerUI(QMainWindow):
             self.worker.set_user_choice(None)
             return
 
-        message = f"วัสดุ '{material}' สำหรับความกว้าง {width} นิ้วไม่พอ\nกรุณาเลือกวัสดุทดแทน:"
-        dialog = MaterialSubstitutionDialog(self, message, available_materials, material, material_specs, known_out_of_stock)
+        dialog = MaterialSubstitutionDialog(self, str(width), available_materials, material, material_specs, known_out_of_stock)
 
         if dialog.exec_() == QDialog.Accepted:
-            item = dialog.selected_material()
-            self.log_message(f"ผู้ใช้เลือกวัสดุทดแทน: {item}")
-            self.worker.set_user_choice(item)
+            new_specs = dialog.get_selected_specs()
+            changes = {k: v for k, v in new_specs.items() if material_specs.get(k) != v}
+            changes_str = ", ".join([f"{k.title()}: {v}" for k, v in changes.items()])
+            self.log_message(f"ผู้ใช้เลือกวัสดุทดแทน: {changes_str}")
+            self.worker.set_user_choice(new_specs)
         else:
             self.log_message("ผู้ใช้ยกเลิกการเลือกวัสดุทดแทน")
             self.worker.set_user_choice(None)

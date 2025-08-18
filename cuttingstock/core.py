@@ -468,7 +468,7 @@ async def main_algorithm(
     file_path: str = "order2024.csv",
     max_records: Optional[int] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
-    out_of_stock_handler: Optional[Callable[[OutOfStockError], Optional[str]]] = None,
+    out_of_stock_handler: Optional[Callable[[OutOfStockError], Optional[dict]]] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     front: Optional[str] = None,
@@ -665,6 +665,7 @@ async def main_algorithm(
             order_number = orders_df.row(int(order_idx))[order_num_col_idx] if order_idx is not None else None
 
             material_specs = result.get("material_specs", {}).copy() # Use a copy to allow modification
+            original_material_specs = material_specs.copy()
             variables = result.get("variables", {})
             roll_info = {}
             calculation_failed_reason = None
@@ -678,47 +679,52 @@ async def main_algorithm(
                     if calculation_failed_reason or not material_specs.get(spec_key):
                         return
 
-                    original_material = str(material_specs.get(spec_key)).strip()
+                    original_material_for_roll = str(material_specs.get(spec_key)).strip()
 
                     # Check if there is an existing substitution for this material
-                    if original_material in material_substitutions:
-                        material = material_substitutions[original_material]
+                    if original_material_for_roll in material_substitutions:
+                        material = material_substitutions[original_material_for_roll]
                         if progress_callback:
-                            progress_callback(f"    🔄 Using substitution '{material}' for '{original_material}'.")
+                            progress_callback(f"    🔄 Using substitution '{material}' for '{original_material_for_roll}'.")
                     else:
-                        material = original_material
+                        material = original_material_for_roll
 
                     while True:
                         try:
                             value = value_calculator()
                             info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, material_specs, material_substitutions=material_substitutions)
                             roll_info[f'{spec_key}_roll_info'] = info
-                            if original_material != material:
+                            if original_material_for_roll != material:
                                 material_specs[spec_key] = material # Persist changed material
                             return
                         except OutOfStockError as e:
-                            # Only ask the user if we haven't already asked for this material
-                            if out_of_stock_handler and e.material not in material_substitutions:
+                            if out_of_stock_handler:
                                 if progress_callback:
                                     progress_callback(f"    ⚠️ สต็อกสำหรับ '{e.material}' (หน้ากว้าง {e.width}) ไม่พอ, รอการตัดสินใจจากผู้ใช้...")
-                                while True:
-                                    new_material = out_of_stock_handler(e)
 
-                                    # Check if user selected a material that has previously run out of stock.
-                                    if new_material and new_material in (e.known_out_of_stock or []):
-                                        if progress_callback:
-                                            progress_callback(f"    ❌ User chose '{new_material}', which is known to be out of stock. Please choose another one.")
-                                        continue
-                                    break
+                                new_material_specs = out_of_stock_handler(e)
 
-                                if new_material:
+                                if new_material_specs:
+                                    changes = {k: v for k, v in new_material_specs.items() if original_material_specs.get(k) != v}
+                                    changes_str = ", ".join([f"{k.title()}: {v}" for k, v in changes.items()])
                                     if progress_callback:
-                                        progress_callback(f"    ✅ User chose '{new_material}' to replace '{e.material}'. Applying to all future calculations.")
-                                    # Store the decision
-                                    material_substitutions[e.material] = new_material
-                                    material = new_material # Try again with the new material
-                                    continue
+                                        progress_callback(f"    ✅ User chose new materials: {changes_str}. Applying to all future calculations.")
+
+                                    # Update global substitutions based on changes
+                                    for key, new_val in new_material_specs.items():
+                                        old_val = original_material_specs.get(key)
+                                        if old_val and new_val != old_val:
+                                            material_substitutions[old_val] = new_val
+
+                                    # Update current order's specs
+                                    for key, new_val in new_material_specs.items():
+                                        material_specs[key] = new_val
+
+                                    # For the retry, update the material for the current spec_key
+                                    material = new_material_specs.get(spec_key, material)
+                                    continue # Retry with new material for the current spec_key
                                 else:
+                                    # User cancelled from UI
                                     if progress_callback:
                                         progress_callback(f"    ❌ ผู้ใช้ยกเลิก, ไม่สามารถหาวัสดุสำหรับ '{e.material}' ได้")
                                     # Store that user chose to cancel for this material

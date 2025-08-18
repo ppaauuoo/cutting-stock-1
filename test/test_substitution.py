@@ -38,7 +38,10 @@ async def test_main_algorithm_out_of_stock_with_substitution():
     def mock_out_of_stock_handler(e: OutOfStockError):
         handler_calls.append(e)
         if e.material == "KA125":
-            return "KA150"  # Substitute with KA150
+            # Return the full new spec
+            new_spec = e.material_specs.copy()
+            new_spec['front'] = 'KA150'
+            return new_spec
         return None
 
     # 2. Patch dependencies to isolate the algorithm
@@ -96,7 +99,7 @@ async def test_main_algorithm_out_of_stock_user_cancel():
     handler_calls = []
     def mock_out_of_stock_handler_cancel(e: OutOfStockError):
         handler_calls.append(e)
-        return None  # User cancels the substitution
+        return None  # User cancels the substitution by returning None
 
     # 2. Patch dependencies
     with patch('cuttingstock.core.load_data'), \
