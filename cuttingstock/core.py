@@ -1,4 +1,6 @@
+import copy
 import os
+import re
 from typing import Callable, Optional
 
 import polars as pl
@@ -17,6 +19,15 @@ from pulp import (
 
 from cuttingstock.cleaning import clean_data, load_data
 from cuttingstock.mlmodel import predict_with_xgboost
+
+
+def _spec_to_key(spec: dict) -> tuple:
+    """Converts a spec dictionary to a hashable tuple key."""
+    if not spec:
+        return tuple()
+    # Filter out None values and keys that are not material names
+    valid_keys = {'front', 'c', 'middle', 'b', 'back'}
+    return tuple(sorted((k, v) for k, v in spec.items() if k in valid_keys and v))
 
 
 class OutOfStockError(Exception):
@@ -229,6 +240,78 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
 
 
+def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_factory: str) -> list:
+    """
+    Generates a list of all possible calculation settings based on order frequency and stock.
+    """
+    if orders_df is None or orders_df.is_empty():
+        return []
+
+    # Filter orders based on factory selection
+    if "order_number" in orders_df.columns:
+        # Use a more robust numeric check for order number prefixes.
+        # Cast to string, strip whitespace, then check the numeric value of the prefix.
+        order_num_col = pl.col("order_number").cast(pl.Utf8).str.strip_chars()
+
+        if selected_factory == "1&2":
+            orders_df = orders_df.filter(
+                order_num_col.str.slice(0, 4).str.to_integer(strict=False) == 1218
+            )
+        elif selected_factory in ["3", "4", "5"]:
+            orders_df = orders_df.filter(
+                order_num_col.str.slice(0, 1).str.to_integer(strict=False) == int(selected_factory)
+            )
+
+    material_cols = ['front', 'c', 'middle', 'b', 'back']
+    existing_cols = [col for col in material_cols if col in orders_df.columns]
+
+    if not existing_cols:
+        return []
+
+    spec_df = orders_df.with_columns(
+        [pl.col(c).fill_null("").str.strip_chars() for c in existing_cols]
+    )
+
+    all_specs_df = spec_df.group_by(existing_cols).len().sort("len", descending=True)
+
+    if all_specs_df.is_empty():
+        return []
+
+    suggestions = []
+    for spec_row in all_specs_df.iter_rows(named=True):
+        spec_materials = {m for k, m in spec_row.items() if k != 'len' and m}
+
+        if not spec_materials:
+            continue
+
+        available_widths = []
+        if roll_specs:
+            for width, materials_in_stock in roll_specs.items():
+                if spec_materials.issubset(materials_in_stock.keys()):
+                    available_widths.append(width)
+
+        if available_widths:
+            if selected_factory == "1&2":
+                def sort_key_factory_1_2(width_str):
+                    width_int = int(re.sub(r'\D', '', width_str) or 0)
+                    if 82 <= width_int <= 97:
+                        return (0, width_int)
+                    elif 73 <= width_int <= 79:
+                        return (1, width_int)
+                    else:
+                        return (2, width_int)
+                sorted_widths = sorted(available_widths, key=sort_key_factory_1_2)
+            else:
+                sorted_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
+
+            for width in sorted_widths:
+                full_spec = {k: v for k, v in spec_row.items() if k != 'len'}
+                suggestion = {'width': width, 'spec': full_spec}
+                suggestions.append(suggestion)
+
+    return suggestions
+
+
 app = FastAPI()
 
 CORRUGATE_MULTIPLIERS = {
@@ -395,7 +478,7 @@ async def main_algorithm(
     file_path: str = "order2024.csv",
     max_records: Optional[int] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
-    out_of_stock_handler: Optional[Callable[[OutOfStockError], Optional[str]]] = None,
+    out_of_stock_handler: Optional[Callable[[OutOfStockError], Optional[dict]]] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     front: Optional[str] = None,
@@ -407,6 +490,7 @@ async def main_algorithm(
     back: Optional[str] = None,
     roll_specs: Optional[dict] = None,
     processed_orders: Optional[set] = None,
+    material_substitutions: Optional[dict] = None,
     chunk_size: Optional[int] = 100,
 ):
     output_dir = "cache"
@@ -458,9 +542,11 @@ async def main_algorithm(
 
     order_num_col_idx = orders_df.columns.index("order_number")
 
+    if material_substitutions is None:
+        material_substitutions = {}
+
     for roll in rolls:
         last_used_roll_ids = {}
-        material_substitutions = {} # To store user's choices for material swaps
         used_roll_ids_for_cut = set()
         if progress_callback:
             progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
@@ -591,110 +677,123 @@ async def main_algorithm(
 
             order_number = orders_df.row(int(order_idx))[order_num_col_idx] if order_idx is not None else None
 
-            material_specs = result.get("material_specs", {}).copy() # Use a copy to allow modification
-            variables = result.get("variables", {})
-            roll_info = {}
+            material_specs_for_order = result.get("material_specs", {}).copy()
+            order_processed_successfully = False
+            final_roll_info = {}
             calculation_failed_reason = None
+            material_specs = {} # Will be set to the final successful spec
 
-            if roll_specs:
-                roll_w_str = str(variables.get("roll_w", "")).strip()
-                demand_per_cut = variables.get("demand_per_cut", 0)
+            while not order_processed_successfully:
+                spec_key_for_lookup = _spec_to_key(material_specs_for_order)
+                if material_substitutions and spec_key_for_lookup in material_substitutions:
+                    substituted_spec = material_substitutions[spec_key_for_lookup]
+                    if substituted_spec is None:
+                        if progress_callback:
+                            progress_callback(f"    ❌ User previously cancelled substitution for this spec. Failing order.")
+                        calculation_failed_reason = "ผู้ใช้ยกเลิกสำหรับสเปคนี้"
+                        break
+
+                    if progress_callback:
+                        changes_str = ", ".join([f"{k.title()}: {v}" for k, v in substituted_spec.items() if material_specs_for_order.get(k) != v])
+                        progress_callback(f"    🔄 Applying stored substitution for spec: {changes_str}")
+                    material_specs_for_order = substituted_spec.copy()
+
+                current_attempt_specs = material_specs_for_order.copy()
+                variables = result.get("variables", {})
+                roll_info_this_attempt = {}
+                spec_changed_this_attempt = False
+                calculation_failed_reason = None
+
+                roll_specs_backup = copy.deepcopy(roll_specs)
+                last_used_roll_ids_backup = copy.deepcopy(last_used_roll_ids)
 
                 def get_roll_for_material(spec_key: str, value_calculator: Callable[[], float]):
-                    nonlocal calculation_failed_reason
-                    if calculation_failed_reason or not material_specs.get(spec_key):
+                    nonlocal calculation_failed_reason, spec_changed_this_attempt, material_specs_for_order
+                    if calculation_failed_reason or not current_attempt_specs.get(spec_key):
                         return
 
-                    original_material = str(material_specs.get(spec_key)).strip()
-
-                    # Check if there is an existing substitution for this material
-                    if original_material in material_substitutions:
-                        material = material_substitutions[original_material]
-                        if progress_callback:
-                            progress_callback(f"    🔄 Using substitution '{material}' for '{original_material}'.")
-                    else:
-                        material = original_material
-
-                    while True:
-                        try:
-                            value = value_calculator()
-                            info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, material_specs, material_substitutions=material_substitutions)
-                            roll_info[f'{spec_key}_roll_info'] = info
-                            if original_material != material:
-                                material_specs[spec_key] = material # Persist changed material
-                            return
-                        except OutOfStockError as e:
-                            # Only ask the user if we haven't already asked for this material
-                            if out_of_stock_handler and e.material not in material_substitutions:
+                    material = str(current_attempt_specs.get(spec_key)).strip()
+                    try:
+                        value = value_calculator()
+                        info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, current_attempt_specs, material_substitutions=material_substitutions)
+                        roll_info_this_attempt[f'{spec_key}_roll_info'] = info
+                    except OutOfStockError as e:
+                        if out_of_stock_handler:
+                            if progress_callback:
+                                progress_callback(f"    ⚠️ สต็อกสำหรับ '{e.material}' (หน้ากว้าง {e.width}) ไม่พอ, รอการตัดสินใจจากผู้ใช้...")
+                            new_material_specs = out_of_stock_handler(e)
+                            if new_material_specs:
                                 if progress_callback:
-                                    progress_callback(f"    ⚠️ สต็อกสำหรับ '{e.material}' (หน้ากว้าง {e.width}) ไม่พอ, รอการตัดสินใจจากผู้ใช้...")
-                                while True:
-                                    new_material = out_of_stock_handler(e)
+                                    changes = {k: v for k, v in new_material_specs.items() if current_attempt_specs.get(k) != v}
+                                    changes_str = ", ".join([f"{k.title()}: {v}" for k, v in changes.items()])
+                                    progress_callback(f"    ✅ User chose: {changes_str}. Will retry order.")
 
-                                    # Check if user selected a material that has previously run out of stock.
-                                    if new_material and new_material in (e.known_out_of_stock or []):
-                                        if progress_callback:
-                                            progress_callback(f"    ❌ User chose '{new_material}', which is known to be out of stock. Please choose another one.")
-                                        continue
-                                    break
+                                original_spec_key = _spec_to_key(current_attempt_specs)
+                                material_substitutions[original_spec_key] = new_material_specs
+                                for key, value in list(material_substitutions.items()):
+                                    if value is not None and _spec_to_key(value) == original_spec_key:
+                                        material_substitutions[key] = new_material_specs
 
-                                if new_material:
-                                    if progress_callback:
-                                        progress_callback(f"    ✅ User chose '{new_material}' to replace '{e.material}'. Applying to all future calculations.")
-                                    # Store the decision
-                                    material_substitutions[e.material] = new_material
-                                    material = new_material # Try again with the new material
-                                    continue
-                                else:
-                                    if progress_callback:
-                                        progress_callback(f"    ❌ ผู้ใช้ยกเลิก, ไม่สามารถหาวัสดุสำหรับ '{e.material}' ได้")
-                                    # Store that user chose to cancel for this material
-                                    material_substitutions[e.material] = None
-                                    roll_info[f'{spec_key}_roll_info'] = f"-> (ผู้ใช้ยกเลิก)"
-                                    calculation_failed_reason = "ผู้ใช้ยกเลิก"
-                                    return
+                                material_specs_for_order = new_material_specs
+                                spec_changed_this_attempt = True
+                                calculation_failed_reason = "SPEC_CHANGED"
                             else:
-                                # This handles cases where the handler isn't provided,
-                                # or when a substitute material also runs out of stock.
-                                fail_reason_msg = e.args[0]
-                                if e.material in material_substitutions:
-                                    fail_reason_msg = f"วัสดุทดแทน '{material}' สต็อกไม่พอ"
-                                roll_info[f'{spec_key}_roll_info'] = f"-> ({fail_reason_msg})"
-                                calculation_failed_reason = fail_reason_msg
-                                return
+                                if progress_callback:
+                                    progress_callback(f"    ❌ ผู้ใช้ยกเลิก, ไม่สามารถหาวัสดุสำหรับ '{e.material}' ได้")
+                                original_spec_key = _spec_to_key(current_attempt_specs)
+                                material_substitutions[original_spec_key] = None
+                                for key, value in list(material_substitutions.items()):
+                                    if value is not None and _spec_to_key(value) == original_spec_key:
+                                        material_substitutions[key] = None
+                                roll_info_this_attempt[f'{spec_key}_roll_info'] = f"-> (ผู้ใช้ยกเลิก)"
+                                calculation_failed_reason = "ผู้ใช้ยกเลิก"
+                        else:
+                            fail_reason_msg = e.args[0]
+                            roll_info_this_attempt[f'{spec_key}_roll_info'] = f"-> ({fail_reason_msg})"
+                            calculation_failed_reason = fail_reason_msg
 
-                c_type_spec = material_specs.get('c_type')
-                b_type_spec = material_specs.get('b_type')
-                type_demand_divisor = 1.0
-                if c_type_spec == 'C': type_demand_divisor = CORRUGATE_MULTIPLIERS['C']
-                elif b_type_spec == 'B': type_demand_divisor = CORRUGATE_MULTIPLIERS['B']
-                elif c_type_spec == 'E' or b_type_spec == 'E': type_demand_divisor = CORRUGATE_MULTIPLIERS['E']
+                if roll_specs:
+                    roll_w_str = str(variables.get("roll_w", "")).strip()
+                    demand_per_cut = variables.get("demand_per_cut", 0)
 
-                get_roll_for_material('front', lambda: demand_per_cut / type_demand_divisor)
+                    c_type_spec = current_attempt_specs.get('c_type')
+                    b_type_spec = current_attempt_specs.get('b_type')
+                    type_demand_divisor = 1.0
+                    if c_type_spec == 'C': type_demand_divisor = CORRUGATE_MULTIPLIERS['C']
+                    elif b_type_spec == 'B': type_demand_divisor = CORRUGATE_MULTIPLIERS['B']
+                    elif c_type_spec == 'E' or b_type_spec == 'E': type_demand_divisor = CORRUGATE_MULTIPLIERS['E']
 
-                if c_type_spec == 'C':
-                    get_roll_for_material('c', lambda: demand_per_cut)
-                elif c_type_spec == 'E':
-                    value_func = (lambda: demand_per_cut / CORRUGATE_MULTIPLIERS['B'] * CORRUGATE_MULTIPLIERS['E']) if b_type_spec == 'B' else (lambda: demand_per_cut)
-                    get_roll_for_material('c', value_func)
+                    get_roll_for_material('front', lambda: demand_per_cut / type_demand_divisor)
+                    if c_type_spec == 'C': get_roll_for_material('c', lambda: demand_per_cut)
+                    elif c_type_spec == 'E': get_roll_for_material('c', (lambda: demand_per_cut / CORRUGATE_MULTIPLIERS['B'] * CORRUGATE_MULTIPLIERS['E']) if b_type_spec == 'B' else (lambda: demand_per_cut))
+                    get_roll_for_material('middle', lambda: demand_per_cut / type_demand_divisor)
+                    if b_type_spec == 'B': get_roll_for_material('b', (lambda: (demand_per_cut / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['B']) if c_type_spec == 'C' else (lambda: demand_per_cut))
+                    elif b_type_spec == 'E': get_roll_for_material('b', (lambda: (demand_per_cut / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['E']) if c_type_spec == 'C' else (lambda: demand_per_cut))
+                    get_roll_for_material('back', lambda: demand_per_cut / type_demand_divisor)
 
-                get_roll_for_material('middle', lambda: demand_per_cut / type_demand_divisor)
+                if spec_changed_this_attempt:
+                    roll_specs.clear(); roll_specs.update(roll_specs_backup)
+                    last_used_roll_ids.clear(); last_used_roll_ids.update(last_used_roll_ids_backup)
+                    if progress_callback:
+                        progress_callback("    🔄 Spec changed, restarting roll allocation for this order...")
+                    continue
 
-                if b_type_spec == 'B':
-                    value_func = (lambda: (demand_per_cut / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['B']) if c_type_spec == 'C' else (lambda: demand_per_cut)
-                    get_roll_for_material('b', value_func)
-                elif b_type_spec == 'E':
-                    value_func = (lambda: (demand_per_cut / CORRUGATE_MULTIPLIERS['C']) * CORRUGATE_MULTIPLIERS['E']) if c_type_spec == 'C' else (lambda: demand_per_cut)
-                    get_roll_for_material('b', value_func)
+                if calculation_failed_reason:
+                    roll_specs.clear(); roll_specs.update(roll_specs_backup)
+                    last_used_roll_ids.clear(); last_used_roll_ids.update(last_used_roll_ids_backup)
+                    break
 
-                get_roll_for_material('back', lambda: demand_per_cut / type_demand_divisor)
+                final_roll_info = roll_info_this_attempt
+                material_specs = current_attempt_specs # Lock in the successful spec
+                order_processed_successfully = True
 
-            if calculation_failed_reason:
+            if not order_processed_successfully:
                 if progress_callback:
                     progress_callback(f"    ❌ การคำนวณสำหรับ {order_number} ล้มเหลวเนื่องจาก: {calculation_failed_reason}")
                 failure_reason = calculation_failed_reason
                 break
 
+            roll_info = final_roll_info
             cut_info = {
                 "roll_w": variables.get("roll_w"),
                 "rem_roll_l": variables.get("rem_roll_l"),
@@ -710,7 +809,7 @@ async def main_algorithm(
                 "component_type": variables.get("component_type"),
                 "due_date": variables.get("due_date"),
             }
-            cut_info.update(material_specs)  # Add all material specs
+            cut_info.update(material_specs)
             cut_info.update(roll_info)
             all_results.append(cut_info)
             roll_cuts.append(cut_info)

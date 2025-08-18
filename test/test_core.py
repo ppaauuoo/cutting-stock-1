@@ -12,6 +12,7 @@ from cuttingstock.cleaning import clean_data, load_data
 from cuttingstock.core import (
     OutOfStockError,
     _find_and_update_roll,
+    generate_suggestions,
     solve_linear_program,
 )
 from cuttingstock.mlmodel import predict_with_xgboost
@@ -705,3 +706,134 @@ async def test_solve_linear_program_infeasible():
     result = await solve_linear_program(roll_width, roll_length, orders_df)
 
     assert "Infeasible" in result['status']
+
+
+def test_generate_suggestions_no_orders():
+    """Test that no suggestions are generated when there is no order data."""
+    orders_df = pl.DataFrame()
+    roll_specs = {
+        "80": {"M1": {1: {"id": "R1", "length": 1000}}}
+    }
+    factory = "รวม"
+
+    suggestions = generate_suggestions(orders_df, roll_specs, factory)
+    assert suggestions == []
+
+    # Test with None dataframe
+    suggestions = generate_suggestions(None, roll_specs, factory)
+    assert suggestions == []
+
+
+def test_generate_suggestions_no_stock():
+    """Test that no suggestions are generated when there is no stock data."""
+    orders_df = pl.DataFrame({
+        "order_number": ["1"], "front": ["M1"], "c": [None],
+        "middle": [None], "b": [None], "back": [None],
+    })
+    roll_specs = {}
+    factory = "รวม"
+
+    suggestions = generate_suggestions(orders_df, roll_specs, factory)
+    assert suggestions == []
+
+
+def test_generate_suggestions_simple_case():
+    """Test a basic case with one matching suggestion."""
+    orders_df = pl.DataFrame({
+        "order_number": ["1"],
+        "front": ["M1"], "c": ["C1"], "middle": [None], "b": [None], "back": ["M2"],
+    })
+    roll_specs = {
+        "80": {
+            "M1": {1: {"id": "R1", "length": 1000}},
+            "C1": {1: {"id": "R2", "length": 1000}},
+            "M2": {1: {"id": "R3", "length": 1000}},
+        },
+        "90": {  # Incomplete stock for this width
+            "M1": {1: {"id": "R4", "length": 1000}},
+            "C1": {1: {"id": "R5", "length": 1000}},
+        }
+    }
+    factory = "รวม"
+
+    suggestions = generate_suggestions(orders_df, roll_specs, factory)
+
+    assert len(suggestions) == 1
+    assert suggestions[0]['width'] == "80"
+    assert suggestions[0]['spec'] == {'front': 'M1', 'c': 'C1', 'middle': '', 'b': '', 'back': 'M2'}
+
+
+def test_generate_suggestions_factory_filter():
+    """Test that suggestions are correctly filtered by factory selection."""
+    orders_df = pl.DataFrame({
+        "order_number": ["1218001", "30002"],  # Factories 1&2, 3
+        "front": ["M1", "M3"],
+        "c": ["C1", "C3"],
+        "middle": [None, None], "b": [None, None], "back": [None, None],
+    })
+    roll_specs = {
+        "80": {"M1": {1: {}}, "C1": {1: {}}},
+        "90": {"M3": {1: {}}, "C3": {1: {}}},
+    }
+
+    # Test for factory "1&2"
+    suggestions = generate_suggestions(orders_df, roll_specs, "1&2")
+    assert len(suggestions) == 1
+    assert suggestions[0]['width'] == '80'
+
+    # Test for factory "3"
+    suggestions = generate_suggestions(orders_df, roll_specs, "3")
+    assert len(suggestions) == 1
+    assert suggestions[0]['width'] == '90'
+
+    # Test for factory "4" (no orders for this factory)
+    suggestions = generate_suggestions(orders_df, roll_specs, "4")
+    assert len(suggestions) == 0
+
+
+def test_generate_suggestions_sorting_default():
+    """Test default sorting of suggestions by width (as integer)."""
+    orders_df = pl.DataFrame({
+        "order_number": ["1"],
+        "front": ["M1"], "c": [None], "middle": [None], "b": [None], "back": [None]
+    })
+    roll_specs = {
+        "100": {"M1": {1: {"id": "R1", "length": 1000}}},
+        "80": {"M1": {1: {"id": "R2", "length": 1000}}},
+        "90": {"M1": {1: {"id": "R3", "length": 1000}}},
+    }
+    factory = "รวม"
+
+    suggestions = generate_suggestions(orders_df, roll_specs, factory)
+
+    assert len(suggestions) == 3
+    assert [s['width'] for s in suggestions] == ['80', '90', '100']
+
+
+def test_generate_suggestions_sorting_factory_1_2():
+    """Test special sorting logic for factory '1&2'."""
+    orders_df = pl.DataFrame({
+        "order_number": ["1218001"],
+        "front": ["M1"], "c": [None], "middle": [None], "b": [None], "back": [None]
+    })
+    factory = "1&2"
+
+    roll_specs = {
+        "75": {"M1": {1: {"id": "R1", "length": 1000}}},  # Group 1
+        "85": {"M1": {1: {"id": "R2", "length": 1000}}},  # Group 0
+        "95": {"M1": {1: {"id": "R3", "length": 1000}}},  # Group 0
+        "100": {"M1": {1: {"id": "R4", "length": 1000}}}, # Group 2
+        "78": {"M1": {1: {"id": "R5", "length": 1000}}},  # Group 1
+        "82": {"M1": {1: {"id": "R6", "length": 1000}}},  # Group 0
+        "79": {"M1": {1: {"id": "R7", "length": 1000}}},  # Group 1
+    }
+
+    suggestions = generate_suggestions(orders_df, roll_specs, factory)
+
+    # Expected sort order:
+    # Group 0 (82-97), sorted by width: 82, 85, 95
+    # Group 1 (73-79), sorted by width: 75, 78, 79
+    # Group 2 (others), sorted by width: 100
+    expected_order = ['82', '85', '95', '75', '78', '79', '100']
+
+    assert [s['width'] for s in suggestions] == expected_order
