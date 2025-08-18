@@ -628,7 +628,6 @@ async def main_algorithm(
                             if out_of_stock_handler and e.material not in material_substitutions:
                                 if progress_callback:
                                     progress_callback(f"    ⚠️ สต็อกสำหรับ '{e.material}' (หน้ากว้าง {e.width}) ไม่พอ, รอการตัดสินใจจากผู้ใช้...")
-                                # alert the user when the selected material is out of stock ai!
                                 while True:
                                     new_material = out_of_stock_handler(e)
 
