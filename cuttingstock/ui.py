@@ -88,6 +88,7 @@ class WorkerThread(QThread):
         self._user_choice = choice
         self._wait_for_input_event.set()
 
+    # let's user change every material eg. front,middle,back,etc., ai!
     def out_of_stock_handler(self, e: OutOfStockError):
         """
         This handler is called from within main_algorithm in the worker thread.
