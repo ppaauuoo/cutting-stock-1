@@ -222,7 +222,7 @@ class MaterialSubstitutionDialog(QDialog):
             if value: # Only show rows for materials that are part of the spec
                 combo = QComboBox()
                 combo.addItems(available_materials)
-
+                # combo box was never found the specs even if it was there ai!
                 try:
                     index = combo.findText(value)
                     if index != -1:
