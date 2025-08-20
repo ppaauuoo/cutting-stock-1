@@ -83,6 +83,17 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     material_rolls_dict = roll_specs.get(str(width), {}).get(material, {})
     if not material_rolls_dict:
         known_out_of_stock = list((material_substitutions or {}).keys())
+        log_message(
+            "error",
+            "Out of stock: No stock data available for material.",
+            {
+                "width": width,
+                "material": material,
+                "required_length": required_length,
+                "material_specs": material_specs,
+                "known_out_of_stock": known_out_of_stock
+            }
+        )
         raise OutOfStockError("ไม่มีข้อมูลสต็อก", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
 
     # Get available rolls, sorted by length.
@@ -266,8 +277,17 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
 
     known_out_of_stock = list((material_substitutions or {}).keys())
-    known_out_of_stock_json = str(known_out_of_stock)
-    log_message('debug', f"Known out of stock items: {known_out_of_stock_json}")
+    log_message(
+        "error",
+        "Out of stock: Not enough stock length available for material.",
+        {
+            "width": width,
+            "material": material,
+            "required_length": required_length,
+            "material_specs": material_specs,
+            "known_out_of_stock": known_out_of_stock
+        }
+    )
     raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
 
 
@@ -445,6 +465,7 @@ async def solve_linear_program(
     try:
         prob.solve(PULP_CBC_CMD(msg=False))
     except Exception as e:
+        log_message("error", "PuLP solver failed", {"error": str(e)})
         return {"status": "Solver Error", "message": f"Solver failed: {str(e)}"}
 
     # 6. Retrieve and format results
@@ -671,6 +692,7 @@ async def main_algorithm(
                             }
                             break
             except Exception as e:
+                log_message("error", "XGBoost prediction failed.", {"error": str(e)})
                 if progress_callback:
                     progress_callback(f"    ⚠️ XGBoost prediction failed: {e}. Falling back to linear solver.")
                 result = None
@@ -748,10 +770,29 @@ async def main_algorithm(
                         if out_of_stock_handler:
                             if progress_callback:
                                 progress_callback(f"    ⚠️ สต็อกสำหรับ '{e.material}' (หน้ากว้าง {e.width}) ไม่พอ, รอการตัดสินใจจากผู้ใช้...")
+                            log_message(
+                                "info",
+                                "Out of stock, awaiting user interaction.",
+                                {
+                                    "width": e.width,
+                                    "material": e.material,
+                                    "required_length": e.required_length,
+                                    "material_specs": e.material_specs,
+                                }
+                            )
                             new_material_specs = out_of_stock_handler(e)
                             if new_material_specs:
+                                changes = {k: v for k, v in new_material_specs.items() if current_attempt_specs.get(k) != v}
+                                log_message(
+                                    "info",
+                                    "User provided material substitution.",
+                                    {
+                                        "original_specs": current_attempt_specs,
+                                        "new_specs": new_material_specs,
+                                        "changes": changes,
+                                    }
+                                )
                                 if progress_callback:
-                                    changes = {k: v for k, v in new_material_specs.items() if current_attempt_specs.get(k) != v}
                                     changes_str = ", ".join([f"{k.title()}: {v}" for k, v in changes.items()])
                                     progress_callback(f"    ✅ User chose: {changes_str}. Will retry order.")
 
@@ -765,6 +806,14 @@ async def main_algorithm(
                                 spec_changed_this_attempt = True
                                 calculation_failed_reason = "SPEC_CHANGED"
                             else:
+                                log_message(
+                                    "warning",
+                                    "User cancelled material substitution.",
+                                    {
+                                        "original_specs": current_attempt_specs,
+                                        "out_of_stock_material": e.material,
+                                    }
+                                )
                                 if progress_callback:
                                     progress_callback(f"    ❌ ผู้ใช้ยกเลิก, ไม่สามารถหาวัสดุสำหรับ '{e.material}' ได้")
                                 original_spec_key = _spec_to_key(current_attempt_specs)
