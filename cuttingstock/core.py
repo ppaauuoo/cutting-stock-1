@@ -1,4 +1,5 @@
 import copy
+import logging
 import os
 import re
 from typing import Callable, Optional
@@ -20,6 +21,17 @@ from pulp import (
 from cuttingstock.cleaning import clean_data, load_data
 from cuttingstock.mlmodel import predict_with_xgboost
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/cuttingstock.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 
 def _spec_to_key(spec: dict) -> tuple:
     """Converts a spec dictionary to a hashable tuple key."""
@@ -39,6 +51,23 @@ class OutOfStockError(Exception):
         self.required_length = required_length
         self.material_specs = material_specs or {}
         self.known_out_of_stock = known_out_of_stock or []
+
+def log_message(level: str, message: str, details: dict = None):
+    """
+    Log a message with the specified level.
+
+    Args:
+        level (str): The log level ('debug', 'info', 'warning', 'error', 'critical')
+        message (str): The main message to log
+        details (dict, optional): Additional details to include in the log
+    """
+    log_func = getattr(logger, level.lower(), logger.info)
+
+    if details:
+        detail_str = ", ".join([f"{k}: {v}" for k, v in details.items()])
+        log_func(f"{message} | Details: {detail_str}")
+    else:
+        log_func(message)
 
 # Constants
 INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
@@ -237,6 +266,8 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
 
     known_out_of_stock = list((material_substitutions or {}).keys())
+    known_out_of_stock_json = str(known_out_of_stock)
+    log_message('debug', f"Known out of stock items: {known_out_of_stock_json}")
     raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
 
 
@@ -496,8 +527,7 @@ async def main_algorithm(
     output_dir = "cache"
     os.makedirs(output_dir, exist_ok=True)
 
-    if progress_callback:
-        progress_callback("⚙️ กำลังเริ่มการคำนวณ")
+    log_message("info", "Starting calculation process")
 
     base_filename = os.path.splitext(os.path.basename(file_path))[0]
     cache_db_path = os.path.join(output_dir, f"{base_filename}.db")
@@ -506,12 +536,10 @@ async def main_algorithm(
         conn_str = f"sqlite:///{os.path.abspath(cache_db_path)}"
         query = f'SELECT * FROM "{table_name}"'
         raw_orders_df = pl.read_database_uri(query, conn_str)
-        if progress_callback:
-            progress_callback(f"💾 โหลดข้อมูลออเดอร์จากแคช {cache_db_path}")
+        log_message("info", "Loaded order data from cache", {"cache_path": cache_db_path})
     else:
         raw_orders_df = load_data(file_path)
-        if progress_callback:
-            progress_callback(f"💾 ไม่พบแคช โหลดข้อมูลออเดอร์จากไฟล์ CSV: {file_path}")
+        log_message("info", "No cache found, loading order data from CSV file", {"file_path": file_path})
 
     orders_df = clean_data(
         raw_orders_df,
@@ -529,8 +557,7 @@ async def main_algorithm(
             ~pl.col("order_number").is_in(list(processed_orders))
         )
 
-    if progress_callback:
-        progress_callback("📁 โหลดและจัดเรียงข้อมูลเรียบร้อย")
+    log_message("info", "Loaded and sorted data successfully")
 
     if max_records:
         orders_df = orders_df.head(max_records)
