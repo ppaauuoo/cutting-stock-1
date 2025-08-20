@@ -41,6 +41,30 @@ def _spec_to_key(spec: dict) -> tuple:
     valid_keys = {'front', 'c', 'middle', 'b', 'back'}
     return tuple(sorted((k, v) for k, v in spec.items() if k in valid_keys and v))
 
+def verify_stock_availability(width: int, material: str, required_length: float, stock_data: pl.DataFrame) -> bool:
+    """
+    Verifies if the required length of material is truly available in stock.
+    
+    Args:
+        width: The width of the roll
+        material: The material name
+        required_length: The required length
+        stock_data: The stock data DataFrame
+        
+    Returns:
+        bool: True if stock is sufficient, False otherwise
+    """
+    # Filter stock data for matching width and material
+    matching_stock = stock_data.filter(
+        (pl.col("width") == width) & 
+        (pl.col("material") == material)
+    )
+    
+    # Calculate total available length
+    total_available = matching_stock.select(pl.col("length").sum()).item() if not matching_stock.is_empty() else 0
+    
+    return total_available >= required_length
+
 
 class OutOfStockError(Exception):
     """Custom exception for out-of-stock events."""
@@ -71,6 +95,9 @@ def log_message(level: str, message: str, details: dict = None):
 
 # Constants
 INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
+
+# Global variable to store stock data
+_stock_data = None
 
 def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None, material_specs: Optional[dict] = None, material_substitutions: Optional[dict] = None, known_out_of_stock: Optional[list] = None) -> str:
     """
@@ -402,6 +429,10 @@ async def solve_linear_program(
     quantities = orders_df['quantity'].to_list()
     types = orders_df['type'].to_list()
     component_types = orders_df['component_type'].to_list()
+    
+    # Define existing_cols based on available columns in orders_df
+    material_cols = ['front', 'c', 'middle', 'b', 'back']
+    existing_cols = [col for col in material_cols if col in orders_df.columns]
 
     num_orders = len(widths)
     # y[j] = 1 if order j is selected, 0 otherwise
@@ -434,6 +465,7 @@ async def solve_linear_program(
         # If order type is 'X', limit z to 5 cuts
         if 'X' in (types[j], component_types[j]):
             prob += z <= 5 + M * (1 - y[j]), f"MaxZ_TypeX_{j}"
+                        
 
     total_cut_width = lpSum(widths[j] * z_width[j] for j in range(num_orders))
 
@@ -850,13 +882,47 @@ async def main_algorithm(
                 if spec_changed_this_attempt:
                     roll_specs.clear(); roll_specs.update(roll_specs_backup)
                     last_used_roll_ids.clear(); last_used_roll_ids.update(last_used_roll_ids_backup)
+                    
+                # Verify if we have enough stock to process this order
+                if not _stock_data is None:
+                    # Check each material requirement
+                    insufficient_materials = []
+                    for spec_key in ['front', 'c', 'middle', 'b', 'back']:
+                        material = current_attempt_specs.get(spec_key)
+                        if material:
+                            sufficient_stock = verify_stock_availability(roll_width, material, demand_per_cut, _stock_data)
+                            if not sufficient_stock:
+                                insufficient_materials.append(material)
+                                
+                    # If any material is insufficient, handle out of stock error
+                    if insufficient_materials:
+                        if progress_callback:
+                            progress_callback(f"    ❌ ตรวจพบว่าสต็อกสำหรับ {', '.join(insufficient_materials)} ไม่พอจริงๆ หลังตรวจสอบระบบสต็อก")
+                        log_message("error", "Confirmed out of stock for materials", {"materials": insufficient_materials})
+                        calculation_failed_reason = "Confirmed out of stock"
+                        break
                     if progress_callback:
                         progress_callback("    🔄 Spec changed, restarting roll allocation for this order...")
                     continue
 
-                if calculation_failed_reason:
-                    roll_specs.clear(); roll_specs.update(roll_specs_backup)
-                    last_used_roll_ids.clear(); last_used_roll_ids.update(last_used_roll_ids_backup)
+                # Verify if we have enough stock to process this order
+                if not _stock_data is None:
+                    # Check each material requirement
+                    insufficient_materials = []
+                    for spec_key in ['front', 'c', 'middle', 'b', 'back']:
+                        material = current_attempt_specs.get(spec_key)
+                        if material:
+                            sufficient_stock = verify_stock_availability(roll_width, material, demand_per_cut, _stock_data)
+                            if not sufficient_stock:
+                                insufficient_materials.append(material)
+                                
+                    # If any material is insufficient, handle out of stock error
+                    if insufficient_materials:
+                        if progress_callback:
+                            progress_callback(f"    ❌ ตรวจพบว่าสต็อกสำหรับ {', '.join(insufficient_materials)} ไม่พอจริงๆ หลังตรวจสอบระบบสต็อก")
+                        log_message("error", "Confirmed out of stock", {"materials": insufficient_materials})
+                        calculation_failed_reason = "Confirmed out of stock"
+                        break
                     break
 
                 final_roll_info = roll_info_this_attempt
