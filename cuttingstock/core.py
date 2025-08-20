@@ -72,7 +72,7 @@ def log_message(level: str, message: str, details: dict = None):
 # Constants
 INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
 
-def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None, material_specs: Optional[dict] = None, material_substitutions: Optional[dict] = None) -> str:
+def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None, material_specs: Optional[dict] = None, material_substitutions: Optional[dict] = None, known_out_of_stock: Optional[list] = None) -> str:
     """
     Finds a suitable roll, prioritizing the last used roll for the same material to ensure sequential use.
     If one roll is not enough, it tries to combine with another available roll.
@@ -82,7 +82,6 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
     material_rolls_dict = roll_specs.get(str(width), {}).get(material, {})
     if not material_rolls_dict:
-        known_out_of_stock = list((material_substitutions or {}).keys())
         log_message(
             "error",
             "Out of stock: No stock data available for material.",
@@ -276,7 +275,6 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
 
         return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
 
-    known_out_of_stock = list((material_substitutions or {}).keys())
     log_message(
         "error",
         "Out of stock: Not enough stock length available for material.",
@@ -731,6 +729,7 @@ async def main_algorithm(
             final_roll_info = {}
             calculation_failed_reason = None
             material_specs = {} # Will be set to the final successful spec
+            known_out_of_stock_materials = []
 
             while not order_processed_successfully:
                 spec_key_for_lookup = _spec_to_key(material_specs_for_order)
@@ -764,9 +763,10 @@ async def main_algorithm(
                     material = str(current_attempt_specs.get(spec_key)).strip()
                     try:
                         value = value_calculator()
-                        info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, current_attempt_specs, material_substitutions=material_substitutions)
+                        info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, current_attempt_specs, material_substitutions=material_substitutions, known_out_of_stock=known_out_of_stock_materials)
                         roll_info_this_attempt[f'{spec_key}_roll_info'] = info
                     except OutOfStockError as e:
+                        known_out_of_stock_materials.append((e.width, e.material))
                         if out_of_stock_handler:
                             if progress_callback:
                                 progress_callback(f"    ⚠️ สต็อกสำหรับ '{e.material}' (หน้ากว้าง {e.width}) ไม่พอ, รอการตัดสินใจจากผู้ใช้...")
