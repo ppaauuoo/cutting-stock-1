@@ -82,8 +82,8 @@ async def test_main_algorithm_out_of_stock_with_substitution():
 async def test_main_algorithm_multiple_out_of_stock_with_substitution():
     """
     Tests that the main algorithm correctly handles an out-of-stock situation
-    by calling the handler and using the substitute material, and that the
-    substitution is remembered for subsequent orders.
+    by calling the handler and using multiple substitute materials, and that the
+    substitutions is remembered for subsequent orders.
     """
     # 1. Mock data
     mock_orders_df = pl.DataFrame({
@@ -160,6 +160,94 @@ async def test_main_algorithm_multiple_out_of_stock_with_substitution():
         assert "R-KA150-1" in res2["front_roll_info"]
         assert "R-KA150-2" in res2["middle_roll_info"]
         assert "R-KA150-3" in res2["back_roll_info"]
+
+
+
+@pytest.mark.asyncio
+async def test_main_algorithm_multiple_out_of_stock_with_some_substitution():
+    """
+    Tests that the main algorithm correctly handles an out-of-stock situation
+    by calling the handler and using some substitute materials, and that the
+    substitutions is remembered for subsequent orders.
+    """
+    # 1. Mock data
+    mock_orders_df = pl.DataFrame({
+        "order_number": ["ORDER-1", "ORDER-2"], "order_idx": [0, 1],
+        "front": ["KA125", "KA125"],
+        "middle": ["KA125", "KA125"],
+        "back": ["KA125", "KA125"],
+    })
+    mock_roll_specs = {"85": {
+        "KA150": {1: {"id": "R-KA150-1", "length": 50000}},
+        "KA125": {1: {"id": "R-KA125-1", "length": 50000}, 2: {"id": "R-KA125-2", "length": 50}, 3: {"id": "R-KA125-3", "length": 50000}}
+    }}
+
+
+    # Mock LP solutions that require the out-of-stock material
+    mock_lp_solutions = [
+        {
+            "status": "Optimal",
+            "variables": {"roll_w": 85, "demand_per_cut": 1000, "order_idx": 0},
+            "material_specs": {"front": "KA125","middle": "KA125", "back": "KA125"},
+        },
+        {
+            "status": "Optimal",
+            "variables": {"roll_w": 85, "demand_per_cut": 1000, "order_idx": 1},
+            "material_specs": {"front": "KA125","middle": "KA125", "back": "KA125"},
+        },
+    ]
+
+    handler_calls = []
+    def mock_out_of_stock_handler(e: OutOfStockError):
+        handler_calls.append(e)
+        if e.material == "KA125":
+            # Return the full new spec
+            new_spec = e.material_specs.copy()
+            new_spec['middle'] = 'KA150'
+            return new_spec
+        return None
+
+    # 2. Patch dependencies to isolate the algorithm
+    with patch('cuttingstock.core.load_data'), \
+         patch('cuttingstock.core.clean_data', return_value=mock_orders_df), \
+         patch('os.path.exists', return_value=False), \
+         patch('polars.DataFrame.write_database'), \
+         patch('cuttingstock.core.solve_linear_program', side_effect=mock_lp_solutions):
+
+        # 3. Run the algorithm
+        results = await main_algorithm(
+            roll_width=85,
+            roll_length=100000,
+            file_path="dummy.csv",
+            roll_specs=mock_roll_specs,
+            out_of_stock_handler=mock_out_of_stock_handler,
+            processed_orders=set(),
+            front="KA125",
+        )
+
+        # 4. Assertions
+        assert len(results) == 2, "Both orders should have been processed"
+        assert len(handler_calls) == 1, "Handler should only be called once"
+        results.sort(key=lambda x: x["order_number"])
+
+        res1 = results[0]
+        assert res1["order_number"] == "ORDER-1"
+        assert res1["front"] == "KA125", "Material should be the same"
+        assert res1["middle"] == "KA150", "Material should be substituted to KA150"
+        assert res1["back"] == "KA125", "Material should be the same"
+        assert "R-KA125-1" in res1["front_roll_info"]
+        assert "R-KA150-1" in res1["middle_roll_info"]
+        assert "R-KA125-3" in res1["back_roll_info"]
+
+        res2 = results[1]
+        assert res2["order_number"] == "ORDER-2"
+        assert res2["front"] == "KA125", "Material should be the same"
+        assert res2["middle"] == "KA150", "Material should be substituted to KA150"
+        assert res2["back"] == "KA125", "Material should be the same"
+        assert "R-KA125-1" in res2["front_roll_info"]
+        assert "R-KA150-1" in res2["middle_roll_info"]
+        assert "R-KA125-3" in res2["back_roll_info"]
+
 
 
 @pytest.mark.asyncio
