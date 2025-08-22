@@ -882,6 +882,7 @@ async def main_algorithm(
                 if spec_changed_this_attempt:
                     roll_specs.clear(); roll_specs.update(roll_specs_backup)
                     last_used_roll_ids.clear(); last_used_roll_ids.update(last_used_roll_ids_backup)
+                    used_roll_ids_for_cut.clear() # Reset used rolls on retry
                     if calculation_failed_reason == "SPEC_CHANGED":
                         calculation_failed_reason = None # Reset for retry
                     if progress_callback:
