@@ -92,7 +92,7 @@ async def test_main_algorithm_multiple_out_of_stock_with_substitution():
         "middle": ["KA125", "KA125"],
         "back": ["KA125", "KA125"],
     })
-    mock_roll_specs = {"85": {"KA150": {1: {"id": "R-KA150-1", "length": 50000},2: {"id": "R-KA150-2", "length": 50000,3: {"id": "R-KA150-3", "length": 50000}}}}}
+    mock_roll_specs = {"85": {"KA150": {1: {"id": "R-KA150-1", "length": 50000}, 2: {"id": "R-KA150-2", "length": 50000}, 3: {"id": "R-KA150-3", "length": 50000}}}}
 
     # Mock LP solutions that require the out-of-stock material
     mock_lp_solutions = [

@@ -882,28 +882,14 @@ async def main_algorithm(
                 if spec_changed_this_attempt:
                     roll_specs.clear(); roll_specs.update(roll_specs_backup)
                     last_used_roll_ids.clear(); last_used_roll_ids.update(last_used_roll_ids_backup)
-                    
-                # Verify if we have enough stock to process this order
-                if not _stock_data is None:
-                    # Check each material requirement
-                    insufficient_materials = []
-                    for spec_key in ['front', 'c', 'middle', 'b', 'back']:
-                        material = current_attempt_specs.get(spec_key)
-                        if material:
-                            sufficient_stock = verify_stock_availability(roll_width, material, demand_per_cut, _stock_data)
-                            if not sufficient_stock:
-                                insufficient_materials.append(material)
-                                
-                    # If any material is insufficient, handle out of stock error
-                    if insufficient_materials:
-                        if progress_callback:
-                            progress_callback(f"    ❌ ตรวจพบว่าสต็อกสำหรับ {', '.join(insufficient_materials)} ไม่พอจริงๆ หลังตรวจสอบระบบสต็อก")
-                        log_message("error", "Confirmed out of stock for materials", {"materials": insufficient_materials})
-                        calculation_failed_reason = "Confirmed out of stock"
-                        break
+                    if calculation_failed_reason == "SPEC_CHANGED":
+                        calculation_failed_reason = None # Reset for retry
                     if progress_callback:
                         progress_callback("    🔄 Spec changed, restarting roll allocation for this order...")
                     continue
+
+                if calculation_failed_reason: # Hard failure like user cancel or confirmed out of stock
+                    break
 
                 # Verify if we have enough stock to process this order
                 if not _stock_data is None:
@@ -923,6 +909,8 @@ async def main_algorithm(
                         log_message("error", "Confirmed out of stock", {"materials": insufficient_materials})
                         calculation_failed_reason = "Confirmed out of stock"
                         break
+
+                if calculation_failed_reason: # Check again in case stock check failed
                     break
 
                 final_roll_info = roll_info_this_attempt
