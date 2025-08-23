@@ -938,6 +938,33 @@ class CuttingOptimizerUI(QMainWindow):
                     item.setBackground(QColor(255, 255, 224))  # Yellow for duplicates
 
                 self.result_table.setItem(row_idx, col_idx, item)
+
+        # Apply spans for grouped results
+        processed_groups = set()
+        for row_idx, result in enumerate(self.display_data):
+            group_id = result.get("group_id")
+            if group_id and group_id not in processed_groups:
+                group_rows = [
+                    i for i, r in enumerate(self.display_data)
+                    if i >= row_idx and r.get("group_id") == group_id
+                ]
+
+                if len(group_rows) > 1:
+                    start_row = group_rows[0]
+                    row_span = len(group_rows)
+
+                    # Span Roll Width (col 0) and Trim (col 6)
+                    self.result_table.setSpan(start_row, 0, row_span, 1)
+                    self.result_table.setSpan(start_row, 6, row_span, 1)
+
+                    # Vertically center the text in the spanned cells
+                    for col_to_center in [0, 6]:
+                        item = self.result_table.item(start_row, col_to_center)
+                        if item:
+                            item.setTextAlignment(item.textAlignment() | Qt.AlignVCenter)
+                
+                processed_groups.add(group_id)
+        
         self.result_table.resizeColumnsToContents()
 
     def on_calculation_error(self, error_message: str):

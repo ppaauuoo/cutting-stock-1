@@ -2,6 +2,7 @@ import copy
 import logging
 import os
 import re
+import time
 from typing import Callable, Optional
 
 import polars as pl
@@ -772,6 +773,11 @@ async def main_algorithm(
                 failure_reason = result.get('message', f'สถานะไม่เหมาะสม: {status}')
                 break
             
+            if len(results_to_process) > 1:
+                group_id = f"G_{time.time_ns()}"
+                for r in results_to_process:
+                    r["group_id"] = group_id
+
             processed_order_indices_this_iteration = set()
             cut_infos_this_iteration = []
             last_rem_roll_l = roll['length']
@@ -972,6 +978,8 @@ async def main_algorithm(
                     "component_type": variables.get("component_type"),
                     "due_date": variables.get("due_date"),
                 }
+                if "group_id" in result:
+                    cut_info["group_id"] = result.get("group_id")
                 cut_info.update(material_specs)
                 cut_info.update(roll_info)
                 cut_infos_this_iteration.append(cut_info)
