@@ -70,8 +70,10 @@ def compat_score(
     return best_score
 
 
-def greedy_nest(orders: list[dict[str, int|str]], min_compat: float = MIN_COMPAT):
+def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, min_compat: float = MIN_COMPAT):
     """Greedy algorithm to assign 'out' and nest orders"""
+    if materials is None:
+        materials = MATERIAL_LIST
     # Initialize groups as single orders
     groups: list[list[dict[str, int|str]]] = [
         [{"order_number": o["order_number"], "width": o["width"], "type": o["type"], "demand": o["demand"]}] for o in orders
@@ -80,7 +82,7 @@ def greedy_nest(orders: list[dict[str, int|str]], min_compat: float = MIN_COMPAT
     pairs: list[tuple[float, int, int]] = []
     for i in range(len(orders)):
         for j in range(i + 1, len(orders)):
-            score = compat_score(orders[i].copy(), orders[j].copy())
+            score = compat_score(orders[i].copy(), orders[j].copy(), materials=materials)
             if score >= min_compat:
                 heapq.heappush(pairs, (-score, i, j))
 
@@ -90,7 +92,7 @@ def greedy_nest(orders: list[dict[str, int|str]], min_compat: float = MIN_COMPAT
         if groups[i] and groups[j]:  # Not already merged
             # Recompute with current group state
             temp_i, temp_j = groups[i][0].copy(), groups[j][0].copy()
-            score = compat_score(temp_i, temp_j)
+            score = compat_score(temp_i, temp_j, materials=materials)
             if score >= min_compat:
                 # Assign 'out' values to original orders
                 orders[i]["out"] = temp_i["out"]
@@ -248,7 +250,7 @@ orders = [
     {"order_number": "M", "width": 16, "type": "N", "demand": 3},
     {"order_number": "N", "width": 17, "type": "W", "demand": 2},
 ]
-nested, updated_orders = greedy_nest(orders)
+nested, updated_orders = greedy_nest(orders, materials=MATERIAL_LIST)
 
 print("=== ORDER GROUPING RESULTS ===")
 print(f"Total original orders: {len(orders)}")
