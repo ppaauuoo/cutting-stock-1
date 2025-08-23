@@ -1,10 +1,21 @@
 import heapq
 from itertools import product
+from typing import Optional
+
+import polars as pl
 
 # Material list for logic test
 MATERIAL_LIST = [82, 85, 87, 92, 95, 97]
 MAX_OUT = 5  # Max 'out' value to try
 MIN_COMPAT = 0.1  # Minimum compatibility threshold
+
+
+INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
+CORRUGATE_MULTIPLIERS = {
+    "C": 1.45,
+    "B": 1.35,
+    "E": 1.25,
+}
 
 
 def compute_result(order1: dict[str, int], order2: dict[str, int]) -> float:
@@ -95,6 +106,129 @@ def greedy_nest(orders: list[dict[str, int|str]], min_compat: float = MIN_COMPAT
     # Filter non-None groups and return
     result = [g for g in groups if g]
     return result, orders
+
+
+def _flatten_group(group: list) -> list:
+    """Recursively flattens a nested list structure representing a group."""
+    flat_list = []
+    for item in group:
+        if isinstance(item, list):
+            flat_list.extend(_flatten_group(item))
+        else:
+            flat_list.append(item)
+    return flat_list
+
+
+def format_greedy_results(
+    nested_groups: list,
+    updated_orders: list[dict],
+    original_orders_df: pl.DataFrame,
+    roll_length: int,
+    c_type: Optional[str] = None,
+    b_type: Optional[str] = None,
+) -> list[dict]:
+    """
+    Formats the results from the greedy_nest function into a structure
+    similar to the output of solve_linear_program.
+    """
+    all_results = []
+
+    updated_orders_map = {o["order_number"]: o for o in updated_orders}
+    original_orders_map = {
+        o["order_number"]: o for o in original_orders_df.to_dicts()
+    }
+
+    for group in nested_groups:
+        flat_group_base = _flatten_group(group)
+        if not flat_group_base:
+            continue
+
+        group_order_numbers = [o["order_number"] for o in flat_group_base]
+        group_updated_orders = [
+            updated_orders_map.get(on) for on in group_order_numbers
+        ]
+        group_updated_orders = [o for o in group_updated_orders if o]
+
+        if not group_updated_orders:
+            continue
+
+        roll_w = group_updated_orders[0].get("roll")
+        if not roll_w or roll_w == 0:
+            continue  # Skip groups that were not successfully matched to a roll
+
+        total_cut_width = sum(
+            o["width"] * o.get("out", 1) for o in group_updated_orders
+        )
+        trim = roll_w - total_cut_width
+
+        most_demand_type = None
+        if c_type == "C":
+            most_demand_type = "C"
+        elif b_type == "B":
+            most_demand_type = "B"
+        elif "E" in (c_type, b_type):
+            most_demand_type = "E"
+        corr_multiplier = CORRUGATE_MULTIPLIERS.get(most_demand_type, 1.0)
+
+        group_demands = []
+        for updated_order in group_updated_orders:
+            original_order = original_orders_map.get(updated_order["order_number"])
+            if not original_order:
+                continue
+
+            cuts = updated_order.get("out", 1)
+            total_len_val = (
+                original_order.get("length", 0)
+                * INCH_TO_M
+                * original_order.get("quantity", 0)
+                * corr_multiplier
+            )
+            demand_per_cut = round(total_len_val / cuts, 4) if cuts > 0 else 0
+            group_demands.append(demand_per_cut)
+
+        max_demand_per_cut = max(group_demands) if group_demands else 0
+        rem_roll_len = round(roll_length - max_demand_per_cut, 4)
+
+        for i, updated_order in enumerate(group_updated_orders):
+            original_order = original_orders_map.get(updated_order["order_number"])
+            if not original_order:
+                continue
+
+            cuts = updated_order.get("out", 1)
+            demand_per_cut = group_demands[i]
+
+            material_keys = ["demand", "front", "middle", "back", "c", "b", "die_cut"]
+            material_specs = {
+                key: original_order.get(key)
+                for key in material_keys
+                if original_order.get(key)
+            }
+            material_specs.update({"c_type": c_type, "b_type": b_type})
+
+            result = {
+                "status": "Optimal",
+                "objective_value": trim,
+                "variables": {
+                    "roll_w": roll_w,
+                    "rem_roll_l": rem_roll_len,
+                    "demand_per_cut": demand_per_cut,
+                    "order_w": original_order.get("width"),
+                    "order_l": original_order.get("length"),
+                    "order_qty": original_order.get("quantity"),
+                    "order_dmd": original_order.get("demand"),
+                    "cuts": cuts,
+                    "trim": trim,
+                    "order_idx": original_order.get("original_idx"),
+                    "type": original_order.get("type"),
+                    "component_type": original_order.get("component_type"),
+                    "due_date": original_order.get("due_date"),
+                },
+                "material_specs": material_specs,
+                "message": "Greedy Nesting solution found.",
+            }
+            all_results.append(result)
+
+    return all_results
 
 
 # Example usage
