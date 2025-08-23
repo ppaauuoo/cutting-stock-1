@@ -99,7 +99,9 @@ def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, m
                 orders[j]["out"] = temp_j["out"]
                 orders[i]["roll"] = temp_i["roll"]
                 orders[j]["roll"] = temp_j["roll"]
-                # Form new nested group
+                id = f'{orders[i]["order_number"]}-{orders[j]["order_number"]}'
+                orders[i]["group_id"] = id
+                orders[j]["group_id"] = id
                 new_group: list[list[dict[str, int]]] = [groups[i], groups[j]]
                 groups.append(new_group)
                 groups[i] = groups[j] = None  # Mark as merged
@@ -196,6 +198,7 @@ def format_greedy_results(
             if not original_order:
                 continue
 
+            group_id = updated_order.get("group_id")
             cuts = updated_order.get("out", 1)
             demand_per_cut = group_demands[i]
 
@@ -209,6 +212,7 @@ def format_greedy_results(
 
             result = {
                 "status": "Optimal",
+                "group_id": group_id,
                 "objective_value": trim,
                 "variables": {
                     "roll_w": roll_w,
@@ -233,44 +237,46 @@ def format_greedy_results(
     return all_results
 
 
-# Example usage
-orders = [
-    {"order_number": "A", "width": 40, "type": "X", "demand": 10},
-    {"order_number": "B", "width": 13, "type": "N", "demand": 5},
-    {"order_number": "C", "width": 40, "type": "X", "demand": 8},  # Example with same width as A
-    {"order_number": "D", "width": 4, "type": "W", "demand": 3},
-    {"order_number": "E", "width": 51, "type": "X", "demand": 7},
-    {"order_number": "F", "width": 16, "type": "N", "demand": 2},
-    {"order_number": "G", "width": 17, "type": "W", "demand": 4},
-    {"order_number": "H", "width": 40, "type": "X", "demand": 6},
-    {"order_number": "I", "width": 13, "type": "N", "demand": 9},
-    {"order_number": "J", "width": 40, "type": "X", "demand": 12},  # Example with same width as A
-    {"order_number": "K", "width": 4, "type": "W", "demand": 1},
-    {"order_number": "L", "width": 51, "type": "X", "demand": 5},
-    {"order_number": "M", "width": 16, "type": "N", "demand": 3},
-    {"order_number": "N", "width": 17, "type": "W", "demand": 2},
-]
-nested, updated_orders = greedy_nest(orders, materials=MATERIAL_LIST)
 
-print("=== ORDER GROUPING RESULTS ===")
-print(f"Total original orders: {len(orders)}")
-print(f"Total groups formed: {len(nested)}")
-print("\nGROUP DETAILS:")
-for i, group in enumerate(nested, 1):
-    if isinstance(group[0], list):  # This is a nested group
-        order = next(
-            o
-            for o in updated_orders
-            if o["order_number"] == group[0][0]["order_number"]
-        )
-        material = order.get("roll", "N/A")
-        print(f"\nGroup {i} Roll {material}inch:")
-        for j, subgroup in enumerate(group, 1):
+def main():
+    # Example usage
+    orders = [
+        {"order_number": "A", "width": 40, "type": "X", "demand": 10},
+        {"order_number": "B", "width": 13, "type": "N", "demand": 5},
+        {"order_number": "C", "width": 40, "type": "X", "demand": 8},  # Example with same width as A
+        {"order_number": "D", "width": 4, "type": "W", "demand": 3},
+        {"order_number": "E", "width": 51, "type": "X", "demand": 7},
+        {"order_number": "F", "width": 16, "type": "N", "demand": 2},
+        {"order_number": "G", "width": 17, "type": "W", "demand": 4},
+        {"order_number": "H", "width": 40, "type": "X", "demand": 6},
+        {"order_number": "I", "width": 13, "type": "N", "demand": 9},
+        {"order_number": "J", "width": 40, "type": "X", "demand": 12},  # Example with same width as A
+        {"order_number": "K", "width": 4, "type": "W", "demand": 1},
+        {"order_number": "L", "width": 51, "type": "X", "demand": 5},
+        {"order_number": "M", "width": 16, "type": "N", "demand": 3},
+        {"order_number": "N", "width": 17, "type": "W", "demand": 2},
+    ]
+    nested, updated_orders = greedy_nest(orders, materials=MATERIAL_LIST)
+
+    print("=== ORDER GROUPING RESULTS ===")
+    print(f"Total original orders: {len(orders)}")
+    print(f"Total groups formed: {len(nested)}")
+    print("\nGROUP DETAILS:")
+    for i, group in enumerate(nested, 1):
+        if isinstance(group[0], list):  # This is a nested group
             order = next(
                 o
                 for o in updated_orders
-                if o["order_number"] == subgroup[0]["order_number"]
+                if o["order_number"] == group[0][0]["order_number"]
             )
-            out_val = order.get("out", 1)
-            width = order["width"]
-            print(f"  ├─ Order {order['order_number']}: {width}inch (out: {out_val})")
+            material = order.get("roll", "N/A")
+            print(f"\nGroup {i} Roll {material}inch:")
+            for j, subgroup in enumerate(group, 1):
+                order = next(
+                    o
+                    for o in updated_orders
+                    if o["order_number"] == subgroup[0]["order_number"]
+                )
+                out_val = order.get("out", 1)
+                width = order["width"]
+                print(f"  ├─ Order {order['order_number']}: {width}inch (out: {out_val})")

@@ -46,25 +46,25 @@ def _spec_to_key(spec: dict) -> tuple:
 def verify_stock_availability(width: int, material: str, required_length: float, stock_data: pl.DataFrame) -> bool:
     """
     Verifies if the required length of material is truly available in stock.
-    
+
     Args:
         width: The width of the roll
         material: The material name
         required_length: The required length
         stock_data: The stock data DataFrame
-        
+
     Returns:
         bool: True if stock is sufficient, False otherwise
     """
     # Filter stock data for matching width and material
     matching_stock = stock_data.filter(
-        (pl.col("width") == width) & 
+        (pl.col("width") == width) &
         (pl.col("material") == material)
     )
-    
+
     # Calculate total available length
     total_available = matching_stock.select(pl.col("length").sum()).item() if not matching_stock.is_empty() else 0
-    
+
     return total_available >= required_length
 
 
@@ -431,7 +431,7 @@ async def solve_linear_program(
     quantities = orders_df['quantity'].to_list()
     types = orders_df['type'].to_list()
     component_types = orders_df['component_type'].to_list()
-    
+
     # Define existing_cols based on available columns in orders_df
     material_cols = ['front', 'c', 'middle', 'b', 'back']
     existing_cols = [col for col in material_cols if col in orders_df.columns]
@@ -467,7 +467,7 @@ async def solve_linear_program(
         # If order type is 'X', limit z to 5 cuts
         if 'X' in (types[j], component_types[j]):
             prob += z <= 5 + M * (1 - y[j]), f"MaxZ_TypeX_{j}"
-                        
+
 
     total_cut_width = lpSum(widths[j] * z_width[j] for j in range(num_orders))
 
@@ -772,11 +772,11 @@ async def main_algorithm(
                     progress_callback(f"    ❌ {result.get('message', 'Non-optimal status')}")
                 failure_reason = result.get('message', f'สถานะไม่เหมาะสม: {status}')
                 break
-            
-            if len(results_to_process) > 1:
-                group_id = f"G_{time.time_ns()}"
-                for r in results_to_process:
-                    r["group_id"] = group_id
+
+            # if len(results_to_process) > 1:
+            #     group_id = f"G_{time.time_ns()}"
+            #     for r in results_to_process:
+            #         r["group_id"] = group_id
 
             processed_order_indices_this_iteration = set()
             cut_infos_this_iteration = []
@@ -939,7 +939,7 @@ async def main_algorithm(
                                 sufficient_stock = verify_stock_availability(roll_width, material, demand_per_cut, _stock_data)
                                 if not sufficient_stock:
                                     insufficient_materials.append(material)
-                                    
+
                         # If any material is insufficient, handle out of stock error
                         if insufficient_materials:
                             if progress_callback:
@@ -960,7 +960,7 @@ async def main_algorithm(
                         progress_callback(f"    ❌ การคำนวณสำหรับ {order_number} ล้มเหลวเนื่องจาก: {calculation_failed_reason}")
                     all_successful = False
                     failure_reason = calculation_failed_reason
-                    continue 
+                    continue
 
                 roll_info = final_roll_info
                 cut_info = {
@@ -993,7 +993,7 @@ async def main_algorithm(
 
             if processed_order_indices_this_iteration:
                 rem_orders_df = rem_orders_df.filter(~pl.col("original_idx").is_in(list(processed_order_indices_this_iteration)))
-            
+
             if not all_successful:
                 failure_reason = calculation_failed_reason or "One or more cuts in the group failed."
                 break
