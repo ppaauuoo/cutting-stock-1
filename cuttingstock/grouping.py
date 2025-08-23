@@ -280,3 +280,6 @@ def main():
                 out_val = order.get("out", 1)
                 width = order["width"]
                 print(f"  ├─ Order {order['order_number']}: {width}inch (out: {out_val})")
+
+if __name__ == "__main__":
+    main()

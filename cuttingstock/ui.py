@@ -266,9 +266,12 @@ class MaterialSubstitutionDialog(QDialog):
                 except (ValueError, AttributeError):
                     pass
 
-        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Abort, Qt.Horizontal, self)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+        abort_button = self.buttons.button(QDialogButtonBox.Abort)
+        if abort_button:
+            abort_button.clicked.connect(lambda: self.done(2)) # Use custom code 2 for abort
         layout.addWidget(self.buttons)
 
     def get_selected_specs(self) -> dict:
@@ -804,13 +807,19 @@ class CuttingOptimizerUI(QMainWindow):
 
         dialog = MaterialSubstitutionDialog(self, str(width), available_materials, material, material_specs, known_out_of_stock)
 
-        if dialog.exec_() == QDialog.Accepted:
+        result = dialog.exec_()
+        if result == QDialog.Accepted:
             new_specs = dialog.get_selected_specs()
             changes = {k: v for k, v in new_specs.items() if material_specs.get(k) != v}
             changes_str = ", ".join([f"{k.title()}: {v}" for k, v in changes.items()])
             self.log_message(f"ผู้ใช้เลือกวัสดุทดแทน: {changes_str}")
             self.worker.set_user_choice(new_specs)
-        else:
+        elif result == 2: # Abort button
+            self.log_message("ผู้ใช้สั่งหยุดการทำงานทั้งหมด")
+            self.worker.requestInterruption()
+            self.worker.set_user_choice(None)
+            self.current_suggestion_index = len(self.suggestions_list)
+        else: # Cancel button
             self.log_message("ผู้ใช้ยกเลิกการเลือกวัสดุทดแทน")
             self.worker.set_user_choice(None)
 
@@ -920,7 +929,7 @@ class CuttingOptimizerUI(QMainWindow):
                 str(result.get('due_date', '')),
                 str(result.get('component_type', '')),
                 f"{result.get('order_w', ''):.4f}",
-                str(result.get('cuts', '')),
+                str(result.get('cuts') or '').split('.')[0],
                 f"{result.get('trim', ''):.2f}",
                 f"{result.get('order_l', ''):.4f}",
                 f"{result.get('order_dmd', '')}",
