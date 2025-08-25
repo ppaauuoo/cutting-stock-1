@@ -212,10 +212,9 @@ class MaterialSubstitutionDialog(QDialog):
         all_known_oos_materials = set()
         if known_out_of_stock:
             for item in known_out_of_stock:
-                if isinstance(item, tuple):  # It's a spec tuple
-                    for _, material_name in item:
-                        all_known_oos_materials.add(material_name)
-                elif isinstance(item, str):  # Fallback for just a material name
+                if isinstance(item, tuple) and len(item) == 2:  # It's a (width, material) tuple
+                    all_known_oos_materials.add(item[1])
+                elif isinstance(item, str):  # It's a material name
                     all_known_oos_materials.add(item)
 
         message = f"วัสดุ '{out_of_stock_material}' สำหรับความกว้าง {width} นิ้วไม่พอ"
