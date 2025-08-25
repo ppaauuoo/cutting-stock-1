@@ -266,9 +266,12 @@ class MaterialSubstitutionDialog(QDialog):
                 except (ValueError, AttributeError):
                     pass
 
-        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Abort, Qt.Horizontal, self)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+        abort_button = self.buttons.button(QDialogButtonBox.Abort)
+        if abort_button:
+            abort_button.clicked.connect(lambda: self.done(2)) # Use custom code 2 for abort
         layout.addWidget(self.buttons)
 
     def get_selected_specs(self) -> dict:
@@ -804,13 +807,19 @@ class CuttingOptimizerUI(QMainWindow):
 
         dialog = MaterialSubstitutionDialog(self, str(width), available_materials, material, material_specs, known_out_of_stock)
 
-        if dialog.exec_() == QDialog.Accepted:
+        result = dialog.exec_()
+        if result == QDialog.Accepted:
             new_specs = dialog.get_selected_specs()
             changes = {k: v for k, v in new_specs.items() if material_specs.get(k) != v}
             changes_str = ", ".join([f"{k.title()}: {v}" for k, v in changes.items()])
             self.log_message(f"ผู้ใช้เลือกวัสดุทดแทน: {changes_str}")
             self.worker.set_user_choice(new_specs)
-        else:
+        elif result == 2: # Abort button
+            self.log_message("ผู้ใช้สั่งหยุดการทำงานทั้งหมด")
+            self.worker.requestInterruption()
+            self.worker.set_user_choice(None)
+            self.current_suggestion_index = len(self.suggestions_list)
+        else: # Cancel button
             self.log_message("ผู้ใช้ยกเลิกการเลือกวัสดุทดแทน")
             self.worker.set_user_choice(None)
 
@@ -920,7 +929,7 @@ class CuttingOptimizerUI(QMainWindow):
                 str(result.get('due_date', '')),
                 str(result.get('component_type', '')),
                 f"{result.get('order_w', ''):.4f}",
-                str(result.get('cuts', '')),
+                str(result.get('cuts') or '').split('.')[0],
                 f"{result.get('trim', ''):.2f}",
                 f"{result.get('order_l', ''):.4f}",
                 f"{result.get('order_dmd', '')}",
@@ -938,6 +947,33 @@ class CuttingOptimizerUI(QMainWindow):
                     item.setBackground(QColor(255, 255, 224))  # Yellow for duplicates
 
                 self.result_table.setItem(row_idx, col_idx, item)
+
+        # Apply spans for grouped results
+        processed_groups = set()
+        for row_idx, result in enumerate(self.display_data):
+            group_id = result.get("group_id")
+            if group_id and group_id not in processed_groups:
+                group_rows = [
+                    i for i, r in enumerate(self.display_data)
+                    if i >= row_idx and r.get("group_id") == group_id
+                ]
+
+                if len(group_rows) > 1:
+                    start_row = group_rows[0]
+                    row_span = len(group_rows)
+
+                    # Span Roll Width (col 0) and Trim (col 6)
+                    self.result_table.setSpan(start_row, 0, row_span, 1)
+                    self.result_table.setSpan(start_row, 6, row_span, 1)
+
+                    # Vertically center the text in the spanned cells
+                    for col_to_center in [0, 6]:
+                        item = self.result_table.item(start_row, col_to_center)
+                        if item:
+                            item.setTextAlignment(item.textAlignment() | Qt.AlignVCenter)
+                
+                processed_groups.add(group_id)
+        
         self.result_table.resizeColumnsToContents()
 
     def on_calculation_error(self, error_message: str):
