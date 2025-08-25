@@ -658,6 +658,7 @@ async def _find_solution(
     if progress_callback:
         progress_callback("    Greedy nesting did not find a solution. Falling back to XGBoost.")
 
+    # attempt this even if the greedy nesting sucessed ai!
     # 2. If Greedy fails, attempt to find a solution with XGBoost.
     solution = await _try_xgboost_solution(orders_to_process, roll, c_type, b_type, progress_callback)
 
