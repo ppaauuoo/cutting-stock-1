@@ -6,7 +6,15 @@ import pytest
 from cuttingstock.core import OutOfStockError, main_algorithm
 
 
-# mock the greedy nested function AI!
+def mock_greedy_nest(orders, **kwargs):
+    """
+    Mock for greedy_nest that disables grouping.
+    It returns each order in its own group, and the original list of orders.
+    This assumes greedy_nest returns a tuple of (grouped_orders, all_orders).
+    """
+    return [[order] for order in orders], orders
+
+
 @pytest.mark.asyncio
 async def test_main_algorithm_out_of_stock_with_substitution():
     """
@@ -53,7 +61,8 @@ async def test_main_algorithm_out_of_stock_with_substitution():
          patch('cuttingstock.core.clean_data', return_value=mock_orders_df), \
          patch('os.path.exists', return_value=False), \
          patch('polars.DataFrame.write_database'), \
-         patch('cuttingstock.core.solve_linear_program', side_effect=mock_lp_solutions):
+         patch('cuttingstock.core.solve_linear_program', side_effect=mock_lp_solutions), \
+         patch('cuttingstock.core.greedy_nest', side_effect=mock_greedy_nest):
 
         # 3. Run the algorithm
         results = await main_algorithm(
@@ -132,7 +141,8 @@ async def test_main_algorithm_multiple_out_of_stock_with_substitution():
          patch('cuttingstock.core.clean_data', return_value=mock_orders_df), \
          patch('os.path.exists', return_value=False), \
          patch('polars.DataFrame.write_database'), \
-         patch('cuttingstock.core.solve_linear_program', side_effect=mock_lp_solutions):
+         patch('cuttingstock.core.solve_linear_program', side_effect=mock_lp_solutions), \
+         patch('cuttingstock.core.greedy_nest', side_effect=mock_greedy_nest):
 
         # 3. Run the algorithm
         results = await main_algorithm(
@@ -222,7 +232,8 @@ async def test_main_algorithm_multiple_out_of_stock_with_some_substitution():
          patch('cuttingstock.core.clean_data', return_value=mock_orders_df), \
          patch('os.path.exists', return_value=False), \
          patch('polars.DataFrame.write_database'), \
-         patch('cuttingstock.core.solve_linear_program', side_effect=mock_lp_solutions):
+         patch('cuttingstock.core.solve_linear_program', side_effect=mock_lp_solutions), \
+         patch('cuttingstock.core.greedy_nest', side_effect=mock_greedy_nest):
 
         # 3. Run the algorithm
         results = await main_algorithm(
@@ -291,7 +302,8 @@ async def test_main_algorithm_out_of_stock_user_cancel():
          patch('cuttingstock.core.clean_data', return_value=mock_orders_df), \
          patch('os.path.exists', return_value=False), \
          patch('polars.DataFrame.write_database'), \
-         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution):
+         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution), \
+         patch('cuttingstock.core.greedy_nest', side_effect=mock_greedy_nest):
 
         # 3. Run the algorithm
         results = await main_algorithm(
@@ -354,7 +366,8 @@ async def test_get_roll_for_material_atomic_substitution():
          patch('cuttingstock.core.clean_data', return_value=mock_orders_df), \
          patch('os.path.exists', return_value=False), \
          patch('polars.DataFrame.write_database'), \
-         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution):
+         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution), \
+         patch('cuttingstock.core.greedy_nest', side_effect=mock_greedy_nest):
 
         results = await main_algorithm(
             roll_width=80,
@@ -411,7 +424,8 @@ async def test_roll_specs_length_deduction_on_substitution():
          patch('cuttingstock.core.clean_data', return_value=mock_orders_df), \
          patch('os.path.exists', return_value=False), \
          patch('polars.DataFrame.write_database'), \
-         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution):
+         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution), \
+         patch('cuttingstock.core.greedy_nest', side_effect=mock_greedy_nest):
 
         await main_algorithm(
             roll_width=80,
@@ -466,7 +480,8 @@ async def test_roll_specs_deduction_on_multi_material_substitution():
          patch('cuttingstock.core.clean_data', return_value=mock_orders_df), \
          patch('os.path.exists', return_value=False), \
          patch('polars.DataFrame.write_database'), \
-         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution):
+         patch('cuttingstock.core.solve_linear_program', return_value=mock_lp_solution), \
+         patch('cuttingstock.core.greedy_nest', side_effect=mock_greedy_nest):
 
         await main_algorithm(
             roll_width=80,
