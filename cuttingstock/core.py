@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import time
+from collections import Counter
 from typing import Callable, Optional
 
 import polars as pl
@@ -385,8 +386,8 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
                     available_widths.append(width)
 
         if available_widths:
-            # make this work, i want to sort the available widths by their count AI!
-            sorted_widths = sorted(available_widths, key=lambda x: count(x))
+            # Sort unique widths first by frequency (desc), then by the factory-specific logic.
+            counts = Counter(available_widths)
 
             if selected_factory == "1&2":
                 def sort_key_factory_1_2(width_str):
@@ -397,9 +398,9 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
                         return (1, width_int)
                     else:
                         return (2, width_int)
-                sorted_widths = sorted(available_widths, key=sort_key_factory_1_2)
+                sorted_widths = sorted(counts.keys(), key=lambda w: (-counts[w], sort_key_factory_1_2(w)))
             else:
-                sorted_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
+                sorted_widths = sorted(counts.keys(), key=lambda w: (-counts[w], int(re.sub(r'\D', '', w) or 0)))
 
 
 
