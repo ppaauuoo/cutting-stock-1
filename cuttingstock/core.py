@@ -382,13 +382,12 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
         available_widths = []
         if roll_specs:
             for width, materials_in_stock in roll_specs.items():
+                #sort the width my the most mateirial ex. width:85 with 25 CM127 would be preferred more that width:85 with 2 CM127 AI!
+                counts = Counter(materials_in_stock.keys())
                 if spec_materials.issubset(materials_in_stock.keys()):
                     available_widths.append(width)
 
         if available_widths:
-            # Sort unique widths first by frequency (desc), then by the factory-specific logic.
-            counts = Counter(available_widths)
-
             if selected_factory == "1&2":
                 def sort_key_factory_1_2(width_str):
                     width_int = int(re.sub(r'\D', '', width_str) or 0)
@@ -403,12 +402,12 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
                 sorted_widths = sorted(counts.keys(), key=lambda w: (-counts[w], int(re.sub(r'\D', '', w) or 0)))
 
 
-
             for width in sorted_widths:
                 full_spec = {k: v for k, v in spec_row.items() if k != 'len'}
                 suggestion = {'width': width, 'spec': full_spec}
                 suggestions.append(suggestion)
 
+    log_message("info", "Suggestions generated", {'suggestions': suggestions})
     return suggestions
 
 
