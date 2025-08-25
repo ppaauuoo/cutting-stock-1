@@ -12,21 +12,26 @@ async def test_find_solution_greedy_nest_success():
     when it finds a complete solution.
     """
     # 1. Setup mock data
-    original_orders_df = pl.DataFrame({
-        "order_number": ["A", "B"],
-        "width": [30, 40],
-        "length": [100, 200],
-        "quantity": [1, 1],
-        "type": ["", ""],
-        "component_type": ["", ""],
-        "original_idx": [0, 1]
-    })
+    orders = [
+        {"order_number": "A", "width": 40, "type": "X", "demand": 10},
+        {"order_number": "B", "width": 13, "type": "N", "demand": 5},
+        {"order_number": "C", "width": 40, "type": "X", "demand": 8},  # Example with same width as A
+        {"order_number": "D", "width": 4, "type": "W", "demand": 3},
+        {"order_number": "E", "width": 51, "type": "X", "demand": 7},
+        {"order_number": "F", "width": 16, "type": "N", "demand": 2},
+        {"order_number": "G", "width": 17, "type": "W", "demand": 4},
+    ]
+    original_orders_df = pl.from_dicts(orders).rename({"demand": "quantity"})
+    original_orders_df = original_orders_df.with_columns(
+        pl.lit(100).alias("length"),
+        pl.lit("").alias("component_type"),
+        pl.arange(0, len(original_orders_df)).alias("original_idx")
+    )
     orders_to_process = original_orders_df.clone()
     roll = {'width': 80, 'length': 1000}
 
     mock_greedy_results = [
-        {"status": "Optimal", "variables": {"order_idx": 0}},
-        {"status": "Optimal", "variables": {"order_idx": 1}}
+        {"status": "Optimal", "variables": {"order_idx": i}} for i in range(len(orders))
     ]
 
     # 2. Mock the dependencies
