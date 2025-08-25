@@ -14,3 +14,4 @@ cutting_results*
 .crush
 .zed
 # cuttingstock.log
+logs/cuttingstock.log
