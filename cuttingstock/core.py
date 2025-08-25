@@ -696,17 +696,18 @@ async def _find_solution(
         solution = {"status": "NoOrdersLeft", "message": "No orders left for solvers."}
         log_message("info", "No orders left for solvers")
 
-    # remove priority feature, combine both and reutrn it instead AI!
-    # If greedy nesting was successful, prioritize its result as it's a complete plan.
+    # Combine greedy and solver results if applicable
     if greedy_results_to_return:
-        return greedy_results_to_return, {"status": "GreedyNestingSuccess", "message": "Greedy nesting found a solution."}
-
-    # If the solution from XGBoost or LP is optimal, we can use it directly.
-    if solution.get("status") == STATUS_OPTIMAL:
-        return [solution], solution
-
-    # If no method produced a viable solution, return an empty list with the last failed solution.
-    return [], solution
+        if solution and solution.get("status") == STATUS_OPTIMAL:
+            combined_results = greedy_results_to_return + [solution]
+            return combined_results, solution
+        else:
+            return greedy_results_to_return, {"status": "GreedyNestingSuccess", "message": "Greedy nesting found a solution."}
+    else:
+        if solution.get("status") == STATUS_OPTIMAL:
+            return [solution], solution
+        else:
+            return [], solution
 
 async def _process_single_order(
     result: dict, orders_df: pl.DataFrame, order_num_col_idx: int, material_substitutions: dict,
