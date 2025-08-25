@@ -687,13 +687,16 @@ async def _find_solution(
         if solution is None:
             if progress_callback:
                 progress_callback("    XGBoost did not find a solution. Falling back to linear solver.")
+            log_message("info", "XGBoost did not find a solution")
             solution = await solve_linear_program(
                 roll['width'], roll['length'], orders_for_solvers, c_type=c_type, b_type=b_type
             )
     else:
         # This case handles when greedy nesting processes all orders.
         solution = {"status": "NoOrdersLeft", "message": "No orders left for solvers."}
+        log_message("info", "No orders left for solvers")
 
+    # remove priority feature, combine both and reutrn it instead AI!
     # If greedy nesting was successful, prioritize its result as it's a complete plan.
     if greedy_results_to_return:
         return greedy_results_to_return, {"status": "GreedyNestingSuccess", "message": "Greedy nesting found a solution."}
