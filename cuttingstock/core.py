@@ -334,7 +334,6 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     log_message("error", "Out of stock: Not enough stock length available for material.", {"width": width, "material": material, "required_length": required_length, "material_specs": material_specs, "known_out_of_stock": known_out_of_stock})
     raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
 
-
 def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_factory: str) -> list:
     """
     Generates a list of all possible calculation settings based on order frequency and stock.
@@ -654,6 +653,7 @@ async def _find_solution(
     nested_groups, updated_orders = greedy_nest(orders_for_greedy, materials=[roll['width']])
     greedy_results_to_return = []
 
+    #create a test for this function AI!
     if nested_groups:
         greedy_results = format_greedy_results(
             nested_groups, updated_orders, original_orders_df, roll['length'],
