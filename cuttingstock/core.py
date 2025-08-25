@@ -674,7 +674,7 @@ async def _find_solution(
                 ~pl.col("original_idx").is_in(list(processed_indices))
             )
 
-    log_message("info", "Orders after greedy", {'orders': orders_for_solvers})
+    log_message("info", "Orders after greedy", {'remaining_orders_count': orders_for_solvers.shape[0]})
     if not greedy_results_to_return and progress_callback:
         progress_callback("    Greedy nesting did not find a solution. Falling back to XGBoost.")
 
