@@ -654,21 +654,35 @@ async def _find_solution(
                 progress_callback(f"    ✅ Greedy nesting found a solution with {len(greedy_results)} cuts.")
             greedy_results_to_return = greedy_results
 
+    orders_for_solvers = orders_to_process
+    if greedy_results_to_return:
+        processed_indices = {
+            res.get("variables", {}).get("order_idx") for res in greedy_results_to_return
+        }
+        processed_indices.discard(None)  # Remove None if it exists
+        if processed_indices:
+            orders_for_solvers = orders_to_process.filter(
+                ~pl.col("original_idx").is_in(list(processed_indices))
+            )
+
     if not greedy_results_to_return and progress_callback:
         progress_callback("    Greedy nesting did not find a solution. Falling back to XGBoost.")
 
-    # remove order in greedy_result from order_to_process ai!
-    # 2. Attempt to find a solution with XGBoost. This is run even if greedy succeeds,
-    #    but the greedy result will be prioritized.
-    solution = await _try_xgboost_solution(orders_to_process, roll, c_type, b_type, progress_callback)
+    # 2. Attempt to find a solution for remaining orders with XGBoost.
+    solution = None
+    if not orders_for_solvers.is_empty():
+        solution = await _try_xgboost_solution(orders_for_solvers, roll, c_type, b_type, progress_callback)
 
-    # 3. If XGBoost fails, fall back to the linear programming solver.
-    if solution is None:
-        if progress_callback:
-            progress_callback("    XGBoost did not find a solution. Falling back to linear solver.")
-        solution = await solve_linear_program(
-            roll['width'], roll['length'], orders_to_process, c_type=c_type, b_type=b_type
-        )
+        # 3. If XGBoost fails, fall back to the linear programming solver.
+        if solution is None:
+            if progress_callback:
+                progress_callback("    XGBoost did not find a solution. Falling back to linear solver.")
+            solution = await solve_linear_program(
+                roll['width'], roll['length'], orders_for_solvers, c_type=c_type, b_type=b_type
+            )
+    else:
+        # This case handles when greedy nesting processes all orders.
+        solution = {"status": "NoOrdersLeft", "message": "No orders left for solvers."}
 
     # If greedy nesting was successful, prioritize its result as it's a complete plan.
     if greedy_results_to_return:
