@@ -653,7 +653,6 @@ async def _find_solution(
     nested_groups, updated_orders = greedy_nest(orders_for_greedy, materials=[roll['width']])
     greedy_results_to_return = []
 
-    #create a test for this function AI!
     if nested_groups:
         greedy_results = format_greedy_results(
             nested_groups, updated_orders, original_orders_df, roll['length'],
