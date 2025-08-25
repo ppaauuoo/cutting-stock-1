@@ -36,7 +36,7 @@ def passes_logic(order1: dict[str, int], order2: dict[str, int], materials: list
         logic2 = init_type == 1 and order2["type"] not in ["X", "Y"]
         logic2 = init_type == 2 and order2["type"] == "X"
 
-    logic3 = order1["demand"] < order2["demand"]
+    logic3 = order1["quantity"] < order2["quantity"]
 
     logic = logic and logic2 and logic3
 
@@ -76,7 +76,7 @@ def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, m
         materials = MATERIAL_LIST
     # Initialize groups as single orders
     groups: list[list[dict[str, int|str]]] = [
-        [{"order_number": o["order_number"], "width": o["width"], "type": o["type"], "demand": o["demand"]}] for o in orders
+        [{"order_number": o["order_number"], "width": o["width"], "type": o["type"], "quantity": o["quantity"]}] for o in orders
     ]
     # Priority queue: (-score, i, j) for max-heap
     pairs: list[tuple[float, int, int]] = []
@@ -202,7 +202,7 @@ def format_greedy_results(
             cuts = updated_order.get("out", 1)
             demand_per_cut = group_demands[i]
 
-            material_keys = ["demand", "front", "middle", "back", "c", "b", "die_cut"]
+            material_keys = ["quantity", "front", "middle", "back", "c", "b", "die_cut"]
             material_specs = {
                 key: original_order.get(key)
                 for key in material_keys
@@ -241,20 +241,20 @@ def format_greedy_results(
 def main():
     # Example usage
     orders = [
-        {"order_number": "A", "width": 40, "type": "X", "demand": 10},
-        {"order_number": "B", "width": 13, "type": "N", "demand": 5},
-        {"order_number": "C", "width": 40, "type": "X", "demand": 8},  # Example with same width as A
-        {"order_number": "D", "width": 4, "type": "W", "demand": 3},
-        {"order_number": "E", "width": 51, "type": "X", "demand": 7},
-        {"order_number": "F", "width": 16, "type": "N", "demand": 2},
-        {"order_number": "G", "width": 17, "type": "W", "demand": 4},
-        {"order_number": "H", "width": 40, "type": "X", "demand": 6},
-        {"order_number": "I", "width": 13, "type": "N", "demand": 9},
-        {"order_number": "J", "width": 40, "type": "X", "demand": 12},  # Example with same width as A
-        {"order_number": "K", "width": 4, "type": "W", "demand": 1},
-        {"order_number": "L", "width": 51, "type": "X", "demand": 5},
-        {"order_number": "M", "width": 16, "type": "N", "demand": 3},
-        {"order_number": "N", "width": 17, "type": "W", "demand": 2},
+        {"order_number": "A", "width": 40, "type": "X", "quantity": 10},
+        {"order_number": "B", "width": 13, "type": "N", "quantity": 5},
+        {"order_number": "C", "width": 40, "type": "X", "quantity": 8},  # Example with same width as A
+        {"order_number": "D", "width": 4, "type": "W", "quantity": 3},
+        {"order_number": "E", "width": 51, "type": "X", "quantity": 7},
+        {"order_number": "F", "width": 16, "type": "N", "quantity": 2},
+        {"order_number": "G", "width": 17, "type": "W", "quantity": 4},
+        {"order_number": "H", "width": 40, "type": "X", "quantity": 6},
+        {"order_number": "I", "width": 13, "type": "N", "quantity": 9},
+        {"order_number": "J", "width": 40, "type": "X", "quantity": 12},  # Example with same width as A
+        {"order_number": "K", "width": 4, "type": "W", "quantity": 1},
+        {"order_number": "L", "width": 51, "type": "X", "quantity": 5},
+        {"order_number": "M", "width": 16, "type": "N", "quantity": 3},
+        {"order_number": "N", "width": 17, "type": "W", "quantity": 2},
     ]
     nested, updated_orders = greedy_nest(orders, materials=MATERIAL_LIST)
 

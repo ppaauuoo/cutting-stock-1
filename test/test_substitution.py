@@ -280,9 +280,6 @@ async def test_main_algorithm_out_of_stock_user_cancel():
     # 1. Mock data
     mock_orders_df = pl.DataFrame({
         "order_number": ["ORDER-3"], "order_idx": [0], "front": ["KA125"],
-        "width": [12, 12],
-        "type": ["A", "B"],
-        "demand": [1000, 1000]
     })
     mock_roll_specs = {"85": {"KA150": {1: {"id": "R-KA150-1", "length": 50000}}}}
 
@@ -336,9 +333,6 @@ async def test_get_roll_for_material_atomic_substitution():
     mock_orders_df = pl.DataFrame({
         "order_number": ["ORDER-MULTI"], "order_idx": [0],
         "front": ["MAT_A"], "back": ["MAT_B"],
-        "width": [12, 12],
-        "type": ["A", "B"],
-        "demand": [1000, 1000]
     })
     # MAT_B will run out of stock, forcing a substitution for the whole spec.
     mock_roll_specs = {
@@ -399,9 +393,6 @@ async def test_roll_specs_length_deduction_on_substitution():
     """
     mock_orders_df = pl.DataFrame({
         "order_number": ["ORDER-SUB"], "order_idx": [0], "front": ["MAT_A"],
-        "width": [12, 12],
-        "type": ["A", "B"],
-        "demand": [1000, 1000]
     })
     # MAT_A has no stock. MAT_B is the substitute.
     mock_roll_specs = {
@@ -450,9 +441,6 @@ async def test_roll_specs_deduction_on_multi_material_substitution():
     mock_orders_df = pl.DataFrame({
         "order_number": ["ORDER-MULTI-SUB"], "order_idx": [0],
         "front": ["MAT_A"], "middle": ["MAT_B"], "back": ["MAT_C"],
-        "width": [12, 12],
-        "type": ["A", "B"],
-        "demand": [1000, 1000]
     })
     # MAT_A is out of stock. User will change all three materials.
     mock_roll_specs = {
