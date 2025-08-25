@@ -626,6 +626,7 @@ async def _try_xgboost_solution(
             progress_callback(f"    ⚠️ XGBoost prediction failed: {e}. Falling back to linear solver.")
     return None
 
+# move greedy nesting to the beginning of the function ai!
 async def _find_solution(
     orders_to_process: pl.DataFrame, roll: dict, c_type: Optional[str], b_type: Optional[str],
     progress_callback: Optional[Callable[[str], None]], original_orders_df: pl.DataFrame
@@ -654,10 +655,10 @@ async def _find_solution(
     # As a final fallback, if the linear solver's solution is not optimal, try greedy nesting.
     if progress_callback:
         progress_callback(f"    Linear solver failed for roll {roll['width']}. Trying greedy nesting...")
-    
+
     orders_for_greedy = orders_to_process.to_dicts()
     nested_groups, updated_orders = greedy_nest(orders_for_greedy, materials=[roll['width']])
-    
+
     if nested_groups:
         greedy_results = format_greedy_results(
             nested_groups, updated_orders, original_orders_df, roll['length'],
