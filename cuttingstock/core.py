@@ -633,7 +633,7 @@ async def _find_solution(
     """
     Attempts to find a cutting solution using a sequence of methods:
     1. Greedy Nesting as a heuristic for a quick, full-roll solution.
-    2. XGBoost for a quick, pattern-based solution if Greedy Nesting fails.
+    2. XGBoost for a quick, pattern-based solution.
     3. Linear Programming for an optimal single-cut solution if XGBoost also fails.
     """
     # 1. Attempt with Greedy Nesting first, as it can produce a full plan for the roll.
@@ -642,6 +642,7 @@ async def _find_solution(
 
     orders_for_greedy = orders_to_process.to_dicts()
     nested_groups, updated_orders = greedy_nest(orders_for_greedy, materials=[roll['width']])
+    greedy_results_to_return = []
 
     if nested_groups:
         greedy_results = format_greedy_results(
@@ -651,15 +652,13 @@ async def _find_solution(
         if greedy_results:
             if progress_callback:
                 progress_callback(f"    ✅ Greedy nesting found a solution with {len(greedy_results)} cuts.")
-            # Greedy provides a full plan, return it. The second element is a dummy solution object
-            # with a non-optimal status to signal that the main loop for this roll can stop.
-            return greedy_results, {"status": "GreedyNestingSuccess", "message": "Greedy nesting found a solution."}
+            greedy_results_to_return = greedy_results
 
-    if progress_callback:
+    if not greedy_results_to_return and progress_callback:
         progress_callback("    Greedy nesting did not find a solution. Falling back to XGBoost.")
 
-    # attempt this even if the greedy nesting sucessed ai!
-    # 2. If Greedy fails, attempt to find a solution with XGBoost.
+    # 2. Attempt to find a solution with XGBoost. This is run even if greedy succeeds,
+    #    but the greedy result will be prioritized.
     solution = await _try_xgboost_solution(orders_to_process, roll, c_type, b_type, progress_callback)
 
     # 3. If XGBoost fails, fall back to the linear programming solver.
@@ -669,6 +668,10 @@ async def _find_solution(
         solution = await solve_linear_program(
             roll['width'], roll['length'], orders_to_process, c_type=c_type, b_type=b_type
         )
+
+    # If greedy nesting was successful, prioritize its result as it's a complete plan.
+    if greedy_results_to_return:
+        return greedy_results_to_return, {"status": "GreedyNestingSuccess", "message": "Greedy nesting found a solution."}
 
     # If the solution from XGBoost or LP is optimal, we can use it directly.
     if solution.get("status") == STATUS_OPTIMAL:
