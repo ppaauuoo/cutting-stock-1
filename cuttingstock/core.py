@@ -657,6 +657,7 @@ async def _find_solution(
     if not greedy_results_to_return and progress_callback:
         progress_callback("    Greedy nesting did not find a solution. Falling back to XGBoost.")
 
+    # remove order in greedy_result from order_to_process ai!
     # 2. Attempt to find a solution with XGBoost. This is run even if greedy succeeds,
     #    but the greedy result will be prioritized.
     solution = await _try_xgboost_solution(orders_to_process, roll, c_type, b_type, progress_callback)
