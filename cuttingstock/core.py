@@ -379,15 +379,18 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
         if not spec_materials:
             continue
 
-        available_widths = []
+        available_widths_data = []
         if roll_specs:
             for width, materials_in_stock in roll_specs.items():
-                #sort the width my the most mateirial ex. width:85 with 25 CM127 would be preferred more that width:85 with 2 CM127 AI!
-                counts = Counter(materials_in_stock.keys())
                 if spec_materials.issubset(materials_in_stock.keys()):
-                    available_widths.append(width)
+                    total_relevant_length = sum(
+                        roll.get('length', 0)
+                        for mat in spec_materials
+                        for roll in materials_in_stock.get(mat, {}).values()
+                    )
+                    available_widths_data.append({'width': width, 'length': total_relevant_length})
 
-        if available_widths:
+        if available_widths_data:
             if selected_factory == "1&2":
                 def sort_key_factory_1_2(width_str):
                     width_int = int(re.sub(r'\D', '', width_str) or 0)
@@ -397,9 +400,11 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
                         return (1, width_int)
                     else:
                         return (2, width_int)
-                sorted_widths = sorted(counts.keys(), key=lambda w: (-counts[w], sort_key_factory_1_2(w)))
+                sorted_data = sorted(available_widths_data, key=lambda d: (-d['length'], sort_key_factory_1_2(d['width'])))
             else:
-                sorted_widths = sorted(counts.keys(), key=lambda w: (-counts[w], int(re.sub(r'\D', '', w) or 0)))
+                sorted_data = sorted(available_widths_data, key=lambda d: (-d['length'], int(re.sub(r'\D', '', d['width']) or 0)))
+
+            sorted_widths = [d['width'] for d in sorted_data]
 
 
             for width in sorted_widths:
