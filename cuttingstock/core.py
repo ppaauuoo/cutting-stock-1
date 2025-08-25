@@ -385,6 +385,9 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
                     available_widths.append(width)
 
         if available_widths:
+            # make this work, i want to sort the available widths by their count AI!
+            sorted_widths = sorted(available_widths, key=lambda x: count(x))
+
             if selected_factory == "1&2":
                 def sort_key_factory_1_2(width_str):
                     width_int = int(re.sub(r'\D', '', width_str) or 0)
@@ -397,6 +400,8 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
                 sorted_widths = sorted(available_widths, key=sort_key_factory_1_2)
             else:
                 sorted_widths = sorted(available_widths, key=lambda x: int(re.sub(r'\D', '', x) or 0))
+
+
 
             for width in sorted_widths:
                 full_spec = {k: v for k, v in spec_row.items() if k != 'len'}
@@ -665,6 +670,7 @@ async def _find_solution(
                 ~pl.col("original_idx").is_in(list(processed_indices))
             )
 
+    log_message("info", "Orders after greedy", {'orders': orders_for_solvers})
     if not greedy_results_to_return and progress_callback:
         progress_callback("    Greedy nesting did not find a solution. Falling back to XGBoost.")
 
