@@ -626,35 +626,19 @@ async def _try_xgboost_solution(
             progress_callback(f"    ⚠️ XGBoost prediction failed: {e}. Falling back to linear solver.")
     return None
 
-# move greedy nesting to the beginning of the function ai!
 async def _find_solution(
     orders_to_process: pl.DataFrame, roll: dict, c_type: Optional[str], b_type: Optional[str],
     progress_callback: Optional[Callable[[str], None]], original_orders_df: pl.DataFrame
 ) -> tuple[list, dict]:
     """
     Attempts to find a cutting solution using a sequence of methods:
-    1. XGBoost for a quick, pattern-based solution.
-    2. Linear Programming for an optimal solution if XGBoost fails.
-    3. Greedy Nesting as a heuristic if Linear Programming is not optimal.
+    1. Greedy Nesting as a heuristic for a quick, full-roll solution.
+    2. XGBoost for a quick, pattern-based solution if Greedy Nesting fails.
+    3. Linear Programming for an optimal single-cut solution if XGBoost also fails.
     """
-    # Attempt to find a solution with XGBoost first.
-    solution = await _try_xgboost_solution(orders_to_process, roll, c_type, b_type, progress_callback)
-
-    # If XGBoost fails, fall back to the linear programming solver.
-    if solution is None:
-        if progress_callback:
-            progress_callback("    XGBoost did not find a solution. Falling back to linear solver.")
-        solution = await solve_linear_program(
-            roll['width'], roll['length'], orders_to_process, c_type=c_type, b_type=b_type
-        )
-
-    # If the solution from XGBoost or LP is optimal, we can use it directly.
-    if solution.get("status") == STATUS_OPTIMAL:
-        return [solution], solution
-
-    # As a final fallback, if the linear solver's solution is not optimal, try greedy nesting.
+    # 1. Attempt with Greedy Nesting first, as it can produce a full plan for the roll.
     if progress_callback:
-        progress_callback(f"    Linear solver failed for roll {roll['width']}. Trying greedy nesting...")
+        progress_callback(f"    Trying greedy nesting for roll {roll['width']}...")
 
     orders_for_greedy = orders_to_process.to_dicts()
     nested_groups, updated_orders = greedy_nest(orders_for_greedy, materials=[roll['width']])
@@ -667,9 +651,29 @@ async def _find_solution(
         if greedy_results:
             if progress_callback:
                 progress_callback(f"    ✅ Greedy nesting found a solution with {len(greedy_results)} cuts.")
-            return greedy_results, solution
+            # Greedy provides a full plan, return it. The second element is a dummy solution object
+            # with a non-optimal status to signal that the main loop for this roll can stop.
+            return greedy_results, {"status": "GreedyNestingSuccess", "message": "Greedy nesting found a solution."}
 
-    # If no method produced a list of cuts, return an empty list with the last failed solution.
+    if progress_callback:
+        progress_callback("    Greedy nesting did not find a solution. Falling back to XGBoost.")
+
+    # 2. If Greedy fails, attempt to find a solution with XGBoost.
+    solution = await _try_xgboost_solution(orders_to_process, roll, c_type, b_type, progress_callback)
+
+    # 3. If XGBoost fails, fall back to the linear programming solver.
+    if solution is None:
+        if progress_callback:
+            progress_callback("    XGBoost did not find a solution. Falling back to linear solver.")
+        solution = await solve_linear_program(
+            roll['width'], roll['length'], orders_to_process, c_type=c_type, b_type=b_type
+        )
+
+    # If the solution from XGBoost or LP is optimal, we can use it directly.
+    if solution.get("status") == STATUS_OPTIMAL:
+        return [solution], solution
+
+    # If no method produced a viable solution, return an empty list with the last failed solution.
     return [], solution
 
 async def _process_single_order(
