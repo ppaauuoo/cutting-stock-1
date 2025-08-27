@@ -8,6 +8,16 @@ from cuttingstock.utils import log_message
 
 import sys
 
+STATUS_OPTIMAL = "Optimal"
+INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
+MIN_TRIM_WASTE = 1
+MAX_TRIM_WASTE = 5
+CORRUGATE_MULTIPLIERS = {
+    "C": 1.45,
+    "B": 1.35,
+    "E": 1.25,
+}
+
 def resource_path(relative_path):
     """Get the absolute path to a resource, works for development and PyInstaller."""
     if hasattr(sys, '_MEIPASS'):

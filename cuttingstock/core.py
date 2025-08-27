@@ -89,13 +89,13 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
             for width, materials_in_stock in roll_specs.items():
                 # Extract numeric width from the width string (e.g., '79B' -> 79)
                 width_int = int(re.search(r'\d+', width).group() if re.search(r'\d+', width) else 0)
-                
+
                 # Apply factory-specific width restrictions
                 if selected_factory == "2" and not (82 <= width_int <= 97):
                     continue  # Skip widths not in 82-97 range for factory 2
                 elif selected_factory == "1" and not (73 <= width_int <= 79):
                     continue  # Skip widths not in 73-79 range for factory 1
-                    
+
                 if spec_materials.issubset(materials_in_stock.keys()):
                     total_relevant_length = sum(
                         roll.get('length', 0)
@@ -167,6 +167,7 @@ async def _find_solution(
         if greedy_results:
             if progress_callback:
                 progress_callback(f"    ✅ Greedy nesting found a solution with {len(greedy_results)} cuts.")
+                log_message("info", "Greedy nesting results", {'results': greedy_results})
             greedy_results_to_return = greedy_results
 
     orders_for_solvers = orders_to_process
@@ -206,13 +207,17 @@ async def _find_solution(
     if greedy_results_to_return:
         if solution and solution.get("status") == STATUS_OPTIMAL:
             combined_results = greedy_results_to_return + [solution]
+            log_message("info", "Combined results", {'results': combined_results})
             return combined_results, solution
         else:
+            log_message("info", "Greedy nesting did not find a solution")
             return greedy_results_to_return, {"status": "GreedyNestingSuccess", "message": "Greedy nesting found a solution."}
     else:
         if solution.get("status") == STATUS_OPTIMAL:
+            log_message("info", "Linear solver found a solution")
             return [solution], solution
         else:
+            log_message("info", "Linear solver did not find a solution")
             return [], solution
 
 async def main_algorithm(
