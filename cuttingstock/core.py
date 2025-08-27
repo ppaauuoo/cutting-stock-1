@@ -53,7 +53,7 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
         # Cast to string, strip whitespace, then check the numeric value of the prefix.
         order_num_col = pl.col("order_number").cast(pl.Utf8).str.strip_chars()
 
-        if selected_factory == "1&2":
+        if selected_factory == "1" or selected_factory == "2":
             orders_df = orders_df.filter(
                 order_num_col.str.slice(0, 4).str.to_integer(strict=False) == 1218
             )
@@ -87,6 +87,15 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
         available_widths_data = []
         if roll_specs:
             for width, materials_in_stock in roll_specs.items():
+                # Extract numeric width from the width string (e.g., '79B' -> 79)
+                width_int = int(re.search(r'\d+', width).group() if re.search(r'\d+', width) else 0)
+                
+                # Apply factory-specific width restrictions
+                if selected_factory == "2" and not (82 <= width_int <= 97):
+                    continue  # Skip widths not in 82-97 range for factory 2
+                elif selected_factory == "1" and not (73 <= width_int <= 79):
+                    continue  # Skip widths not in 73-79 range for factory 1
+                    
                 if spec_materials.issubset(materials_in_stock.keys()):
                     total_relevant_length = sum(
                         roll.get('length', 0)
@@ -96,17 +105,22 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
                     available_widths_data.append({'width': width, 'length': total_relevant_length})
 
         if available_widths_data:
-            # split into 1 and 2, 1 is 73-79 and 2 is 82-97 AI!
-            if selected_factory == "1&2":
-                def sort_key_factory_1_2(width_str):
-                    width_int = int(re.sub(r'\D', '', width_str) or 0)
+            if selected_factory == "2":
+                def sort_key_factory_2(width_str):
+                    width_int = int(re.search(r'\d+', width_str).group() if re.search(r'\d+', width_str) else 0)
                     if 82 <= width_int <= 97:
                         return (0, width_int)
-                    elif 73 <= width_int <= 79:
-                        return (1, width_int)
                     else:
-                        return (2, width_int)
-                sorted_data = sorted(available_widths_data, key=lambda d: (-d['length'], sort_key_factory_1_2(d['width'])))
+                        return (1, width_int)
+                sorted_data = sorted(available_widths_data, key=lambda d: (-d['length'], sort_key_factory_2(d['width'])))
+            elif selected_factory == "1":
+                def sort_key_factory_1(width_str):
+                    width_int = int(re.search(r'\d+', width_str).group() if re.search(r'\d+', width_str) else 0)
+                    if 73 <= width_int <= 79:
+                        return (0, width_int)
+                    else:
+                        return (1, width_int)
+                sorted_data = sorted(available_widths_data, key=lambda d: (-d['length'], sort_key_factory_1(d['width'])))
             else:
                 sorted_data = sorted(available_widths_data, key=lambda d: (-d['length'], int(re.sub(r'\D', '', d['width']) or 0)))
 

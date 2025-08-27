@@ -334,7 +334,7 @@ class CuttingOptimizerUI(QMainWindow):
         factory_layout = QHBoxLayout()
         factory_layout.addWidget(QLabel("โรงงาน:"))
         self.factory_combo = QComboBox()
-        self.factory_combo.addItems(["รวม", "1&2", "3", "4", "5"])
+        self.factory_combo.addItems(["รวม", "1", "2", "3", "4", "5"])
         factory_layout.addWidget(self.factory_combo)
         layout.addLayout(factory_layout)
 
@@ -971,9 +971,9 @@ class CuttingOptimizerUI(QMainWindow):
                         item = self.result_table.item(start_row, col_to_center)
                         if item:
                             item.setTextAlignment(item.textAlignment() | Qt.AlignVCenter)
-                
+
                 processed_groups.add(group_id)
-        
+
         self.result_table.resizeColumnsToContents()
 
     def on_calculation_error(self, error_message: str):
