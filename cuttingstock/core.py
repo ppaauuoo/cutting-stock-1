@@ -590,12 +590,12 @@ async def _try_xgboost_solution(
         if progress_callback:
             progress_callback("    🤖 Trying XGBoost for a quick solution...")
 
-        xgb_cuts_preds, xgb_roll_w_preds = predict_with_xgboost(orders_to_process)
-        orders_with_preds = orders_to_process.with_columns(
+        xgb_cuts_preds, _ = predict_with_xgboost(orders_to_process)
+        candidate_orders = orders_to_process.with_columns(
             pl.Series("xgb_cuts", xgb_cuts_preds, dtype=pl.Int64),
-            pl.Series("xgb_roll_w", xgb_roll_w_preds, dtype=pl.Int64),
+            # pl.Series("xgb_roll_w", xgb_roll_w_preds, dtype=pl.Int64),
         )
-        candidate_orders = orders_with_preds.filter(pl.col("xgb_roll_w") == roll['width'])
+        # candidate_orders = orders_with_preds.filter(pl.col("xgb_roll_w") == roll['width'])
 
         if not candidate_orders.is_empty():
             if progress_callback:
