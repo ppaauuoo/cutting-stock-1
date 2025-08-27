@@ -3,7 +3,8 @@ from unittest.mock import patch
 import polars as pl
 import pytest
 
-from cuttingstock.core import OutOfStockError, main_algorithm
+from cuttingstock.core import main_algorithm
+from cuttingstock.material import OutOfStockError
 
 
 def mock_greedy_nest(orders, **kwargs):

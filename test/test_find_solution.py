@@ -2,7 +2,8 @@ import pytest
 import polars as pl
 from unittest.mock import patch, AsyncMock
 
-from cuttingstock.core import _find_solution, _try_xgboost_solution
+from cuttingstock.core import _find_solution
+from cuttingstock.mlmodel import try_xgboost_solution
 from cuttingstock.grouping import greedy_nest
 
 

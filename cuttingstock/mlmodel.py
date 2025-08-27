@@ -1,10 +1,10 @@
 import os
 import pickle
-from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional, Callable
 
 import polars as pl
 import xgboost as xgb
+from cuttingstock.utils import log_message
 
 import sys
 
@@ -89,7 +89,61 @@ def load_models() -> dict:
     return _models_cache
 
 
-def predict_with_xgboost(orders_df: pl.DataFrame) -> Tuple[list, list]:
+async def try_xgboost_solution(
+    orders_to_process: pl.DataFrame, roll: dict, c_type: Optional[str], b_type: Optional[str],
+    progress_callback: Optional[Callable[[str], None]]
+) -> Optional[dict]:
+    """Tries to find a quick solution using the pre-trained XGBoost model."""
+    try:
+        if progress_callback:
+            progress_callback("    🤖 Trying XGBoost for a quick solution...")
+
+        xgb_cuts_preds, _ = _predict_with_xgboost(orders_to_process)
+        candidate_orders = orders_to_process.with_columns(
+            pl.Series("xgb_cuts", xgb_cuts_preds, dtype=pl.Int64),
+            # pl.Series("xgb_roll_w", xgb_roll_w_preds, dtype=pl.Int64),
+        )
+        # candidate_orders = orders_with_preds.filter(pl.col("xgb_roll_w") == roll['width'])
+
+        if not candidate_orders.is_empty():
+            if progress_callback:
+                progress_callback(f"    Found {len(candidate_orders)} candidates from XGBoost for roll {roll['width']}\".")
+            for order in candidate_orders.iter_rows(named=True):
+                cuts = order.get('xgb_cuts')
+                order_w = order.get('width')
+                if not cuts or not order_w:
+                    continue
+                trim = roll['width'] - (order_w * cuts)
+                if MIN_TRIM_WASTE <= trim <= MAX_TRIM_WASTE:
+                    if progress_callback:
+                        progress_callback(f"    ✅ XGBoost found a valid solution for order_idx {order.get('original_idx')}.")
+                    sel_order, z_val = order, cuts
+                    corr_multiplier = CORRUGATE_MULTIPLIERS.get(c_type or b_type) or 1.0
+                    total_len_val = sel_order.get('length') * INCH_TO_M * sel_order.get('quantity') * corr_multiplier
+                    demand_per_cut = round(total_len_val / z_val, 4) if z_val > 0 else 0
+                    rem_roll_len = round(roll['length'] - demand_per_cut, 4)
+                    material_keys = ['demand', 'front', 'middle', 'back', 'c', 'b', 'die_cut']
+                    material_specs = {key: sel_order.get(key) for key in material_keys if sel_order.get(key)}
+                    material_specs.update({'c_type': c_type, 'b_type': b_type})
+                    return {
+                        "status": STATUS_OPTIMAL, "objective_value": trim,
+                        "variables": {
+                            "roll_w": roll['width'], "rem_roll_l": rem_roll_len, "demand_per_cut": demand_per_cut,
+                            "order_w": sel_order.get('width'), "order_l": sel_order.get('length'),
+                            "order_qty": sel_order.get('quantity'), "order_dmd": sel_order.get('demand'),
+                            "cuts": z_val, "trim": trim, "order_idx": sel_order.get('original_idx'),
+                            "type": sel_order.get('type'), "component_type": sel_order.get('component_type'),
+                            "due_date": sel_order.get('due_date'),
+                        },
+                        "material_specs": material_specs, "message": "XGBoost solution found."
+                    }
+    except Exception as e:
+        log_message("error", "XGBoost prediction failed.", {"error": str(e)})
+        if progress_callback:
+            progress_callback(f"    ⚠️ XGBoost prediction failed: {e}. Falling back to linear solver.")
+    return None
+
+def _predict_with_xgboost(orders_df: pl.DataFrame) -> Tuple[list, list]:
     """
     Takes an order DataFrame, preprocesses it, and returns predictions from cached models.
     """

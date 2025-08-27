@@ -11,12 +11,11 @@ import pytest
 from cuttingstock.cleaning import clean_data, load_data
 from cuttingstock.core import (
     OutOfStockError,
-    _find_and_update_roll,
     generate_suggestions,
-    solve_linear_program,
 )
-from cuttingstock.mlmodel import predict_with_xgboost
-
+from cuttingstock.mlmodel import _predict_with_xgboost
+from cuttingstock.linear import solve_linear_program
+from cuttingstock.material import _find_and_update_roll
 
 def test_find_and_update_roll_sufficient_single_roll():
     """
