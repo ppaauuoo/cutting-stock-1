@@ -248,55 +248,6 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     log_message("error", "Out of stock: Not enough stock length available for material.", {"width": width, "material": material, "required_length": required_length, "material_specs": material_specs, "known_out_of_stock": known_out_of_stock})
     raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
 
-
-async def _process_single_order(
-    result: dict, orders_df: pl.DataFrame, order_num_col_idx: int, material_substitutions: dict,
-    progress_callback: Optional[Callable[[str], None]], out_of_stock_handler: Optional[Callable],
-    roll_specs: dict, used_roll_ids_for_cut: set, last_used_roll_ids: dict, roll_width: int
-) -> tuple[Optional[dict], Optional[int], Optional[str]]:
-    """
-    Processes a single order solution, handling stock checks, material substitutions, and roll allocation.
-    Returns the final cut information, the processed order index, and any failure reason.
-    """
-    variables = result.get("variables", {})
-    order_idx = variables.get("order_idx")
-
-    if progress_callback:
-        progress_callback(f"    Optimal solution found. Trim: {variables.get('trim', 0):.4f}")
-        progress_callback(f"    Selected order width: {variables.get('order_w')} (Index: {order_idx}), Cuts: {variables.get('cuts')}")
-
-    order_number = orders_df.row(int(order_idx))[order_num_col_idx] if order_idx is not None else None
-
-    material_specs_for_order = result.get("material_specs", {}).copy()
-    order_processed_successfully = False
-    final_roll_info = {}
-    calculation_failed_reason = None
-    material_specs = {}  # Will be set to the final successful spec
-    known_out_of_stock_materials = []
-
-
-    while not order_processed_successfully:
-        spec_key_for_lookup = _spec_to_key(material_specs_for_order)
-        if material_substitutions and spec_key_for_lookup in material_substitutions:
-            substituted_spec = material_substitutions[spec_key_for_lookup]
-            if substituted_spec is None:
-                if progress_callback: progress_callback("    ❌ User previously cancelled substitution for this spec. Failing order.")
-                calculation_failed_reason = "ผู้ใช้ยกเลิกสำหรับสเปคนี้"
-                break
-            if progress_callback:
-                changes_str = ", ".join([f"{k.title()}: {v}" for k, v in substituted_spec.items() if material_specs_for_order.get(k) != v])
-                progress_callback(f"    🔄 Applying stored substitution for spec: {changes_str}")
-            material_specs_for_order = substituted_spec.copy()
-
-        current_attempt_specs = material_specs_for_order.copy()
-        variables = result.get("variables", {})
-        roll_info_this_attempt = {}
-        spec_changed_this_attempt = False
-        calculation_failed_reason = None
-        roll_specs_backup = copy.deepcopy(roll_specs)
-        last_used_roll_ids_backup = copy.deepcopy(last_used_roll_ids)
-
-
 async def process_single_order(
     result: dict, orders_df: pl.DataFrame, order_num_col_idx: int, material_substitutions: dict,
     progress_callback: Optional[Callable[[str], None]], out_of_stock_handler: Optional[Callable],
