@@ -289,14 +289,13 @@ async def main_algorithm(
     if material_substitutions is None:
         material_substitutions = {}
 
+    rem_orders_df = orders_df.clone()
     for roll in rolls:
         last_used_roll_ids = {}
         used_roll_ids_for_cut = set()
         if progress_callback:
             progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
 
-        # make the rem_orders_df can be process in other roll too ai!
-        rem_orders_df = orders_df.clone()
         roll_cuts = []
         iteration = 0
         failure_reason = "ไม่สามารถหาผลลัพธ์ที่เหมาะสมได้"
