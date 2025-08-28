@@ -8,7 +8,8 @@ import polars as pl
 MATERIAL_LIST = [82, 85, 87, 92, 95, 97]
 MAX_OUT = 5  # Max 'out' value to try
 MIN_COMPAT = 0.1  # Minimum compatibility threshold
-
+MAX_TRIM = 5
+MIN_TRIM = 1
 
 INCH_TO_M = 25.4 / 1000  # Conversion factor from inches
 CORRUGATE_MULTIPLIERS = {
@@ -28,7 +29,7 @@ def compute_result(order1: dict[str, int], order2: dict[str, int]) -> float:
 def passes_logic(order1: dict[str, int], order2: dict[str, int], materials: list[int] = MATERIAL_LIST) -> float:
     """Check if result is within 1 to 5 units of any material value"""
     result = compute_result(order1, order2)
-    logic = any(1 <= m - result <= 5 for m in materials)
+    logic = any(MIN_TRIM <= m - result <= MAX_TRIM for m in materials)
 
     EDGE_TYPE = {"X": 1, "N": 2, "W": 2}
     init_type = EDGE_TYPE.get(order1["type"], 0)
@@ -57,10 +58,10 @@ def compat_score(
             result = compute_result(order1, order2)
             # Score inversely proportional to min distance to material
             # Find the closest material that satisfies the logic
-            valid_materials = [m for m in materials if 1 <= m - result <= 5]
+            valid_materials = [m for m in materials if MIN_TRIM <= m - result <= MAX_TRIM]
             # Normalize score: 1.0 for min waste (1"), 0.0 for max waste (5").
             min_dist = min(m - result for m in valid_materials)
-            score = (5.0 - min_dist) / (5.0 - 1.0)
+            score = (MAX_TRIM - min_dist) / (MAX_TRIM - 1.0)
             if score > best_score:
                 best_score = score
                 best_outs = (out1, out2)
@@ -74,7 +75,8 @@ def compat_score(
 def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, min_compat: float = MIN_COMPAT):
     """Greedy algorithm to assign 'out' and nest orders"""
     if materials is None:
-        materials = MATERIAL_LIST
+        # materials = MATERIAL_LIST
+        raise
     # Initialize groups as single orders
     groups: list[list[dict[str, int|str]]] = [
         [{"order_number": o["order_number"], "width": o["width"], "type": o["type"], "quantity": o["quantity"]}] for o in orders

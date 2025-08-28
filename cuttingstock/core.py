@@ -306,10 +306,10 @@ async def main_algorithm(
                 progress_callback(f"  Iteration {iteration}: Remaining orders: {rem_orders_df.shape[0]} items")
 
             orders_to_process = rem_orders_df
-            if chunk_size and rem_orders_df.shape[0] > chunk_size:
-                orders_to_process = rem_orders_df.sample(n=chunk_size, with_replacement=False, shuffle=True, seed=iteration)
-                if progress_callback:
-                    progress_callback(f"    Sampling {chunk_size} orders out of {rem_orders_df.shape[0]} for processing.")
+            # if chunk_size and rem_orders_df.shape[0] > chunk_size:
+            #     orders_to_process = rem_orders_df.sample(n=chunk_size, with_replacement=False, shuffle=True, seed=iteration)
+            #     if progress_callback:
+            #         progress_callback(f"    Sampling {chunk_size} orders out of {rem_orders_df.shape[0]} for processing.")
 
             if c is None : c_type = None
             if b is None : b_type = None
