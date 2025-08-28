@@ -58,9 +58,9 @@ def compat_score(
             # Score inversely proportional to min distance to material
             # Find the closest material that satisfies the logic
             valid_materials = [m for m in materials if 1 <= m - result <= 5]
-            # this score function look kinda weird ai!
+            # Normalize score: 1.0 for min waste (1"), 0.0 for max waste (5").
             min_dist = min(m - result for m in valid_materials)
-            score = 1 / (1 + min_dist)  # Higher score for closer match
+            score = (5.0 - min_dist) / (5.0 - 1.0)
             if score > best_score:
                 best_score = score
                 best_outs = (out1, out2)
