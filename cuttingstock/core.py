@@ -295,6 +295,7 @@ async def main_algorithm(
         if progress_callback:
             progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
 
+        # make the rem_orders_df can be process in other roll too ai!
         rem_orders_df = orders_df.clone()
         roll_cuts = []
         iteration = 0
