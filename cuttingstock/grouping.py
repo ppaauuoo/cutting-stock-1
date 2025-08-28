@@ -31,11 +31,13 @@ def passes_logic(order1: dict[str, int], order2: dict[str, int], materials: list
     result = compute_result(order1, order2)
     logic = any(MIN_TRIM <= m - result <= MAX_TRIM for m in materials)
 
-    EDGE_TYPE = {"X": 1, "N": 2, "W": 2}
-    init_type = EDGE_TYPE.get(order1["type"], 0)
-    if init_type:
-        logic2 = init_type == 1 and order2["type"] not in ["X", "Y"]
-        logic2 = init_type == 2 and order2["type"] == "X"
+    if order1["type"] == 'X':
+        logic2 = (order2["type"] in ['X', 'Y']) # New rule: True if order2 type is X or Y
+    elif order1["type"] in ['N', 'W']:
+        logic2 = (order2["type"] != 'X')
+    else: # For 'Y' or any other type not explicitly handled for order1
+        logic2 = True
+
 
     logic3 = order1["quantity"] < order2["quantity"]
 
@@ -52,6 +54,8 @@ def compat_score(
     best_material = 0
     best_outs = (0, 0)  # Default if none pass
     for out1, out2 in product(range(1, MAX_OUT + 1), repeat=2):
+        if (out1 + out2 > MAX_OUT) and not (order1['type'] == 'X' and order2['type'] == 'Y' and out1 + out2 == 6):
+            continue
         order1["out"] = out1
         order2["out"] = out2
         if passes_logic(order1, order2, materials):
