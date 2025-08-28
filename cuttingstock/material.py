@@ -3,6 +3,7 @@ import copy
 from cuttingstock.utils import log_message
 import polars as pl
 
+STATUS_FAILED = "Failed"
 CORRUGATE_MULTIPLIERS = {
     "C": 1.45,
     "B": 1.35,
@@ -279,7 +280,7 @@ async def process_single_order(
             substituted_spec = material_substitutions[spec_key_for_lookup]
             if substituted_spec is None:
                 if progress_callback: progress_callback("    ❌ User previously cancelled substitution for this spec. Failing order.")
-                calculation_failed_reason = "ผู้ใช้ยกเลิกสำหรับสเปคนี้"
+                # calculation_failed_reason = "ผู้ใช้ยกเลิกสำหรับสเปคนี้"
                 break
             if progress_callback:
                 changes_str = ", ".join([f"{k.title()}: {v}" for k, v in substituted_spec.items() if material_specs_for_order.get(k) != v])
@@ -329,11 +330,11 @@ async def process_single_order(
                         material_substitutions[original_spec_key] = None
                         for key, value in list(material_substitutions.items()):
                             if value is not None and _spec_to_key(value) == original_spec_key: material_substitutions[key] = None
-                        roll_info_this_attempt[f'{spec_key}_roll_info'] = "-> (ผู้ใช้ยกเลิก)"
+                        # roll_info_this_attempt[f'{spec_key}_roll_info'] = "-> (ผู้ใช้ยกเลิก)"
                         calculation_failed_reason = "ผู้ใช้ยกเลิก"
                 else:
                     fail_reason_msg = e.args[0]
-                    roll_info_this_attempt[f'{spec_key}_roll_info'] = f"-> ({fail_reason_msg})"
+                    # roll_info_this_attempt[f'{spec_key}_roll_info'] = f"-> ({fail_reason_msg})"
                     calculation_failed_reason = fail_reason_msg
 
         if roll_specs:
@@ -373,7 +374,7 @@ async def process_single_order(
 
     if not order_processed_successfully:
         if progress_callback: progress_callback(f"    ❌ การคำนวณสำหรับ {order_number} ล้มเหลวเนื่องจาก: {calculation_failed_reason}")
-        return None, order_idx, calculation_failed_reason
+        return None, order_idx
 
     cut_info = {
         "roll_w": variables.get("roll_w"), "rem_roll_l": variables.get("rem_roll_l"),
@@ -387,9 +388,9 @@ async def process_single_order(
     if "group_id" in result: cut_info["group_id"] = result.get("group_id")
     cut_info.update(material_specs)
     cut_info.update(final_roll_info)
-    return cut_info, order_idx, None
+    return cut_info, order_idx
 
-def create_unprocessed_result(order: dict, status: str, reason: str) -> dict:
+def _create_unprocessed_result(order: dict, status: str, reason: str) -> dict:
     """Creates a dictionary representing an unprocessed order for the results table."""
     fail_msg = f"-> (ประมวลผลไม่สำเร็จ: {reason})"
     status_with_reason = f"{status} (Reason: {reason})"
@@ -419,3 +420,29 @@ def create_unprocessed_result(order: dict, status: str, reason: str) -> dict:
         "b_roll_info": fail_msg,
         "back_roll_info": fail_msg,
     }
+
+
+def handle_unprocessed_orders(
+    rem_orders_df: pl.DataFrame,
+    # final_status: Optional[str],
+    # failure_reason: str,
+    progress_callback: Optional[Callable[[str], None]]
+) -> list:
+    if rem_orders_df.is_empty():
+        return []
+
+    roll_w_status = failure_reason = STATUS_FAILED
+    # if final_status == STATUS_INFEASIBLE:
+    #     roll_w_status = STATUS_INFEASIBLE
+
+    if progress_callback:
+        progress_callback(
+            f"    Adding {rem_orders_df.shape[0]} {roll_w_status.lower()} orders to the results."
+        )
+
+    unprocessed_results = []
+    unprocessed_orders = rem_orders_df.to_dicts()
+    for order in unprocessed_orders:
+        unprocessed_result = _create_unprocessed_result(order, roll_w_status, failure_reason)
+        unprocessed_results.append(unprocessed_result)
+    return unprocessed_results

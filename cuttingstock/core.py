@@ -9,7 +9,7 @@ from cuttingstock.grouping import format_greedy_results, greedy_nest
 from cuttingstock.mlmodel import try_xgboost_solution
 from cuttingstock.linear import solve_linear_program
 from cuttingstock.utils import log_message
-from cuttingstock.material import OutOfStockError, process_single_order, create_unprocessed_result
+from cuttingstock.material import OutOfStockError, process_single_order, handle_unprocessed_orders
 
 def verify_stock_availability(width: int, material: str, required_length: float, stock_data: pl.DataFrame) -> bool:
     """
@@ -293,8 +293,6 @@ async def _process_cuts_for_roll(
 
     roll_cuts = []
     iteration = 0
-    failure_reason = "ไม่สามารถหาผลลัพธ์ที่เหมาะสมได้"
-    final_status = None
     while not rem_orders_df.is_empty():
         iteration += 1
         if progress_callback:
@@ -308,12 +306,10 @@ async def _process_cuts_for_roll(
         results_to_process, result = await _find_solution(
             orders_to_process, roll, c_type, b_type, progress_callback, orders_df
         )
-        final_status = result.get("status")
 
         if not results_to_process:
             if progress_callback:
                 progress_callback(f"    ❌ {result.get('message', 'Non-optimal status')}")
-            failure_reason = result.get('message', f'สถานะไม่เหมาะสม: {final_status}')
             break
 
         processed_order_indices_this_iteration = set()
@@ -322,7 +318,7 @@ async def _process_cuts_for_roll(
         all_successful = True
 
         for res in results_to_process:
-            cut_info, order_idx, failure_reason_from_process = await process_single_order(
+            cut_info, order_idx = await process_single_order(
                 res, orders_df, order_num_col_idx, material_substitutions,
                 progress_callback, out_of_stock_handler, roll_specs,
                 used_roll_ids_for_cut, last_used_roll_ids, roll['width']
@@ -335,7 +331,6 @@ async def _process_cuts_for_roll(
                 last_rem_roll_l = cut_info.get("rem_roll_l", last_rem_roll_l)
             else:
                 all_successful = False
-                failure_reason = failure_reason_from_process
 
         roll_cuts.extend(cut_infos_this_iteration)
         roll['length'] = last_rem_roll_l
@@ -344,41 +339,14 @@ async def _process_cuts_for_roll(
             rem_orders_df = rem_orders_df.filter(~pl.col("original_idx").is_in(list(processed_order_indices_this_iteration)))
 
         if not all_successful:
-            failure_reason = failure_reason or "One or more cuts in the group failed."
+            # failure_reason = failure_reason or "One or more cuts in the group failed."
             break
 
         # If we used greedy nesting, it creates a full plan, so we can break from the main loop for this roll.
         if result.get("status") != STATUS_OPTIMAL and results_to_process:
              break
 
-    return roll_cuts, rem_orders_df, failure_reason, final_status
-
-
-def _handle_unprocessed_orders(
-    rem_orders_df: pl.DataFrame,
-    final_status: Optional[str],
-    failure_reason: str,
-    progress_callback: Optional[Callable[[str], None]]
-) -> list:
-    if rem_orders_df.is_empty():
-        return []
-
-    roll_w_status = STATUS_FAILED
-    if final_status == STATUS_INFEASIBLE:
-        roll_w_status = STATUS_INFEASIBLE
-
-    if progress_callback:
-        progress_callback(
-            f"    Adding {rem_orders_df.shape[0]} {roll_w_status.lower()} orders to the results."
-        )
-
-    unprocessed_results = []
-    unprocessed_orders = rem_orders_df.to_dicts()
-    for order in unprocessed_orders:
-        unprocessed_result = create_unprocessed_result(order, roll_w_status, failure_reason)
-        unprocessed_results.append(unprocessed_result)
-    return unprocessed_results
-
+    return roll_cuts, rem_orders_df
 
 def _save_roll_results_to_db(
     roll_cuts: list,
@@ -452,7 +420,7 @@ async def main_algorithm(
 
     rem_orders_df = orders_df.clone()
     for roll in rolls:
-        roll_cuts, rem_orders_df, failure_reason, final_status = await _process_cuts_for_roll(
+        roll_cuts, rem_orders_df = await _process_cuts_for_roll(
             roll, rem_orders_df, orders_df, c_type, b_type, c, b, order_num_col_idx,
             material_substitutions, progress_callback, out_of_stock_handler, roll_specs
         )
@@ -460,10 +428,10 @@ async def main_algorithm(
 
         _save_roll_results_to_db(roll_cuts, roll['width'], progress_callback, output_dir)
 
-        unprocessed_orders_results = _handle_unprocessed_orders(
-            rem_orders_df, final_status, failure_reason, progress_callback
-        )
-        all_results.extend(unprocessed_orders_results)
+    unprocessed_orders_results = handle_unprocessed_orders(
+        rem_orders_df, progress_callback
+    )
+    all_results.extend(unprocessed_orders_results)
 
     _save_summary_results_to_db(all_results, progress_callback, output_dir)
 

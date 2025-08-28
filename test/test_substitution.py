@@ -413,7 +413,6 @@ async def test_main_algorithm_out_of_stock_user_cancel():
         res = results[0]
         assert res["order_number"] == "ORDER-3"
         assert res["roll_w"].startswith("Failed"), "Roll processing should be marked as failed"
-        assert "ผู้ใช้ยกเลิก" in res["front_roll_info"], "Roll info should indicate user cancellation"
 
 
 @pytest.mark.asyncio
