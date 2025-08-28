@@ -58,6 +58,7 @@ def compat_score(
             # Score inversely proportional to min distance to material
             # Find the closest material that satisfies the logic
             valid_materials = [m for m in materials if 1 <= m - result <= 5]
+            # this score function look kinda weird ai!
             min_dist = min(m - result for m in valid_materials)
             score = 1 / (1 + min_dist)  # Higher score for closer match
             if score > best_score:
