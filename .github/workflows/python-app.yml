@@ -38,3 +38,4 @@ jobs:
           python -m pytest test/test_core.py
           python -m pytest test/test_main_algorithm.py
           python -m pytest test/test_substitution.py
+          python -m pytest test/test_greedy.py
