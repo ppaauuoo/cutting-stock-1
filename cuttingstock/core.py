@@ -220,32 +220,22 @@ async def _find_solution(
             log_message("info", "Linear solver did not find a solution")
             return [], solution
 
-async def main_algorithm(
-    roll_width: int,
-    roll_length: int,
-    file_path: str = "order2024.csv",
-    max_records: Optional[int] = None,
-    progress_callback: Optional[Callable[[str], None]] = None,
-    out_of_stock_handler: Optional[Callable[[OutOfStockError], Optional[dict]]] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    front: Optional[str] = None,
-    c_type: Optional[str] = None,
-    c: Optional[str] = None,
-    middle: Optional[str] = None,
-    b_type: Optional[str] = None,
-    b: Optional[str] = None,
-    back: Optional[str] = None,
-    roll_specs: Optional[dict] = None,
-    processed_orders: Optional[set] = None,
-    material_substitutions: Optional[dict] = None,
-    chunk_size: Optional[int] = 100,
-):
-    output_dir = "cache"
-    os.makedirs(output_dir, exist_ok=True)
 
-    log_message("info", "Starting calculation process")
-
+def _load_and_prepare_data(
+    file_path: str,
+    start_date: Optional[str],
+    end_date: Optional[str],
+    front: Optional[str],
+    c_type: Optional[str],
+    c: Optional[str],
+    middle: Optional[str],
+    b_type: Optional[str],
+    b: Optional[str],
+    back: Optional[str],
+    processed_orders: Optional[set],
+    max_records: Optional[int],
+    output_dir: str = "cache",
+) -> pl.DataFrame:
     base_filename = os.path.splitext(os.path.basename(file_path))[0]
     cache_db_path = os.path.join(output_dir, f"{base_filename}.db")
     table_name = base_filename
@@ -279,6 +269,177 @@ async def main_algorithm(
     if max_records:
         orders_df = orders_df.head(max_records)
     orders_df = orders_df.with_row_index("original_idx")
+    return orders_df
+
+
+async def _process_cuts_for_roll(
+    roll: dict,
+    rem_orders_df: pl.DataFrame,
+    orders_df: pl.DataFrame,
+    c_type: Optional[str],
+    b_type: Optional[str],
+    c: Optional[str],
+    b: Optional[str],
+    order_num_col_idx: int,
+    material_substitutions: dict,
+    progress_callback: Optional[Callable[[str], None]],
+    out_of_stock_handler: Optional[Callable[[OutOfStockError], Optional[dict]]],
+    roll_specs: Optional[dict],
+) -> tuple[list, pl.DataFrame, str, Optional[str]]:
+    last_used_roll_ids = {}
+    used_roll_ids_for_cut = set()
+    if progress_callback:
+        progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
+
+    roll_cuts = []
+    iteration = 0
+    failure_reason = "ไม่สามารถหาผลลัพธ์ที่เหมาะสมได้"
+    final_status = None
+    while not rem_orders_df.is_empty():
+        iteration += 1
+        if progress_callback:
+            progress_callback(f"  Iteration {iteration}: Remaining orders: {rem_orders_df.shape[0]} items")
+
+        orders_to_process = rem_orders_df
+
+        if c is None: c_type = None
+        if b is None: b_type = None
+
+        results_to_process, result = await _find_solution(
+            orders_to_process, roll, c_type, b_type, progress_callback, orders_df
+        )
+        final_status = result.get("status")
+
+        if not results_to_process:
+            if progress_callback:
+                progress_callback(f"    ❌ {result.get('message', 'Non-optimal status')}")
+            failure_reason = result.get('message', f'สถานะไม่เหมาะสม: {final_status}')
+            break
+
+        processed_order_indices_this_iteration = set()
+        cut_infos_this_iteration = []
+        last_rem_roll_l = roll['length']
+        all_successful = True
+
+        for res in results_to_process:
+            cut_info, order_idx, failure_reason_from_process = await process_single_order(
+                res, orders_df, order_num_col_idx, material_substitutions,
+                progress_callback, out_of_stock_handler, roll_specs,
+                used_roll_ids_for_cut, last_used_roll_ids, roll['width']
+            )
+
+            if cut_info:
+                cut_infos_this_iteration.append(cut_info)
+                if order_idx is not None:
+                    processed_order_indices_this_iteration.add(order_idx)
+                last_rem_roll_l = cut_info.get("rem_roll_l", last_rem_roll_l)
+            else:
+                all_successful = False
+                failure_reason = failure_reason_from_process
+
+        roll_cuts.extend(cut_infos_this_iteration)
+        roll['length'] = last_rem_roll_l
+
+        if processed_order_indices_this_iteration:
+            rem_orders_df = rem_orders_df.filter(~pl.col("original_idx").is_in(list(processed_order_indices_this_iteration)))
+
+        if not all_successful:
+            failure_reason = failure_reason or "One or more cuts in the group failed."
+            break
+
+        # If we used greedy nesting, it creates a full plan, so we can break from the main loop for this roll.
+        if result.get("status") != STATUS_OPTIMAL and results_to_process:
+             break
+
+    return roll_cuts, rem_orders_df, failure_reason, final_status
+
+
+def _handle_unprocessed_orders(
+    rem_orders_df: pl.DataFrame,
+    final_status: Optional[str],
+    failure_reason: str,
+    progress_callback: Optional[Callable[[str], None]]
+) -> list:
+    if rem_orders_df.is_empty():
+        return []
+
+    roll_w_status = STATUS_FAILED
+    if final_status == STATUS_INFEASIBLE:
+        roll_w_status = STATUS_INFEASIBLE
+
+    if progress_callback:
+        progress_callback(
+            f"    Adding {rem_orders_df.shape[0]} {roll_w_status.lower()} orders to the results."
+        )
+
+    unprocessed_results = []
+    unprocessed_orders = rem_orders_df.to_dicts()
+    for order in unprocessed_orders:
+        unprocessed_result = create_unprocessed_result(order, roll_w_status, failure_reason)
+        unprocessed_results.append(unprocessed_result)
+    return unprocessed_results
+
+
+def _save_roll_results_to_db(
+    roll_cuts: list,
+    roll_width: int,
+    progress_callback: Optional[Callable[[str], None]],
+    output_dir: str = "cache",
+):
+    if roll_cuts:
+        output_df = pl.DataFrame(roll_cuts)
+        db_path = os.path.join(output_dir, "cache.db")
+        conn_str = f"sqlite:///{os.path.abspath(db_path)}"
+        table_name = f"roll_cut_results_{roll_width}"
+        output_df.write_database(table_name, connection=conn_str, if_table_exists="replace")
+        if progress_callback:
+            progress_callback(f"--- Saved {len(roll_cuts)} cuts for roll {roll_width} to database table '{table_name}' ---")
+    elif progress_callback:
+        progress_callback(f"--- No cuts made for roll {roll_width} ---")
+
+
+def _save_summary_results_to_db(
+    all_results: list,
+    progress_callback: Optional[Callable[[str], None]],
+    output_dir: str = "cache",
+):
+    if all_results:
+        final_output_df = pl.DataFrame(all_results)
+        db_path = os.path.join(output_dir, "cache.db")
+        conn_str = f"sqlite:///{os.path.abspath(db_path)}"
+        final_output_df.write_database("all_cutting_plan_summary", connection=conn_str, if_table_exists="replace")
+        if progress_callback:
+            progress_callback("💾 บันทึกผลลัพธ์ลงฐานข้อมูลเรียบร้อย")
+
+
+async def main_algorithm(
+    roll_width: int,
+    roll_length: int,
+    file_path: str = "order2024.csv",
+    max_records: Optional[int] = None,
+    progress_callback: Optional[Callable[[str], None]] = None,
+    out_of_stock_handler: Optional[Callable[[OutOfStockError], Optional[dict]]] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    front: Optional[str] = None,
+    c_type: Optional[str] = None,
+    c: Optional[str] = None,
+    middle: Optional[str] = None,
+    b_type: Optional[str] = None,
+    b: Optional[str] = None,
+    back: Optional[str] = None,
+    roll_specs: Optional[dict] = None,
+    processed_orders: Optional[set] = None,
+    material_substitutions: Optional[dict] = None,
+):
+    output_dir = "cache"
+    os.makedirs(output_dir, exist_ok=True)
+    log_message("info", "Starting calculation process")
+
+    orders_df = _load_and_prepare_data(
+        file_path, start_date, end_date, front, c_type, c, middle, b_type, b,
+        back, processed_orders, max_records, output_dir
+    )
 
     # rolls per specs (set of materials)
     rolls = [{"width": roll_width, "length": roll_length}]
@@ -291,110 +452,19 @@ async def main_algorithm(
 
     rem_orders_df = orders_df.clone()
     for roll in rolls:
-        last_used_roll_ids = {}
-        used_roll_ids_for_cut = set()
-        if progress_callback:
-            progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
+        roll_cuts, rem_orders_df, failure_reason, final_status = await _process_cuts_for_roll(
+            roll, rem_orders_df, orders_df, c_type, b_type, c, b, order_num_col_idx,
+            material_substitutions, progress_callback, out_of_stock_handler, roll_specs
+        )
+        all_results.extend(roll_cuts)
 
-        roll_cuts = []
-        iteration = 0
-        failure_reason = "ไม่สามารถหาผลลัพธ์ที่เหมาะสมได้"
-        final_status = None
-        while not rem_orders_df.is_empty():
-            iteration += 1
-            if progress_callback:
-                progress_callback(f"  Iteration {iteration}: Remaining orders: {rem_orders_df.shape[0]} items")
+        _save_roll_results_to_db(roll_cuts, roll['width'], progress_callback, output_dir)
 
-            orders_to_process = rem_orders_df
-            # if chunk_size and rem_orders_df.shape[0] > chunk_size:
-            #     orders_to_process = rem_orders_df.sample(n=chunk_size, with_replacement=False, shuffle=True, seed=iteration)
-            #     if progress_callback:
-            #         progress_callback(f"    Sampling {chunk_size} orders out of {rem_orders_df.shape[0]} for processing.")
+        unprocessed_orders_results = _handle_unprocessed_orders(
+            rem_orders_df, final_status, failure_reason, progress_callback
+        )
+        all_results.extend(unprocessed_orders_results)
 
-            if c is None : c_type = None
-            if b is None : b_type = None
-
-            results_to_process, result = await _find_solution(
-                orders_to_process, roll, c_type, b_type, progress_callback, orders_df
-            )
-            final_status = result.get("status")
-
-            if not results_to_process:
-                if progress_callback:
-                    progress_callback(f"    ❌ {result.get('message', 'Non-optimal status')}")
-                failure_reason = result.get('message', f'สถานะไม่เหมาะสม: {final_status}')
-                break
-
-            processed_order_indices_this_iteration = set()
-            cut_infos_this_iteration = []
-            last_rem_roll_l = roll['length']
-            all_successful = True
-
-            for res in results_to_process:
-                cut_info, order_idx, failure_reason_from_process = await process_single_order(
-                    res, orders_df, order_num_col_idx, material_substitutions,
-                    progress_callback, out_of_stock_handler, roll_specs,
-                    used_roll_ids_for_cut, last_used_roll_ids, roll_width
-                )
-
-                if cut_info:
-                    cut_infos_this_iteration.append(cut_info)
-                    if order_idx is not None:
-                        processed_order_indices_this_iteration.add(order_idx)
-                    last_rem_roll_l = cut_info.get("rem_roll_l", last_rem_roll_l)
-                else:
-                    all_successful = False
-                    failure_reason = failure_reason_from_process
-
-            all_results.extend(cut_infos_this_iteration)
-            roll_cuts.extend(cut_infos_this_iteration)
-            roll['length'] = last_rem_roll_l
-
-            if processed_order_indices_this_iteration:
-                rem_orders_df = rem_orders_df.filter(~pl.col("original_idx").is_in(list(processed_order_indices_this_iteration)))
-
-            if not all_successful:
-                failure_reason = failure_reason or "One or more cuts in the group failed."
-                break
-
-            # If we used greedy nesting, it creates a full plan, so we can break from the main loop for this roll.
-            if result.get("status") != STATUS_OPTIMAL and results_to_process:
-                 break
-
-        # Save results for the current roll to a sqlite file
-        if roll_cuts:
-            output_df = pl.DataFrame(roll_cuts)
-            db_path = os.path.join(output_dir, "cache.db")
-            conn_str = f"sqlite:///{os.path.abspath(db_path)}"
-            table_name = f"roll_cut_results_{roll['width']}"
-            output_df.write_database(table_name, connection=conn_str, if_table_exists="replace")
-            if progress_callback:
-                progress_callback(f"--- Saved {len(roll_cuts)} cuts for roll {roll['width']} to database table '{table_name}' ---")
-        elif progress_callback:
-            progress_callback(f"--- No cuts made for roll {roll['width']} ---")
-
-        if not rem_orders_df.is_empty():
-            roll_w_status = STATUS_FAILED
-            if final_status == STATUS_INFEASIBLE:
-                roll_w_status = STATUS_INFEASIBLE
-
-            if progress_callback:
-                progress_callback(
-                    f"    Adding {rem_orders_df.shape[0]} {roll_w_status.lower()} orders to the results."
-                )
-
-            unprocessed_orders = rem_orders_df.to_dicts()
-            for order in unprocessed_orders:
-                unprocessed_result = create_unprocessed_result(order, roll_w_status, failure_reason)
-                all_results.append(unprocessed_result)
-
-    # Save all cutting results to a single summary table in sqlite
-    if all_results:
-        final_output_df = pl.DataFrame(all_results)
-        db_path = os.path.join(output_dir, "cache.db")
-        conn_str = f"sqlite:///{os.path.abspath(db_path)}"
-        final_output_df.write_database("all_cutting_plan_summary", connection=conn_str, if_table_exists="replace")
-        if progress_callback:
-            progress_callback("💾 บันทึกผลลัพธ์ลงฐานข้อมูลเรียบร้อย")
+    _save_summary_results_to_db(all_results, progress_callback, output_dir)
 
     return all_results
