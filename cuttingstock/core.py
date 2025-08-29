@@ -430,10 +430,9 @@ async def main_algorithm(
 
         _save_roll_results_to_db(roll_cuts, roll['width'], progress_callback, output_dir)
 
-    # unprocessed_orders_results = handle_unprocessed_orders(
-    #     rem_orders_df, progress_callback
-    # )
-    # all_results.extend(unprocessed_orders_results)
+    # move this 2 lines outside of main loop in ui.py ai!
+    unprocessed_orders_results = handle_unprocessed_orders( rem_orders_df, progress_callback )
+    all_results.extend(unprocessed_orders_results)
 
     _save_summary_results_to_db(all_results, progress_callback, output_dir)
 

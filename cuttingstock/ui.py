@@ -578,6 +578,9 @@ class CuttingOptimizerUI(QMainWindow):
                         material = str(row['roll_type']).strip()
                         length = row['length']
 
+                        #TEST
+                        length = 1000000
+
                         if width not in new_roll_specs:
                             new_roll_specs[width] = {}
                         if material not in new_roll_specs[width]:
