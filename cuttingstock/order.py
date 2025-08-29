@@ -9,6 +9,24 @@ from PyQt5.QtCore import QMutex, QMutexLocker, QObject, pyqtSignal
 from cuttingstock.cleaning import clean_data, load_data
 
 
+def filter_orders_by_factory(orders_df: pl.DataFrame, selected_factory: str) -> pl.DataFrame:
+    """Filters the orders DataFrame based on the selected factory."""
+    if "order_number" in orders_df.columns:
+        # Use a more robust numeric check for order number prefixes.
+        # Cast to string, strip whitespace, then check the numeric value of the prefix.
+        order_num_col = pl.col("order_number")
+
+        if selected_factory == "1" or selected_factory == "2":
+            orders_df = orders_df.filter(
+                order_num_col.cast(pl.Utf8).str.strip().str.starts_with('1218') & (~order_num_col.cast(pl.Utf8).str.strip().str.starts_with('6218'))
+            )
+        elif selected_factory in ["3", "4", "5"]:
+            orders_df = orders_df.filter(
+                order_num_col.str.slice(0, 1).str.to_integer(strict=False) == int(selected_factory)
+            )
+    return orders_df
+
+
 class OrderManager(QObject):
     """
     จัดการการโหลดและรีเฟรชข้อมูลออเดอร์เป็นระยะในเธรดแยก

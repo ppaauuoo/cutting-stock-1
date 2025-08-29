@@ -6,6 +6,7 @@ import polars as pl
 
 from cuttingstock.cleaning import clean_data, load_data
 from cuttingstock.grouping import format_greedy_results, greedy_nest
+from cuttingstock.order import filter_orders_by_factory
 from cuttingstock.mlmodel import try_xgboost_solution
 from cuttingstock.linear import solve_linear_program
 from cuttingstock.utils import log_message
@@ -53,21 +54,7 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
     if orders_df is None or orders_df.is_empty():
         return []
 
-    # move this to the order.py level to prevent any leakage ai!
-    # Filter orders based on factory selection
-    if "order_number" in orders_df.columns:
-        # Use a more robust numeric check for order number prefixes.
-        # Cast to string, strip whitespace, then check the numeric value of the prefix.
-        order_num_col = pl.col("order_number")
-
-        if selected_factory == "1" or selected_factory == "2":
-            orders_df = orders_df.filter(
-                order_num_col.cast(pl.Utf8).str.strip().str.starts_with('1218') & (~order_num_col.cast(pl.Utf8).str.strip().str.starts_with('6218'))
-            )
-        elif selected_factory in ["3", "4", "5"]:
-            orders_df = orders_df.filter(
-                order_num_col.str.slice(0, 1).str.to_integer(strict=False) == int(selected_factory)
-            )
+    orders_df = filter_orders_by_factory(orders_df, selected_factory)
 
     material_cols = ['front', 'c', 'middle', 'b', 'back']
     existing_cols = [col for col in material_cols if col in orders_df.columns]
@@ -75,11 +62,7 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
     if not existing_cols:
         return []
 
-    spec_df = orders_df.with_columns(
-        [pl.col(c).fill_null("").str.strip_chars() for c in existing_cols]
-    )
-
-    all_specs_df = spec_df.group_by(existing_cols).len().sort("len", descending=True)
+    all_specs_df = orders_df.group_by(existing_cols).len().sort("len", descending=True)
 
     if all_specs_df.is_empty():
         return []

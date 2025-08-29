@@ -158,6 +158,12 @@ def clean_data(df: pl.DataFrame,
         print("Running clean_data in suggestion mode.")
         # For suggestions, we only need the column names to be normalized.
         # We can skip the rest of the strict cleaning and filtering.
+        material_cols = ['front', 'c', 'middle', 'b', 'back']
+        existing_cols = [col for col in material_cols if col in df.columns]
+        if existing_cols:
+            df = df.with_columns(
+                [pl.col(c).fill_null("").str.strip_chars() for c in existing_cols]
+            )
         return df
 
     if df.height > 0:
