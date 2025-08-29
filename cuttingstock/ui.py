@@ -46,7 +46,7 @@ from PyQt5.QtWidgets import (
 
 from cuttingstock.core import OutOfStockError, generate_suggestions, main_algorithm
 from cuttingstock.material import handle_unprocessed_orders
-from cuttingstock.order import OrderManager
+from cuttingstock.order import OrderManager, filter_orders_by_factory
 from cuttingstock.stock import StockManager
 
 
@@ -668,8 +668,9 @@ class CuttingOptimizerUI(QMainWindow):
             selected_factory = self.factory_combo.currentText()
             self.log_message(f"🏭 Using factory filter: '{selected_factory}'")
 
+            filtered_orders = filter_orders_by_factory(self.cleaned_orders_df, selected_factory)
             suggestions = generate_suggestions(
-                self.cleaned_orders_df, self.ROLL_SPECS, selected_factory
+                filtered_orders, self.ROLL_SPECS, selected_factory
             )
 
             self.log_message(f"✅ Generated {len(suggestions)} potential settings to test.")

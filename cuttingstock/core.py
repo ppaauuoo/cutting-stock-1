@@ -54,9 +54,6 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
     if orders_df is None or orders_df.is_empty():
         return []
 
-    # use this function with self.processed_orders_numbers on ui.py instead ai!
-    orders_df = filter_orders_by_factory(orders_df, selected_factory)
-
     material_cols = ['front', 'c', 'middle', 'b', 'back']
     existing_cols = [col for col in material_cols if col in orders_df.columns]
 
