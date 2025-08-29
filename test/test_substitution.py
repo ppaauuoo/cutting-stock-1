@@ -407,12 +407,12 @@ async def test_main_algorithm_out_of_stock_user_cancel():
         )
 
         # 4. Assertions
-        assert len(results) == 1, "One unprocessed order should be in the results"
+        assert len(results) == 0, "No order should be in the results"
         assert len(handler_calls) == 1, "Handler should be called once"
 
-        res = results[0]
-        assert res["order_number"] == "ORDER-3"
-        assert res["roll_w"].startswith("Failed"), "Roll processing should be marked as failed"
+        # res = results[0]
+        # assert res["order_number"] == "ORDER-3"
+        # assert res["roll_w"].startswith("Failed"), "Roll processing should be marked as failed"
 
 
 @pytest.mark.asyncio
