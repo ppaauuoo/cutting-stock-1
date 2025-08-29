@@ -359,7 +359,7 @@ def test_greedy_nest():
         {"order_number": "A", "width": 17, "type": "D", "quantity": 5},
         {"order_number": "B", "width": 9, "type": "D", "quantity": 7},
     ]
-    materials1 = [87]
+    materials1 = [80]
     nested1, updated_orders1 = greedy_nest(orders1, materials=materials1)
 
     assert len(nested1) == 1
@@ -373,14 +373,14 @@ def test_greedy_nest():
     assert order_a_res['order_number'] == 'A'
     assert order_b_res['order_number'] == 'B'
     assert order_a_res['out'] == 4
-    assert order_b_res['out'] == 2
-    assert order_a_res['roll'] == 87
-    assert order_b_res['quantity'] == 2 # round(5/4*2)
+    assert order_b_res['out'] == 1
+    assert order_a_res['roll'] == 80
+    assert order_b_res['quantity'] == 1 # round(5/4*1)
 
     updated_a = next(o for o in updated_orders1 if o['order_number'] == 'A')
     updated_b = next(o for o in updated_orders1 if o['order_number'] == 'B')
     assert updated_a['quantity'] == 0
-    assert updated_b['quantity'] == 5 # 7-2
+    assert updated_b['quantity'] == 6 # 7-1
 
     # Case 2: X and Y type pairing with specific out sum
     orders2 = [
@@ -416,7 +416,7 @@ def test_greedy_nest():
         {"order_number": "B", "width": 9, "type": "D", "quantity": 7},
         {"order_number": "E", "width": 100, "type": "N", "quantity": 10}, # Cannot be paired
     ]
-    materials3 = [87]
+    materials3 = [80]
     nested3, updated_orders3 = greedy_nest(orders3, materials=materials3)
 
     assert len(nested3) == 2 # One group of A-B, one group of E
@@ -439,16 +439,16 @@ def test_greedy_nest():
     assert order_a_res_3['order_number'] == 'A'
     assert order_b_res_3['order_number'] == 'B'
     assert order_a_res_3['out'] == 4
-    assert order_b_res_3['out'] == 2
-    assert order_a_res_3['roll'] == 87
-    assert order_b_res_3['quantity'] == 2
+    assert order_b_res_3['out'] == 1
+    assert order_a_res_3['roll'] == 80
+    assert order_b_res_3['quantity'] == 1
 
     updated_e = next(o for o in updated_orders3 if o['order_number'] == 'E')
     updated_a_3 = next(o for o in updated_orders3 if o['order_number'] == 'A')
     updated_b_3 = next(o for o in updated_orders3 if o['order_number'] == 'B')
     assert updated_e['quantity'] == 10
     assert updated_a_3['quantity'] == 0
-    assert updated_b_3['quantity'] == 5
+    assert updated_b_3['quantity'] == 6
 
     # Case 4: Empty input
     orders4 = []
