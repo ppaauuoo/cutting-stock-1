@@ -45,6 +45,7 @@ from PyQt5.QtWidgets import (
 )
 
 from cuttingstock.core import OutOfStockError, generate_suggestions, main_algorithm
+from cuttingstock.material import handle_unprocessed_orders
 from cuttingstock.order import OrderManager
 from cuttingstock.stock import StockManager
 
@@ -715,6 +716,15 @@ class CuttingOptimizerUI(QMainWindow):
                 end_time = time.time()
                 elapsed_time = end_time - self.start_time
                 self.log_message(f"⏱️ Total elapsed time: {elapsed_time:.2f} seconds.")
+
+            if self.cleaned_orders_df is not None and not self.cleaned_orders_df.is_empty():
+                rem_orders_df = self.cleaned_orders_df.filter(
+                    ~pl.col("order_number").is_in(list(self.processed_order_numbers))
+                )
+                if not rem_orders_df.is_empty():
+                    self.log_message(f"ℹ️ Handling {rem_orders_df.shape[0]} unprocessed orders.")
+                    unprocessed_results = handle_unprocessed_orders(rem_orders_df, self.log_message)
+                    self.append_results_to_table(unprocessed_results)
 
             if self.results_data:
                 self.log_message("Sorting final results by roll width...")
