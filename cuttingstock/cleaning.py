@@ -127,8 +127,8 @@ def clean_data(df: pl.DataFrame,
 
     df = df.with_columns(
         pl.col("due_date").str.strip_chars().str.strptime(pl.Date, "%d/%m/%y", strict=True), # Changed %Y to %y for 2-digit year, kept strict=True for debugging
-        pl.col("order_number").str.strip_chars().cast(pl.Int64),
-        pl.col("order_idx").str.strip_chars().cast(pl.Int64),
+        pl.col("order_number").str.strip_chars(),
+        pl.col("order_idx").str.strip_chars(),
         pl.col("width").str.strip_chars().cast(pl.Float64),
         pl.col("length").str.strip_chars().cast(pl.Float64),
         # ทำความสะอาดข้อมูล 'demand' และ 'quantity' โดยการลบคอมม่าและแปลงเป็น Int64
@@ -149,7 +149,7 @@ def clean_data(df: pl.DataFrame,
     )
     # Combine order_number and order_idx for uniqueness
     df = df.with_columns(
-        (pl.col("order_number").cast(pl.Utf8) + "-" + pl.col("order_idx").cast(pl.Utf8)).alias("order_number")
+        (pl.col("order_number") + "-" + pl.col("order_idx")).alias("order_number")
     ).select([
         'due_date', 'order_number', 'width', 'length', 'demand', 'quantity', 'type', 'component_type', 'front', 'c', 'middle', 'b', 'back', 'die_cut' # เพิ่มคอลัมน์วัสดุ
     ])

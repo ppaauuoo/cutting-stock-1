@@ -53,15 +53,16 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
     if orders_df is None or orders_df.is_empty():
         return []
 
+    # move this to the order.py level to prevent any leakage ai!
     # Filter orders based on factory selection
     if "order_number" in orders_df.columns:
         # Use a more robust numeric check for order number prefixes.
         # Cast to string, strip whitespace, then check the numeric value of the prefix.
-        order_num_col = pl.col("order_number").cast(pl.Utf8).str.strip_chars()
+        order_num_col = pl.col("order_number")
 
         if selected_factory == "1" or selected_factory == "2":
             orders_df = orders_df.filter(
-                order_num_col.str.slice(0, 4).str.to_integer(strict=False) == 1218
+                order_num_col.cast(pl.Utf8).str.strip().str.starts_with('1218') & (~order_num_col.cast(pl.Utf8).str.strip().str.starts_with('6218'))
             )
         elif selected_factory in ["3", "4", "5"]:
             orders_df = orders_df.filter(
