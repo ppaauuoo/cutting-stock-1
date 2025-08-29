@@ -348,3 +348,111 @@ def test_format_greedy_results():
     # 4. Assertions
     results.sort(key=lambda x: x['variables']['order_idx'])
     assert results == expected_results
+
+
+def test_greedy_nest():
+    """
+    Tests the greedy_nest function for various scenarios.
+    """
+    # Case 1: Simple successful pairing
+    orders1 = [
+        {"order_number": "A", "width": 17, "type": "D", "quantity": 5},
+        {"order_number": "B", "width": 9, "type": "D", "quantity": 7},
+    ]
+    materials1 = [87]
+    nested1, updated_orders1 = greedy_nest(orders1, materials=materials1)
+
+    assert len(nested1) == 1
+    group1 = nested1[0]
+    assert isinstance(group1[0], list)
+    order_a_res = group1[0][0]
+    order_b_res = group1[1][0]
+    if order_a_res['order_number'] != 'A':
+        order_a_res, order_b_res = order_b_res, order_a_res
+
+    assert order_a_res['order_number'] == 'A'
+    assert order_b_res['order_number'] == 'B'
+    assert order_a_res['out'] == 4
+    assert order_b_res['out'] == 2
+    assert order_a_res['roll'] == 87
+    assert order_b_res['quantity'] == 2 # round(5/4*2)
+
+    updated_a = next(o for o in updated_orders1 if o['order_number'] == 'A')
+    updated_b = next(o for o in updated_orders1 if o['order_number'] == 'B')
+    assert updated_a['quantity'] == 0
+    assert updated_b['quantity'] == 5 # 7-2
+
+    # Case 2: X and Y type pairing with specific out sum
+    orders2 = [
+        {"order_number": "C", "width": 17, "type": "X", "quantity": 5},
+        {"order_number": "D", "width": 9, "type": "Y", "quantity": 7},
+    ]
+    materials2 = [82]
+    nested2, updated_orders2 = greedy_nest(orders2, materials=materials2)
+
+    assert len(nested2) == 1
+    group2 = nested2[0]
+    assert isinstance(group2[0], list)
+    order_c_res = group2[0][0]
+    order_d_res = group2[1][0]
+    if order_c_res['order_number'] != 'C':
+        order_c_res, order_d_res = order_d_res, order_c_res
+
+    assert order_c_res['order_number'] == 'C'
+    assert order_d_res['order_number'] == 'D'
+    assert order_c_res['out'] == 3
+    assert order_d_res['out'] == 3
+    assert order_c_res['roll'] == 82
+    assert order_d_res['quantity'] == 5 # round(5/3*3)
+
+    updated_c = next(o for o in updated_orders2 if o['order_number'] == 'C')
+    updated_d = next(o for o in updated_orders2 if o['order_number'] == 'D')
+    assert updated_c['quantity'] == 0
+    assert updated_d['quantity'] == 2 # 7-5
+
+    # Case 3: Mix of paired and unpaired orders
+    orders3 = [
+        {"order_number": "A", "width": 17, "type": "D", "quantity": 5},
+        {"order_number": "B", "width": 9, "type": "D", "quantity": 7},
+        {"order_number": "E", "width": 100, "type": "N", "quantity": 10}, # Cannot be paired
+    ]
+    materials3 = [87]
+    nested3, updated_orders3 = greedy_nest(orders3, materials=materials3)
+
+    assert len(nested3) == 2 # One group of A-B, one group of E
+
+    group_e_list = [g for g in nested3 if not isinstance(g[0], list)]
+    group_ab_list = [g for g in nested3 if isinstance(g[0], list)]
+    assert len(group_e_list) == 1
+    assert len(group_ab_list) == 1
+    group_e = group_e_list[0]
+    group_ab = group_ab_list[0]
+
+    assert group_e[0]['order_number'] == 'E'
+    assert group_e[0]['quantity'] == 10
+
+    order_a_res_3 = group_ab[0][0]
+    order_b_res_3 = group_ab[1][0]
+    if order_a_res_3['order_number'] != 'A':
+        order_a_res_3, order_b_res_3 = order_b_res_3, order_a_res_3
+
+    assert order_a_res_3['order_number'] == 'A'
+    assert order_b_res_3['order_number'] == 'B'
+    assert order_a_res_3['out'] == 4
+    assert order_b_res_3['out'] == 2
+    assert order_a_res_3['roll'] == 87
+    assert order_b_res_3['quantity'] == 2
+
+    updated_e = next(o for o in updated_orders3 if o['order_number'] == 'E')
+    updated_a_3 = next(o for o in updated_orders3 if o['order_number'] == 'A')
+    updated_b_3 = next(o for o in updated_orders3 if o['order_number'] == 'B')
+    assert updated_e['quantity'] == 10
+    assert updated_a_3['quantity'] == 0
+    assert updated_b_3['quantity'] == 5
+
+    # Case 4: Empty input
+    orders4 = []
+    materials4 = [87]
+    nested4, updated_orders4 = greedy_nest(orders4, materials=materials4)
+    assert nested4 == []
+    assert updated_orders4 == []
