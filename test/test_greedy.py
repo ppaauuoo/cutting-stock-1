@@ -4,7 +4,7 @@ from unittest.mock import patch, AsyncMock
 
 from cuttingstock.core import _find_solution
 from cuttingstock.mlmodel import try_xgboost_solution
-from cuttingstock.grouping import greedy_nest
+from cuttingstock.grouping import greedy_nest, format_greedy_results
 
 @pytest.mark.asyncio
 async def test_find_solution_greedy_nest_w_pulp_success():
@@ -248,3 +248,103 @@ async def test_find_solution_greedy_nest_max_out_success():
     # 4. Assertions
     assert results == mock_greedy_results
     assert solution["status"] == "GreedyNestingSuccess"
+
+
+def test_format_greedy_results():
+    """
+    Tests that format_greedy_results correctly transforms grouped data
+    into the final result format.
+    """
+    # 1. Setup mock data
+    nested_groups = [
+        [
+            [{"order_number": "A", "width": 20, "out": 2, "roll": 82, "group_id": "A-B", "quantity": 10}],
+            [{"order_number": "B", "width": 30, "out": 1, "roll": 82, "group_id": "A-B", "quantity": 5}]
+        ]
+    ]
+    updated_orders = [
+        {"order_number": "A", "quantity": 0},
+        {"order_number": "B", "quantity": 15},
+    ]
+    original_orders_list = [
+        {"order_number": "A", "width": 20, "quantity": 10, "length": 100, "demand": 1000, "type": "N", "component_type": "sleeve", "due_date": "2025-01-01", "front": "F1", "middle": "M1", "back": "B1", "c": "C1", "b": "B2", "die_cut": "D1"},
+        {"order_number": "B", "width": 30, "quantity": 20, "length": 150, "demand": 3000, "type": "W", "component_type": "pad", "due_date": "2025-01-02", "front": "F2"},
+    ]
+    original_orders_df = pl.from_dicts(original_orders_list).with_columns(
+        pl.arange(0, len(original_orders_list)).alias("original_idx")
+    )
+    roll_length = 10000
+    c_type = "C"
+    b_type = "B"
+
+    # 2. Call the function
+    results = format_greedy_results(
+        nested_groups, updated_orders, original_orders_df, roll_length, c_type, b_type
+    )
+
+    # 3. Define expected output
+    expected_results = [
+        {
+            "status": "Optimal",
+            "group_id": "A-B",
+            "objective_value": 12,
+            "variables": {
+                "roll_w": 82,
+                "rem_roll_l": 9972.3775,
+                "demand_per_cut": 18.415,
+                "order_w": 20,
+                "order_l": 100,
+                "order_qty": 10,
+                "order_dmd": 1000,
+                "cuts": 2,
+                "trim": 12,
+                "order_idx": 0,
+                "type": "N",
+                "component_type": "sleeve",
+                "due_date": "2025-01-01",
+            },
+            "material_specs": {
+                "quantity": 10,
+                "front": "F1",
+                "middle": "M1",
+                "back": "B1",
+                "c": "C1",
+                "b": "B2",
+                "die_cut": "D1",
+                "c_type": "C",
+                "b_type": "B",
+            },
+            "message": "Greedy Nesting solution found.",
+        },
+        {
+            "status": "Optimal",
+            "group_id": "A-B",
+            "objective_value": 12,
+            "variables": {
+                "roll_w": 82,
+                "rem_roll_l": 9972.3775,
+                "demand_per_cut": 27.6225,
+                "order_w": 30,
+                "order_l": 150,
+                "order_qty": 5,
+                "order_dmd": 3000,
+                "cuts": 1,
+                "trim": 12,
+                "order_idx": 1,
+                "type": "W",
+                "component_type": "pad",
+                "due_date": "2025-01-02",
+            },
+            "material_specs": {
+                "quantity": 20,
+                "front": "F2",
+                "c_type": "C",
+                "b_type": "B",
+            },
+            "message": "Greedy Nesting solution found.",
+        },
+    ]
+
+    # 4. Assertions
+    results.sort(key=lambda x: x['variables']['order_idx'])
+    assert results == expected_results
