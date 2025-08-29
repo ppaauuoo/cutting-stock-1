@@ -11,6 +11,17 @@ from cuttingstock.linear import solve_linear_program
 from cuttingstock.utils import log_message
 from cuttingstock.material import OutOfStockError, process_single_order, handle_unprocessed_orders
 
+# Status Messages
+STATUS_OPTIMAL = "Optimal"
+STATUS_INFEASIBLE = "Infeasible"
+STATUS_FAILED = "Failed"
+
+CORRUGATE_MULTIPLIERS = {
+    "C": 1.45,
+    "B": 1.35,
+    "E": 1.25,
+}
+
 def verify_stock_availability(width: int, material: str, required_length: float, stock_data: pl.DataFrame) -> bool:
     """
     Verifies if the required length of material is truly available in stock.
@@ -34,11 +45,6 @@ def verify_stock_availability(width: int, material: str, required_length: float,
     total_available = matching_stock.select(pl.col("length").sum()).item() if not matching_stock.is_empty() else 0
 
     return total_available >= required_length
-
-# Status Messages
-STATUS_OPTIMAL = "Optimal"
-STATUS_INFEASIBLE = "Infeasible"
-STATUS_FAILED = "Failed"
 
 def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_factory: str) -> list:
     """
@@ -134,12 +140,6 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
 
     log_message("info", "Suggestions generated", {'suggestions': suggestions})
     return suggestions
-
-CORRUGATE_MULTIPLIERS = {
-    "C": 1.45,
-    "B": 1.35,
-    "E": 1.25,
-}
 
 async def _find_solution(
     orders_to_process: pl.DataFrame, roll: dict, c_type: Optional[str], b_type: Optional[str],
@@ -428,10 +428,10 @@ async def main_algorithm(
 
         _save_roll_results_to_db(roll_cuts, roll['width'], progress_callback, output_dir)
 
-    unprocessed_orders_results = handle_unprocessed_orders(
-        rem_orders_df, progress_callback
-    )
-    all_results.extend(unprocessed_orders_results)
+    # unprocessed_orders_results = handle_unprocessed_orders(
+    #     rem_orders_df, progress_callback
+    # )
+    # all_results.extend(unprocessed_orders_results)
 
     _save_summary_results_to_db(all_results, progress_callback, output_dir)
 
