@@ -16,7 +16,7 @@ async def test_find_solution_greedy_nest_w_pulp_success():
     orders = [
         {"order_number": "B", "width": 13, "type": "N", "demand": 5}, #can't be second pair -> high demand
         {"order_number": "D", "width": 13, "type": "W", "demand": 3}, #grouping run top-down, so D overwrite B as a first
-        {"order_number": "G", "width": 17, "type": "W", "demand": 4},
+        {"order_number": "G", "width": 17, "type": "W", "demand": 6},
     ]
     original_orders_df = pl.from_dicts(orders).rename({"demand": "quantity"})
     original_orders_df = original_orders_df.with_columns(
@@ -156,7 +156,7 @@ async def test_find_solution_greedy_nest_max_out_success():
                 'order_l': 100,
                 'order_qty': 5,
                 'order_w': 17,
-                'rem_roll_l': 994.0733,
+                'rem_roll_l': 995.7667,
                 'roll_w': 80,
                 'trim': 2,
                 'type': 'X',
@@ -167,7 +167,7 @@ async def test_find_solution_greedy_nest_max_out_success():
             'material_specs': {
                 'b_type': None,
                 'c_type': None,
-                'quantity': 7,
+                'quantity': 5,
             },
             'message': 'Greedy Nesting solution found.',
             'objective_value': 2,
@@ -175,14 +175,14 @@ async def test_find_solution_greedy_nest_max_out_success():
             'variables': {
                 'component_type': '',
                 'cuts': 3,
-                'demand_per_cut': 5.9267,
+                'demand_per_cut': 4.2333,
                 'due_date': None,
                 'order_dmd': None,
                 'order_idx': 3,
                 'order_l': 100,
-                'order_qty': 7,
+                'order_qty': 5,
                 'order_w': 9,
-                'rem_roll_l': 994.0733,
+                'rem_roll_l': 995.7667,
                 'roll_w': 80,
                 'trim': 2,
                 'type': 'Y',
@@ -208,7 +208,7 @@ async def test_find_solution_greedy_nest_max_out_success():
                 'order_l': 100,
                 'order_qty': 5,
                 'order_w': 17,
-                'rem_roll_l': 982.22,
+                'rem_roll_l': 996.825,
                 'roll_w': 80,
                 'trim': 3,
                 'type': 'D',
@@ -219,7 +219,7 @@ async def test_find_solution_greedy_nest_max_out_success():
             'material_specs': {
                 'b_type': None,
                 'c_type': None,
-                'quantity': 7,
+                'quantity': 1,
             },
             'message': 'Greedy Nesting solution found.',
             'objective_value': 3,
@@ -227,14 +227,14 @@ async def test_find_solution_greedy_nest_max_out_success():
             'variables': {
                 'component_type': '',
                 'cuts': 1,
-                'demand_per_cut': 17.78,
+                'demand_per_cut': 2.54,
                 'due_date': None,
                 'order_dmd': None,
                 'order_idx': 1,
                 'order_l': 100,
-                'order_qty': 7,
+                'order_qty': 1,
                 'order_w': 9,
-                'rem_roll_l': 982.22,
+                'rem_roll_l': 996.825,
                 'roll_w': 80,
                 'trim': 3,
                 'type': 'D',
@@ -263,8 +263,8 @@ def test_format_greedy_results():
         ]
     ]
     updated_orders = [
-        {"order_number": "A", "quantity": 0},
-        {"order_number": "B", "quantity": 15},
+        {"order_number": "A", "width": 20, "quantity": 0, "length": 100, "demand": 1000, "type": "N", "component_type": "sleeve", "due_date": "2025-01-01", "front": "F1", "middle": "M1", "back": "B1", "c": "C1", "b": "B2", "die_cut": "D1"},
+        {"order_number": "B", "width": 30, "quantity": 15, "length": 150, "demand": 3000, "type": "W", "component_type": "pad", "due_date": "2025-01-02", "front": "F2"},
     ]
     original_orders_list = [
         {"order_number": "A", "width": 20, "quantity": 10, "length": 100, "demand": 1000, "type": "N", "component_type": "sleeve", "due_date": "2025-01-01", "front": "F1", "middle": "M1", "back": "B1", "c": "C1", "b": "B2", "die_cut": "D1"},
@@ -336,7 +336,7 @@ def test_format_greedy_results():
                 "due_date": "2025-01-02",
             },
             "material_specs": {
-                "quantity": 20,
+                "quantity": 5,
                 "front": "F2",
                 "c_type": "C",
                 "b_type": "B",

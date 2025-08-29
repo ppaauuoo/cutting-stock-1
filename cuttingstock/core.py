@@ -170,16 +170,18 @@ async def _find_solution(
                 log_message("info", "Greedy nesting results", {'results': greedy_results})
             greedy_results_to_return = greedy_results
 
-    orders_for_solvers = orders_to_process
+    # orders_for_solvers = orders_to_process
+    orders_for_solvers = pl.DataFrame(updated_orders)
     if greedy_results_to_return:
-        processed_indices = {
-            res.get("variables", {}).get("order_idx") for res in greedy_results_to_return
-        }
-        processed_indices.discard(None)  # Remove None if it exists
-        if processed_indices:
-            orders_for_solvers = orders_to_process.filter(
-                ~pl.col("original_idx").is_in(list(processed_indices))
-            )
+        orders_for_solvers = orders_for_solvers.filter(pl.col('quantity') > 0)
+        # processed_indices = {
+        #     res.get("variables", {}).get("order_idx") for res in greedy_results_to_return
+        # }
+        # processed_indices.discard(None)  # Remove None if it exists
+        # if processed_indices:
+        #     orders_for_solvers = orders_to_process.filter(
+        #         ~pl.col("original_idx").is_in(list(processed_indices))
+        #     )
 
     log_message("info", "Orders after greedy", {'remaining_orders_count': orders_for_solvers.shape[0]})
     if not greedy_results_to_return and progress_callback:

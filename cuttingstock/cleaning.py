@@ -143,6 +143,10 @@ def clean_data(df: pl.DataFrame,
     df = df.filter(pl.col("demand") > 0)
     df = df.filter(pl.col("width") > 0)
     df = df.filter(pl.col("length") > 0)
+    #LOGIC
+    df = df.with_columns(
+        (pl.col("quantity") + 100).alias("quantity")
+    )
     # Combine order_number and order_idx for uniqueness
     df = df.with_columns(
         (pl.col("order_number").cast(pl.Utf8) + "-" + pl.col("order_idx").cast(pl.Utf8)).alias("order_number")

@@ -39,7 +39,7 @@ def passes_logic(order1: dict[str, int], order2: dict[str, int], materials: list
         logic2 = True
 
 
-    logic3 = order1["quantity"] < order2["quantity"]
+    logic3 = order1["quantity"] / order1['out'] * order2['out'] <= order2["quantity"]
 
     logic = logic and logic2 and logic3
 
@@ -80,7 +80,7 @@ def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, m
     """Greedy algorithm to assign 'out' and nest orders"""
     if materials is None:
         # materials = MATERIAL_LIST
-        raise
+        raise ValueError("No materials provided")
     # Initialize groups as single orders
     groups: list[list[dict[str, int|str]]] = [
         [{"order_number": o["order_number"], "width": o["width"], "type": o["type"], "quantity": o["quantity"]}] for o in orders
@@ -102,13 +102,17 @@ def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, m
             score = compat_score(temp_i, temp_j, materials=materials)
             if score >= min_compat:
                 # Assign 'out' values to original orders
-                orders[i]["out"] = temp_i["out"]
-                orders[j]["out"] = temp_j["out"]
-                orders[i]["roll"] = temp_i["roll"]
-                orders[j]["roll"] = temp_j["roll"]
-                id = f'{orders[i]["order_number"]}-{orders[j]["order_number"]}'
-                orders[i]["group_id"] = id
-                orders[j]["group_id"] = id
+                groups[i][0]["out"] = temp_i["out"]
+                groups[j][0]["out"] = temp_j["out"]
+                groups[i][0]["roll"] = temp_i["roll"]
+                groups[j][0]["roll"] = temp_j["roll"]
+                id = f'{groups[i][0]["order_number"]}-{groups[j][0]["order_number"]}'
+                groups[i][0]["group_id"] = id
+                groups[j][0]["group_id"] = id
+                #LOGIC
+                groups[j][0]["quantity"] = round(temp_i["quantity"] / temp_i["out"] * temp_j["out"])
+                orders[j]["quantity"] -= groups[j][0]["quantity"]
+                orders[i]["quantity"] = 0
                 new_group: list[list[dict[str, int]]] = [groups[i], groups[j]]
                 groups.append(new_group)
                 groups[i] = groups[j] = None  # Mark as merged
@@ -163,12 +167,12 @@ def format_greedy_results(
         if not group_updated_orders:
             continue
 
-        roll_w = group_updated_orders[0].get("roll")
+        roll_w = flat_group_base[0].get("roll")
         if not roll_w or roll_w == 0:
             continue  # Skip groups that were not successfully matched to a roll
 
         total_cut_width = sum(
-            o["width"] * o.get("out", 1) for o in group_updated_orders
+            o["width"] * o.get("out", 1) for o in flat_group_base
         )
         trim = roll_w - total_cut_width
 
@@ -182,16 +186,16 @@ def format_greedy_results(
         corr_multiplier = CORRUGATE_MULTIPLIERS.get(most_demand_type, 1.0)
 
         group_demands = []
-        for updated_order in group_updated_orders:
+        for i, updated_order in enumerate(group_updated_orders):
             original_order = original_orders_map.get(updated_order["order_number"])
             if not original_order:
                 continue
 
-            cuts = updated_order.get("out", 1)
+            cuts = flat_group_base[i].get("out", 1)
             total_len_val = (
                 original_order.get("length", 0)
                 * INCH_TO_M
-                * original_order.get("quantity", 0)
+                * flat_group_base[i].get("quantity", 0)
                 * corr_multiplier
             )
             demand_per_cut = round(total_len_val / cuts, 4) if cuts > 0 else 0
@@ -205,17 +209,17 @@ def format_greedy_results(
             if not original_order:
                 continue
 
-            group_id = updated_order.get("group_id")
-            cuts = updated_order.get("out", 1)
+            group_id = flat_group_base[i].get("group_id")
+            cuts = flat_group_base[i].get("out", 1)
             demand_per_cut = group_demands[i]
 
-            material_keys = ["quantity", "front", "middle", "back", "c", "b", "die_cut"]
+            material_keys = ["front", "middle", "back", "c", "b", "die_cut"]
             material_specs = {
                 key: original_order.get(key)
                 for key in material_keys
                 if original_order.get(key)
             }
-            material_specs.update({"c_type": c_type, "b_type": b_type})
+            material_specs.update({"c_type": c_type, "b_type": b_type, "quantity": flat_group_base[i].get("quantity", 0)})
 
             result = {
                 "status": "Optimal",
@@ -227,7 +231,7 @@ def format_greedy_results(
                     "demand_per_cut": demand_per_cut,
                     "order_w": original_order.get("width"),
                     "order_l": original_order.get("length"),
-                    "order_qty": original_order.get("quantity"),
+                    "order_qty": flat_group_base[i].get("quantity", 0),
                     "order_dmd": original_order.get("demand"),
                     "cuts": cuts,
                     "trim": trim,
