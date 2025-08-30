@@ -1,4 +1,5 @@
 import heapq
+import copy
 from itertools import product
 from typing import Optional
 
@@ -97,11 +98,14 @@ def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, m
     while pairs:
         score, i, j = heapq.heappop(pairs)
         if groups[i] and groups[j]:  # Not already merged
+            # Sync quantities from the master 'orders' list before re-computing score
+            groups[i][0]['quantity'] = orders[i]['quantity']
+            groups[j][0]['quantity'] = orders[j]['quantity']
+
             # Recompute with current group state
             temp_i, temp_j = groups[i][0].copy(), groups[j][0].copy()
             score = compat_score(temp_i, temp_j, materials=materials)
             if score >= min_compat:
-                # Assign 'out' values to original orders
                 groups[i][0]["out"] = temp_i["out"]
                 groups[j][0]["out"] = temp_j["out"]
                 groups[i][0]["roll"] = temp_i["roll"]
@@ -109,17 +113,22 @@ def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, m
                 id = f'{groups[i][0]["order_number"]}-{groups[j][0]["order_number"]}'
                 groups[i][0]["group_id"] = id
                 groups[j][0]["group_id"] = id
-                #LOGIC
+
+                #SEC PAIR LOGIC
                 groups[j][0]["quantity"] = round(temp_i["quantity"] / temp_i["out"] * temp_j["out"])
                 orders[j]["quantity"] -= groups[j][0]["quantity"]
                 orders[i]["quantity"] = 0
-                new_group: list[list[dict[str, int]]] = [groups[i], groups[j]]
-                groups.append(new_group)
-                groups[i] = groups[j] = None  # Mark as merged
-                # Optionally: recompute pairs for new group (for deeper nesting)
 
-    # Filter non-None groups and return
-    result = [g for g in groups if g]
+                new_group: list[list[dict[str, int]]] = [copy.deepcopy(groups[i]), copy.deepcopy(groups[j])]
+
+                groups[i] = None  # Mark as merged
+                #REUSE LOGIC
+                if orders[j]["quantity"] <= 10:
+                    groups[j] = None  # Mark as merged
+
+                groups.append(new_group)
+
+    result = [g for g in groups if g and isinstance(g[0], list)]
     return result, orders
 
 
