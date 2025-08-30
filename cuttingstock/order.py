@@ -18,7 +18,7 @@ def filter_orders_by_factory(orders_df: pl.DataFrame, selected_factory: str) -> 
 
         if selected_factory == "1" or selected_factory == "2":
             orders_df = orders_df.filter(
-                order_num_col.cast(pl.Utf8).str.strip().str.starts_with('1218') & (~order_num_col.cast(pl.Utf8).str.strip().str.starts_with('6218'))
+                order_num_col.cast(pl.Utf8).str.strip_chars().str.starts_with('1218')
             )
         elif selected_factory in ["3", "4", "5"]:
             orders_df = orders_df.filter(
