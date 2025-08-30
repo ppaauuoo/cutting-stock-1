@@ -350,6 +350,279 @@ def test_format_greedy_results():
     assert results == expected_results
 
 
+@pytest.mark.asyncio
+async def test_find_solution_greedy_nest_w_pulp_leftover_success():
+    """
+    Tests that _find_solution correctly returns results from greedy_nest
+    when it finds a complete solution.
+    """
+    # 1. Setup mock data
+    orders = [
+        {"order_number": "D", "width": 17, "type": "W", "demand": 5}, #grouping run top-down, so D overwrite B as a first
+        {"order_number": "G", "width": 13, "type": "W", "demand": 80},
+    ]
+    original_orders_df = pl.from_dicts(orders).rename({"demand": "quantity"})
+    original_orders_df = original_orders_df.with_columns(
+        pl.lit(100).alias("length"),
+        pl.lit("").alias("component_type"),
+        pl.arange(0, len(original_orders_df)).alias("original_idx")
+    )
+    orders_to_process = original_orders_df.clone()
+    roll = {'width': 80, 'length': 1000}
+
+    mock_greedy_results =  [
+        {
+            'group_id': 'D-G',
+            'material_specs': {
+                'b_type': None,
+                'c_type': None,
+                'quantity': 5,
+            },
+            'message': 'Greedy Nesting solution found.',
+            'objective_value': 3,
+            'status': 'Optimal',
+            'variables': {
+                'component_type': '',
+                'cuts': 3,
+                'demand_per_cut': 4.2333,
+                'due_date': None,
+                'order_dmd': None,
+                'order_idx': 0,
+                'order_l': 100,
+                'order_qty': 5,
+                'order_w': 17,
+                'rem_roll_l': 995.7667,
+                'roll_w': 80,
+                'trim': 3,
+                'type': 'W',
+            },
+        },
+        {
+            'group_id': 'D-G',
+            'material_specs': {
+                'b_type': None,
+                'c_type': None,
+                'quantity': 3,
+            },
+            'message': 'Greedy Nesting solution found.',
+            'objective_value': 3,
+            'status': 'Optimal',
+            'variables': {
+                'component_type': '',
+                'cuts': 2,
+                'demand_per_cut': 3.81,
+                'due_date': None,
+                'order_dmd': None,
+                'order_idx': 1,
+                'order_l': 100,
+                'order_qty': 3,
+                'order_w': 13,
+                'rem_roll_l': 995.7667,
+                'roll_w': 80,
+                'trim': 3,
+                'type': 'W',
+            },
+        },
+        {
+            'material_specs': {
+                'b_type': None,
+                'c_type': None,
+            },
+            'message': 'PuLP problem solved successfully.',
+            'objective_value': 2.0,
+            'status': 'Optimal',
+            'variables': {
+                'component_type': '',
+                'cuts': 6.0,
+                'demand_per_cut': 32.5967,
+                'due_date': None,
+                'order_dmd': None,
+                'order_idx': 1,
+                'order_l': 100,
+                'order_qty': 77,
+                'order_w': 13,
+                'rem_roll_l': 967.4033,
+                'roll_w': 80,
+                'trim': 2.0,
+                'type': 'W',
+            },
+        },
+     ]    # 3. Call the function
+    results, solution = await _find_solution(
+        orders_to_process, roll, None, None, None, original_orders_df
+    )
+
+    # 4. Assertions
+    assert results == mock_greedy_results
+    assert results[0]['variables']['order_qty'] == orders[0]['demand']
+    assert results[1]['variables']['order_qty'] == round(orders[0]['demand']/results[0]['variables']['cuts']*results[1]['variables']['cuts'])
+    assert solution["status"] == "Optimal"
+
+
+@pytest.mark.asyncio
+async def test_find_solution_greedy_nest_double_w_leftover_success():
+    """
+    Tests that _find_solution correctly returns results from greedy_nest
+    when it finds a complete solution.
+    """
+    # 1. Setup mock data
+    orders = [
+        {"order_number": "D", "width": 17, "type": "W", "demand": 5}, #grouping run top-down, so D overwrite B as a first
+        {"order_number": "E", "width": 17, "type": "W", "demand": 5},
+        {"order_number": "G", "width": 13, "type": "W", "demand": 80},
+    ]
+    original_orders_df = pl.from_dicts(orders).rename({"demand": "quantity"})
+    original_orders_df = original_orders_df.with_columns(
+        pl.lit(100).alias("length"),
+        pl.lit("").alias("component_type"),
+        pl.arange(0, len(original_orders_df)).alias("original_idx")
+    )
+    orders_to_process = original_orders_df.clone()
+    roll = {'width': 80, 'length': 1000}
+
+    mock_greedy_results =  [
+        {
+            'group_id': 'D-G',
+            'material_specs': {
+                'b_type': None,
+                'c_type': None,
+                'quantity': 5,
+            },
+            'message': 'Greedy Nesting solution found.',
+            'objective_value': 3,
+            'status': 'Optimal',
+            'variables': {
+                'component_type': '',
+                'cuts': 3,
+                'demand_per_cut': 4.2333,
+                'due_date': None,
+                'order_dmd': None,
+                'order_idx': 0,
+                'order_l': 100,
+                'order_qty': 5,
+                'order_w': 17,
+                'rem_roll_l': 995.7667,
+                'roll_w': 80,
+                'trim': 3,
+                'type': 'W',
+            },
+        },
+        {
+            'group_id': 'D-G',
+            'material_specs': {
+                'b_type': None,
+                'c_type': None,
+                'quantity': 3,
+            },
+            'message': 'Greedy Nesting solution found.',
+            'objective_value': 3,
+            'status': 'Optimal',
+            'variables': {
+                'component_type': '',
+                'cuts': 2,
+                'demand_per_cut': 3.81,
+                'due_date': None,
+                'order_dmd': None,
+                'order_idx': 2,
+                'order_l': 100,
+                'order_qty': 3,
+                'order_w': 13,
+                'rem_roll_l': 995.7667,
+                'roll_w': 80,
+                'trim': 3,
+                'type': 'W',
+            },
+        },
+        {
+            'group_id': 'E-G',
+            'material_specs': {
+                'b_type': None,
+                'c_type': None,
+                'quantity': 5,
+            },
+            'message': 'Greedy Nesting solution found.',
+            'objective_value': 3,
+            'status': 'Optimal',
+            'variables': {
+                'component_type': '',
+                'cuts': 3,
+                'demand_per_cut': 4.2333,
+                'due_date': None,
+                'order_dmd': None,
+                'order_idx': 1,
+                'order_l': 100,
+                'order_qty': 5,
+                'order_w': 17,
+                'rem_roll_l': 995.7667,
+                'roll_w': 80,
+                'trim': 3,
+                'type': 'W',
+            },
+        },
+        {
+            'group_id': 'E-G',
+            'material_specs': {
+                'b_type': None,
+                'c_type': None,
+                'quantity': 3,
+            },
+            'message': 'Greedy Nesting solution found.',
+            'objective_value': 3,
+            'status': 'Optimal',
+            'variables': {
+                'component_type': '',
+                'cuts': 2,
+                'demand_per_cut': 3.81,
+                'due_date': None,
+                'order_dmd': None,
+                'order_idx': 2,
+                'order_l': 100,
+                'order_qty': 3,
+                'order_w': 13,
+                'rem_roll_l': 995.7667,
+                'roll_w': 80,
+                'trim': 3,
+                'type': 'W',
+            },
+        },
+        {
+            'material_specs': {
+                'b_type': None,
+                'c_type': None,
+            },
+            'message': 'PuLP problem solved successfully.',
+            'objective_value': 2.0,
+            'status': 'Optimal',
+            'variables': {
+                'component_type': '',
+                'cuts': 6.0,
+                'demand_per_cut': 31.3267,
+                'due_date': None,
+                'order_dmd': None,
+                'order_idx': 2,
+                'order_l': 100,
+                'order_qty': 74,
+                'order_w': 13,
+                'rem_roll_l': 968.6733,
+                'roll_w': 80,
+                'trim': 2.0,
+                'type': 'W',
+            },
+        },
+     ]    # 3. Call the function
+    results, solution = await _find_solution(
+        orders_to_process, roll, None, None, None, original_orders_df
+    )
+
+    # 4. Assertions
+    assert results == mock_greedy_results
+    assert results[0]['variables']['order_qty'] == orders[0]['demand']
+    assert results[1]['variables']['order_qty'] == round(orders[0]['demand']/results[0]['variables']['cuts']*results[1]['variables']['cuts'])
+    assert results[2]['variables']['order_qty'] == orders[1]['demand']
+    assert results[3]['variables']['order_qty'] == round(orders[1]['demand']/results[2]['variables']['cuts']*results[3]['variables']['cuts'])
+    assert solution["status"] == "Optimal"
+
+
 def test_greedy_nest():
     """
     Tests the greedy_nest function for various scenarios.
@@ -419,17 +692,11 @@ def test_greedy_nest():
     materials3 = [80]
     nested3, updated_orders3 = greedy_nest(orders3, materials=materials3)
 
-    assert len(nested3) == 2 # One group of A-B, one group of E
+    assert len(nested3) == 1 # One group of A-B
 
-    group_e_list = [g for g in nested3 if not isinstance(g[0], list)]
     group_ab_list = [g for g in nested3 if isinstance(g[0], list)]
-    assert len(group_e_list) == 1
     assert len(group_ab_list) == 1
-    group_e = group_e_list[0]
     group_ab = group_ab_list[0]
-
-    assert group_e[0]['order_number'] == 'E'
-    assert group_e[0]['quantity'] == 10
 
     order_a_res_3 = group_ab[0][0]
     order_b_res_3 = group_ab[1][0]
