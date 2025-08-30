@@ -759,7 +759,7 @@ def test_generate_suggestions_simple_case():
 
     assert len(suggestions) == 1
     assert suggestions[0]['width'] == "80"
-    assert suggestions[0]['spec'] == {'front': 'M1', 'c': 'C1', 'middle': '', 'b': '', 'back': 'M2'}
+    assert suggestions[0]['spec'] == {'front': 'M1', 'c': 'C1', 'middle': None, 'b': None, 'back': 'M2'}
 
 def test_generate_suggestions_sorting_default():
     """Test default sorting of suggestions by width (as integer)."""
