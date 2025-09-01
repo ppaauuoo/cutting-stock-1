@@ -15,3 +15,5 @@ cutting_results*
 .zed
 # cuttingstock.log
 logs/cuttingstock.log
+test_cutting_results.csv
+test_cutting_results.xlsx
