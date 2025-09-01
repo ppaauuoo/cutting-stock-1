@@ -2,6 +2,7 @@ import heapq
 import copy
 from itertools import product
 from typing import Optional
+from math import floor
 
 import polars as pl
 
@@ -20,14 +21,14 @@ CORRUGATE_MULTIPLIERS = {
 }
 
 
-def compute_result(order1: dict[str, int], order2: dict[str, int]) -> float:
+def compute_result(order1: dict[str, float|int|str], order2: dict[str, float|int|str]) -> float:
     """Compute result for a pair: width1 * out1 + width2 * out2"""
     return order1["width"] * order1.get("out", 1) + order2["width"] * order2.get(
         "out", 1
     )
 
 
-def passes_logic(order1: dict[str, int], order2: dict[str, int], materials: list[int] = MATERIAL_LIST) -> float:
+def passes_logic(order1: dict[str, float|int|str], order2: dict[str, float|int|str], materials: list[int] = MATERIAL_LIST) -> float:
     """Check if result is within 1 to 5 units of any material value"""
     result = compute_result(order1, order2)
     logic = any(MIN_TRIM <= m - result <= MAX_TRIM for m in materials)
@@ -40,7 +41,7 @@ def passes_logic(order1: dict[str, int], order2: dict[str, int], materials: list
         logic2 = True
 
 
-    logic3 = order1["quantity"] / order1['out'] * order2['out'] <= order2["quantity"]
+    logic3 = floor(order1["quantity"] / order1['out'] * order1['length'] / order2['length']) * order2['out'] * order2['out'] <= order2["quantity"]
 
     logic = logic and logic2 and logic3
 
@@ -84,7 +85,7 @@ def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, m
         raise ValueError("No materials provided")
     # Initialize groups as single orders
     groups: list[list[dict[str, int|str]]] = [
-        [{"order_number": o["order_number"], "width": o["width"], "type": o["type"], "quantity": o["quantity"]}] for o in orders
+        [{"order_number": o["order_number"], "width": o["width"], "length": o["length"], "type": o["type"], "quantity": o["quantity"]}] for o in orders
     ]
     # Priority queue: (-score, i, j) for max-heap
     pairs: list[tuple[float, int, int]] = []
@@ -115,7 +116,7 @@ def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, m
                 groups[j][0]["group_id"] = id
 
                 #SEC PAIR LOGIC
-                groups[j][0]["quantity"] = round(temp_i["quantity"] / temp_i["out"] * temp_j["out"])
+                groups[j][0]["quantity"] = floor(temp_i["quantity"] / temp_i["out"] * temp_i["length"] / temp_j["length"]) * temp_j["out"] * temp_j["out"]
                 orders[j]["quantity"] -= groups[j][0]["quantity"]
                 orders[i]["quantity"] = 0
 
