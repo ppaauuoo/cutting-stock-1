@@ -813,12 +813,12 @@ def test_generate_suggestions_sorting_factory_1_2():
 def test_generate_suggestions_sorting_by_spec():
     """Test that suggestions are sorted by the material spec."""
     orders_df = pl.DataFrame({
-        "order_number": ["1", "2", "3", "4"],
-        "front": ["M2", "M1", "M1", "M1"],
-        "c": [None, None, "M2", None],
-        "middle": [None, None, None, None],
-        "b": [None, None, None, None],
-        "back": ["M4", "M2", "M3", None],
+        "order_number": ["1", "2", "3", "4","5","6" ],
+        "front":        ["M1","M2", "M1", "M1","M1", "M1"],
+        "c":            [None,"M2", "M3", None,None, "M2"],
+        "middle":       [None,None, "M3", None,None, "M2"],
+        "b":            ["M2",None, "M2", "M2","M3", "M2"],
+        "back":         ["M3","M4", "M2", "M3","M3", "M2"],
     })
     roll_specs = {
         "80": {
@@ -832,7 +832,7 @@ def test_generate_suggestions_sorting_by_spec():
 
     suggestions = generate_suggestions(orders_df, roll_specs, factory)
 
-    assert len(suggestions) == 4
+    assert len(suggestions) == 5
 
     # Expected order is based on sorted list of material names
     # ['M1']
@@ -841,9 +841,10 @@ def test_generate_suggestions_sorting_by_spec():
     # ['M2', 'M4']
     specs = [s['spec'] for s in suggestions]
     expected_specs = [
-        {'front': 'M1', 'c': None, 'middle': None, 'b': None, 'back': None},
-        {'front': 'M1', 'c': None, 'middle': None, 'b': None, 'back': 'M2'},
-        {'front': 'M1', 'c': 'M2', 'middle': None, 'b': None, 'back': 'M3'},
-        {'front': 'M2', 'c': None, 'middle': None, 'b': None, 'back': 'M4'},
+        {'front': 'M1', 'b': 'M2', 'middle': None, 'c': None, 'back': 'M3'},
+        {'front': 'M1', 'b': 'M3', 'middle': None, 'c': None, 'back': 'M3'},
+        {'front': 'M2', 'b': None, 'middle': None, 'c': 'M2', 'back': 'M4'},
+        {'front': 'M1', 'b': 'M2', 'middle': 'M2', 'c': 'M2', 'back': 'M2'},
+        {'front': 'M1', 'b': 'M2', 'middle': 'M3', 'c': 'M3', 'back': 'M2'},
     ]
     assert specs == expected_specs
