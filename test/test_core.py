@@ -826,13 +826,19 @@ def test_generate_suggestions_sorting_by_spec():
             "M2": {1: {"id": "R2", "length": 1000}},
             "M3": {1: {"id": "R3", "length": 1000}},
             "M4": {1: {"id": "R4", "length": 1000}},
+        },
+        "82": {
+            "M1": {1: {"id": "R1", "length": 1000}},
+            "M2": {1: {"id": "R2", "length": 1000}},
+            "M3": {1: {"id": "R3", "length": 1000}},
+            "M4": {1: {"id": "R4", "length": 1000}},
         }
     }
     factory = "รวม"
 
     suggestions = generate_suggestions(orders_df, roll_specs, factory)
 
-    assert len(suggestions) == 5
+    assert len(suggestions) == 10
 
     # Expected order is based on sorted list of material names
     # ['M1']
@@ -842,9 +848,14 @@ def test_generate_suggestions_sorting_by_spec():
     specs = [s['spec'] for s in suggestions]
     expected_specs = [
         {'front': 'M1', 'b': 'M2', 'middle': None, 'c': None, 'back': 'M3'},
+        {'front': 'M1', 'b': 'M2', 'middle': None, 'c': None, 'back': 'M3'},
+        {'front': 'M1', 'b': 'M3', 'middle': None, 'c': None, 'back': 'M3'},
         {'front': 'M1', 'b': 'M3', 'middle': None, 'c': None, 'back': 'M3'},
         {'front': 'M2', 'b': None, 'middle': None, 'c': 'M2', 'back': 'M4'},
+        {'front': 'M2', 'b': None, 'middle': None, 'c': 'M2', 'back': 'M4'},
         {'front': 'M1', 'b': 'M2', 'middle': 'M2', 'c': 'M2', 'back': 'M2'},
+        {'front': 'M1', 'b': 'M2', 'middle': 'M2', 'c': 'M2', 'back': 'M2'},
+        {'front': 'M1', 'b': 'M2', 'middle': 'M3', 'c': 'M3', 'back': 'M2'},
         {'front': 'M1', 'b': 'M2', 'middle': 'M3', 'c': 'M3', 'back': 'M2'},
     ]
     assert specs == expected_specs
