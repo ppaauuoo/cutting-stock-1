@@ -120,7 +120,7 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
                 suggestion = {'width': width, 'spec': full_spec}
                 suggestions.append(suggestion)
 
-    suggestions.sort(key=lambda s: sorted([v for v in s['spec'].values() if v]))
+    suggestions.sort(key=lambda s: (len([v for v in s['spec'].values() if v]), sorted([v for v in s['spec'].values() if v])))
 
     log_message("info", "Suggestions generated", {'suggestions': suggestions})
     return suggestions
