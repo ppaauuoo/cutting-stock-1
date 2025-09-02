@@ -8,7 +8,7 @@ from cuttingstock.mlmodel import try_xgboost_solution
 from cuttingstock.grouping import greedy_nest, format_greedy_results
 
 @pytest.mark.asyncio
-async def test_find_solution_greedy_nest_w_pulp_success():
+async def test_find_solution_no_greedy_nest_w_pulp_success():
     """
     Tests that _find_solution correctly returns results from greedy_nest
     when it finds a complete solution.
@@ -112,6 +112,8 @@ async def test_find_solution_greedy_nest_w_pulp_success():
 
     # 4. Assertions
     # assert results == mock_greedy_results
+    assert len(results) == 1
+    assert results[0]['variables']['order_qty'] == 5
     assert solution["status"] == "Optimal"
 
 
@@ -248,6 +250,15 @@ async def test_find_solution_greedy_nest_max_out_success():
 
     # 4. Assertions
     # assert results == mock_greedy_results
+    assert results[0]['group_id'] == 'A-B'
+    assert results[0]['variables']['order_qty'] == 5
+    assert results[0]['variables']['cuts'] == 4
+    assert results[1]['group_id'] == 'A-B'
+    assert results[1]['variables']['order_qty'] == floor(5 / 4)
+    assert results[1]['variables']['cuts'] == 1
+    assert results[2]['group_id'] == 'C-D'
+    assert results[3]['group_id'] == 'C-D'
+    assert len(results) == 4
     assert solution["status"] == "GreedyNestingSuccess"
 
 
@@ -466,8 +477,9 @@ async def test_find_solution_greedy_nest_w_pulp_leftover_success():
     len3 = results[2]['variables']['order_l']
 
     # assert results == mock_greedy_results
-    assert results[0]['variables']['order_qty'] == orders[0]['demand']
+    assert results[0]['variables']['order_qty'] == dmd1
     assert results[1]['variables']['order_qty'] == floor(dmd1 / out1 * len1 / len2) * out2 * out2
+    assert results[2]['variables']['order_qty'] == dmd2-results[1]['variables']['order_qty']
     assert solution["status"] == "Optimal"
 
 
@@ -631,6 +643,7 @@ async def test_find_solution_greedy_nest_double_w_leftover_success():
 
     dmd1 = orders[0]['demand']
     dmd2 = orders[1]['demand']
+    dmd3 = orders[2]['demand']
 
     out1 = results[0]['variables']['cuts']
     out2 = results[1]['variables']['cuts']
@@ -641,10 +654,13 @@ async def test_find_solution_greedy_nest_double_w_leftover_success():
     len2 = results[1]['variables']['order_l']
     len3 = results[2]['variables']['order_l']
 
-    assert results[0]['variables']['order_qty'] == orders[0]['demand']
+
+    assert len(results) == 5
+    assert results[0]['variables']['order_qty'] == dmd1
     assert results[1]['variables']['order_qty'] == floor(dmd1 / out1 * len1 / len2) * out2 * out2
-    assert results[2]['variables']['order_qty'] == orders[1]['demand']
+    assert results[2]['variables']['order_qty'] == dmd2
     assert results[3]['variables']['order_qty'] == floor(dmd2 / out3 * len2 / len3) * out4 * out4
+    assert results[4]['variables']['order_qty'] == dmd3 - results[1]['variables']['order_qty'] - results[3]['variables']['order_qty']
     assert solution["status"] == "Optimal"
 
 
