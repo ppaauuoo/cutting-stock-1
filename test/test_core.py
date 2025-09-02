@@ -808,3 +808,42 @@ def test_generate_suggestions_sorting_factory_1_2():
     expected_order = ['85', '82', '95']
 
     assert [s['width'] for s in suggestions] == expected_order
+
+
+def test_generate_suggestions_sorting_by_spec():
+    """Test that suggestions are sorted by the material spec."""
+    orders_df = pl.DataFrame({
+        "order_number": ["1", "2", "3", "4"],
+        "front": ["M2", "M1", "M1", "M1"],
+        "c": [None, None, "M2", None],
+        "middle": [None, None, None, None],
+        "b": [None, None, None, None],
+        "back": ["M4", "M2", "M3", None],
+    })
+    roll_specs = {
+        "80": {
+            "M1": {1: {"id": "R1", "length": 1000}},
+            "M2": {1: {"id": "R2", "length": 1000}},
+            "M3": {1: {"id": "R3", "length": 1000}},
+            "M4": {1: {"id": "R4", "length": 1000}},
+        }
+    }
+    factory = "รวม"
+
+    suggestions = generate_suggestions(orders_df, roll_specs, factory)
+
+    assert len(suggestions) == 4
+
+    # Expected order is based on sorted list of material names
+    # ['M1']
+    # ['M1', 'M2']
+    # ['M1', 'M2', 'M3']
+    # ['M2', 'M4']
+    specs = [s['spec'] for s in suggestions]
+    expected_specs = [
+        {'front': 'M1', 'c': None, 'middle': None, 'b': None, 'back': None},
+        {'front': 'M1', 'c': None, 'middle': None, 'b': None, 'back': 'M2'},
+        {'front': 'M1', 'c': 'M2', 'middle': None, 'b': None, 'back': 'M3'},
+        {'front': 'M2', 'c': None, 'middle': None, 'b': None, 'back': 'M4'},
+    ]
+    assert specs == expected_specs
