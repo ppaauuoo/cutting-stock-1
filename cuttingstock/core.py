@@ -47,7 +47,6 @@ def verify_stock_availability(width: int, material: str, required_length: float,
 
     return total_available >= required_length
 
-# sort suggestions, by group of specs, eg. [A,B], [C,D], [A,B,C] would be [A,B], [A,B,C], [C,D], and sort by len of specs, eg. [A,B,C,D,E] would come after [A,B,C] AI!
 def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_factory: str) -> list:
     """
     Generates a list of all possible calculation settings based on order frequency and stock.
@@ -120,6 +119,8 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
                 full_spec = {k: v for k, v in spec_row.items() if k != 'len'}
                 suggestion = {'width': width, 'spec': full_spec}
                 suggestions.append(suggestion)
+
+    suggestions.sort(key=lambda s: sorted([v for v in s['spec'].values() if v]))
 
     log_message("info", "Suggestions generated", {'suggestions': suggestions})
     return suggestions
