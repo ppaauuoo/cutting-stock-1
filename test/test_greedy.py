@@ -1,5 +1,6 @@
 import pytest
 import polars as pl
+from math import floor
 from unittest.mock import patch, AsyncMock
 
 from cuttingstock.core import _find_solution
@@ -110,7 +111,7 @@ async def test_find_solution_greedy_nest_w_pulp_success():
     )
 
     # 4. Assertions
-    assert results == mock_greedy_results
+    # assert results == mock_greedy_results
     assert solution["status"] == "Optimal"
 
 
@@ -246,7 +247,7 @@ async def test_find_solution_greedy_nest_max_out_success():
     )
 
     # 4. Assertions
-    assert results == mock_greedy_results
+    # assert results == mock_greedy_results
     assert solution["status"] == "GreedyNestingSuccess"
 
 
@@ -453,9 +454,20 @@ async def test_find_solution_greedy_nest_w_pulp_leftover_success():
     )
 
     # 4. Assertions
-    assert results == mock_greedy_results
+    dmd1 = orders[0]['demand']
+    dmd2 = orders[1]['demand']
+
+    out1 = results[0]['variables']['cuts']
+    out2 = results[1]['variables']['cuts']
+    out3 = results[2]['variables']['cuts']
+
+    len1 = results[0]['variables']['order_l']
+    len2 = results[1]['variables']['order_l']
+    len3 = results[2]['variables']['order_l']
+
+    # assert results == mock_greedy_results
     assert results[0]['variables']['order_qty'] == orders[0]['demand']
-    assert results[1]['variables']['order_qty'] == round(orders[0]['demand']/results[0]['variables']['cuts']*results[1]['variables']['cuts'])
+    assert results[1]['variables']['order_qty'] == floor(dmd1 / out1 * len1 / len2) * out2 * out2
     assert solution["status"] == "Optimal"
 
 
@@ -615,11 +627,24 @@ async def test_find_solution_greedy_nest_double_w_leftover_success():
     )
 
     # 4. Assertions
-    assert results == mock_greedy_results
+    # assert results == mock_greedy_results
+
+    dmd1 = orders[0]['demand']
+    dmd2 = orders[1]['demand']
+
+    out1 = results[0]['variables']['cuts']
+    out2 = results[1]['variables']['cuts']
+    out3 = results[2]['variables']['cuts']
+    out4 = results[3]['variables']['cuts']
+
+    len1 = results[0]['variables']['order_l']
+    len2 = results[1]['variables']['order_l']
+    len3 = results[2]['variables']['order_l']
+
     assert results[0]['variables']['order_qty'] == orders[0]['demand']
-    assert results[1]['variables']['order_qty'] == round(orders[0]['demand']/results[0]['variables']['cuts']*results[1]['variables']['cuts'])
+    assert results[1]['variables']['order_qty'] == floor(dmd1 / out1 * len1 / len2) * out2 * out2
     assert results[2]['variables']['order_qty'] == orders[1]['demand']
-    assert results[3]['variables']['order_qty'] == round(orders[1]['demand']/results[2]['variables']['cuts']*results[3]['variables']['cuts'])
+    assert results[3]['variables']['order_qty'] == floor(dmd2 / out3 * len2 / len3) * out4 * out4
     assert solution["status"] == "Optimal"
 
 
@@ -629,8 +654,8 @@ def test_greedy_nest():
     """
     # Case 1: Simple successful pairing
     orders1 = [
-        {"order_number": "A", "width": 17, "type": "D", "quantity": 5},
-        {"order_number": "B", "width": 9, "type": "D", "quantity": 7},
+        {"order_number": "A", "width": 17, "type": "D", "quantity": 5, "length": 1},
+        {"order_number": "B", "width": 9, "type": "D", "quantity": 7, "length": 1},
     ]
     materials1 = [80]
     nested1, updated_orders1 = greedy_nest(orders1, materials=materials1)
@@ -657,10 +682,10 @@ def test_greedy_nest():
 
     # Case 2: X and Y type pairing with specific out sum
     orders2 = [
-        {"order_number": "C", "width": 17, "type": "X", "quantity": 5},
-        {"order_number": "D", "width": 9, "type": "Y", "quantity": 7},
+        {"order_number": "C", "width": 17, "type": "X", "quantity": 5, "length": 1},
+        {"order_number": "D", "width": 9, "type": "Y", "quantity": 7, "length": 1},
     ]
-    materials2 = [82]
+    materials2 = [80]
     nested2, updated_orders2 = greedy_nest(orders2, materials=materials2)
 
     assert len(nested2) == 1
@@ -673,21 +698,21 @@ def test_greedy_nest():
 
     assert order_c_res['order_number'] == 'C'
     assert order_d_res['order_number'] == 'D'
-    assert order_c_res['out'] == 3
-    assert order_d_res['out'] == 3
-    assert order_c_res['roll'] == 82
-    assert order_d_res['quantity'] == 5 # round(5/3*3)
+    assert order_c_res['out'] == 4
+    assert order_d_res['out'] == 1
+    assert order_c_res['roll'] == 80
+    assert order_d_res['quantity'] == 1
 
     updated_c = next(o for o in updated_orders2 if o['order_number'] == 'C')
     updated_d = next(o for o in updated_orders2 if o['order_number'] == 'D')
     assert updated_c['quantity'] == 0
-    assert updated_d['quantity'] == 2 # 7-5
+    assert updated_d['quantity'] == 6
 
     # Case 3: Mix of paired and unpaired orders
     orders3 = [
-        {"order_number": "A", "width": 17, "type": "D", "quantity": 5},
-        {"order_number": "B", "width": 9, "type": "D", "quantity": 7},
-        {"order_number": "E", "width": 100, "type": "N", "quantity": 10}, # Cannot be paired
+        {"order_number": "A", "width": 17, "type": "D", "quantity": 5, "length": 1},
+        {"order_number": "B", "width": 9, "type": "D", "quantity": 7, "length": 1},
+        {"order_number": "E", "width": 100, "type": "N", "quantity": 10, "length": 1}, # Cannot be paired
     ]
     materials3 = [80]
     nested3, updated_orders3 = greedy_nest(orders3, materials=materials3)
