@@ -176,6 +176,7 @@ async def _find_solution(
     if not orders_for_solvers.is_empty():
         solution = await try_xgboost_solution(orders_for_solvers, roll, c_type, b_type, progress_callback)
 
+        # since the xgboost work in batch, there would be some leftover too, make sure to process those leftover with linear solver AI!
         # 3. If XGBoost fails, fall back to the linear programming solver.
         if solution is None:
             if progress_callback:
@@ -203,7 +204,7 @@ async def _find_solution(
             log_message("info", "Linear solver found a solution")
             return [solution], solution
         else:
-            log_message("info", "Linear solver did not find a solution")
+            log_message("error", "Linear solver did not find a solution")
             return [], solution
 
 
