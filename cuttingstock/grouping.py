@@ -19,18 +19,18 @@ CORRUGATE_MULTIPLIERS = {
     "B": 1.35,
     "E": 1.25,
 }
-
-
-def compute_result(order1: dict[str, float|int|str], order2: dict[str, float|int|str]) -> float:
+def compute_secpair(order1: dict[str, float|int|str], order2: dict[str, float|int|str]) -> float:
     """Compute result for a pair: width1 * out1 + width2 * out2"""
-    return order1["width"] * order1.get("out", 1) + order2["width"] * order2.get(
-        "out", 1
-    )
+    return floor(order1["quantity"] / order1['out'] * order1['length'] / order2['length']) * order2['out']
+
+def compute_total(order1: dict[str, float|int|str], order2: dict[str, float|int|str]) -> float:
+    """Compute result for a pair: width1 * out1 + width2 * out2"""
+    return order1["width"] * order1.get("out", 1) + order2["width"] * order2.get( "out", 1 )
 
 
 def passes_logic(order1: dict[str, float|int|str], order2: dict[str, float|int|str], materials: list[int] = MATERIAL_LIST) -> float:
     """Check if result is within 1 to 5 units of any material value"""
-    result = compute_result(order1, order2)
+    result = compute_total(order1, order2)
     logic = any(MIN_TRIM <= m - result <= MAX_TRIM for m in materials)
 
     if order1["type"] == 'X':
@@ -40,8 +40,7 @@ def passes_logic(order1: dict[str, float|int|str], order2: dict[str, float|int|s
     else: # For 'Y' or any other type not explicitly handled for order1
         logic2 = True
 
-
-    logic3 = floor(order1["quantity"] / order1['out'] * order1['length'] / order2['length']) * order2['out'] * order2['out'] <= order2["quantity"]
+    logic3 = compute_secpair(order1, order2) <= order2["quantity"]
 
     logic = logic and logic2 and logic3
 
@@ -61,7 +60,7 @@ def compat_score(
         order1["out"] = out1
         order2["out"] = out2
         if passes_logic(order1, order2, materials):
-            result = compute_result(order1, order2)
+            result = compute_total(order1, order2)
             # Score inversely proportional to min distance to material
             # Find the closest material that satisfies the logic
             valid_materials = [m for m in materials if MIN_TRIM <= m - result <= MAX_TRIM]
@@ -80,9 +79,6 @@ def compat_score(
 
 def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, min_compat: float = MIN_COMPAT):
     """Greedy algorithm to assign 'out' and nest orders"""
-    if materials is None:
-        # materials = MATERIAL_LIST
-        raise ValueError("No materials provided")
     # Initialize groups as single orders
     groups: list[list[dict[str, int|str]]] = [
         [{"order_number": o["order_number"], "width": o["width"], "length": o["length"], "type": o["type"], "quantity": o["quantity"]}] for o in orders
@@ -116,7 +112,7 @@ def greedy_nest(orders: list[dict[str, int|str]], materials: list[int] = None, m
                 groups[j][0]["group_id"] = id
 
                 #SEC PAIR LOGIC
-                groups[j][0]["quantity"] = floor(temp_i["quantity"] / temp_i["out"] * temp_i["length"] / temp_j["length"]) * temp_j["out"] * temp_j["out"]
+                groups[j][0]["quantity"] = compute_secpair(temp_i, temp_j)
                 orders[j]["quantity"] -= groups[j][0]["quantity"]
                 orders[i]["quantity"] = 0
 
