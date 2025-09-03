@@ -171,20 +171,35 @@ async def _find_solution(
     if not greedy_results_to_return and progress_callback:
         progress_callback("    Greedy nesting did not find a solution. Falling back to XGBoost.")
 
-    # 2. Attempt to find a solution for remaining orders with XGBoost.
-    solution = None
-    if not orders_for_solvers.is_empty():
-        solution = await try_xgboost_solution(orders_for_solvers, roll, c_type, b_type, progress_callback)
+    # 2. Attempt to find solutions for remaining orders with XGBoost and Linear Programming.
+    solver_solutions = []
+    solution = None # Represents the last or most relevant solution for status checks
 
-        # since the xgboost work in batch, there would be some leftover too, make sure to process those leftover with linear solver AI!
-        # 3. If XGBoost fails, fall back to the linear programming solver.
-        if solution is None:
-            if progress_callback:
+    if not orders_for_solvers.is_empty():
+        xgb_solution = await try_xgboost_solution(orders_for_solvers, roll, c_type, b_type, progress_callback)
+
+        if xgb_solution:
+            solver_solutions.append(xgb_solution)
+            solution = xgb_solution
+            order_idx = xgb_solution.get("variables", {}).get("order_idx")
+            if order_idx is not None:
+                orders_for_solvers = orders_for_solvers.filter(pl.col("original_idx") != order_idx)
+
+        # Process remaining orders with linear solver
+        if not orders_for_solvers.is_empty():
+            if not xgb_solution and progress_callback:
                 progress_callback("    XGBoost did not find a solution. Falling back to linear solver.")
-            log_message("info", "XGBoost did not find a solution")
-            solution = await solve_linear_program(
+                log_message("info", "XGBoost did not find a solution")
+
+            linear_solution = await solve_linear_program(
                 roll['width'], roll['length'], orders_for_solvers, c_type=c_type, b_type=b_type
             )
+
+            if linear_solution:
+                if linear_solution.get("status") == STATUS_OPTIMAL:
+                    solver_solutions.append(linear_solution)
+                # Use linear solution for final status, as it ran on the final set of orders
+                solution = linear_solution
     else:
         # This case handles when greedy nesting processes all orders.
         solution = {"status": "NoOrdersLeft", "message": "No orders left for solvers."}
@@ -192,19 +207,19 @@ async def _find_solution(
 
     # Combine greedy and solver results if applicable
     if greedy_results_to_return:
-        if solution and solution.get("status") == STATUS_OPTIMAL:
-            combined_results = greedy_results_to_return + [solution]
+        if solver_solutions:
+            combined_results = greedy_results_to_return + solver_solutions
             log_message("info", "Combined results", {'results': combined_results})
             return combined_results, solution
         else:
-            log_message("info", "Greedy nesting did not find a solution")
+            log_message("info", "Greedy nesting successful, no further solver solutions.")
             return greedy_results_to_return, {"status": "GreedyNestingSuccess", "message": "Greedy nesting found a solution."}
     else:
-        if solution.get("status") == STATUS_OPTIMAL:
-            log_message("info", "Linear solver found a solution")
-            return [solution], solution
+        if solver_solutions:
+            log_message("info", "Solver(s) found a solution.")
+            return solver_solutions, solution
         else:
-            log_message("error", "Linear solver did not find a solution")
+            log_message("error", "No solver found a solution.")
             return [], solution
 
 
