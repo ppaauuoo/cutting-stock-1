@@ -374,6 +374,7 @@ async def process_single_order(
 
     if not order_processed_successfully:
         if progress_callback: progress_callback(f"    ❌ การคำนวณสำหรับ {order_number} ล้มเหลวเนื่องจาก: {calculation_failed_reason}")
+        log_message("error", "Calculation failed", {"order_number": order_number, "reason": calculation_failed_reason})
         return None, order_idx
 
     cut_info = {

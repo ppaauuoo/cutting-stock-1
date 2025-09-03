@@ -349,6 +349,7 @@ class CuttingOptimizerUI(QMainWindow):
             self.ROLL_SPECS = new_roll_specs
             self.log_message(f"[{timestamp}] 🔄 อัปเดตข้อมูลสต็อกเรียบร้อยแล้ว")
 
+    # LEGACY : don't use this logic anymore.
     def calculate_length_for_suggestion(self, width, spec):
         """Calculate effective roll length for a given suggestion."""
         selected_materials = [
