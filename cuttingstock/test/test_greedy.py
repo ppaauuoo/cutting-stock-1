@@ -5,7 +5,7 @@ from unittest.mock import patch, AsyncMock
 
 from cuttingstock.core import _find_solution
 from cuttingstock.mlmodel import try_xgboost_solution
-from cuttingstock.grouping import greedy_nest, format_greedy_results
+from cuttingstock.grouping import greedy_nest, format_greedy_results, compute_secpair
 
 @pytest.mark.asyncio
 async def test_find_solution_no_greedy_nest_w_pulp_success():
@@ -112,7 +112,7 @@ async def test_find_solution_no_greedy_nest_w_pulp_success():
 
     # 4. Assertions
     # assert results == mock_greedy_results
-    assert len(results) == 1
+    assert len(results) == 3
     assert results[0]['variables']['order_qty'] == 5
     assert solution["status"] == "Optimal"
 
@@ -138,126 +138,20 @@ async def test_find_solution_greedy_nest_max_out_success():
     orders_to_process = original_orders_df.clone()
     roll = {'width': 80, 'length': 1000}
 
-    mock_greedy_results =  [
-        {
-            'group_id': 'C-D',
-            'material_specs': {
-                'b_type': None,
-                'c_type': None,
-                'quantity': 5,
-            },
-            'message': 'Greedy Nesting solution found.',
-            'objective_value': 2,
-            'status': 'Optimal',
-            'variables': {
-                'component_type': '',
-                'cuts': 3,
-                'demand_per_cut': 4.2333,
-                'due_date': None,
-                'order_dmd': None,
-                'order_idx': 2,
-                'order_l': 100,
-                'order_qty': 5,
-                'order_w': 17,
-                'rem_roll_l': 995.7667,
-                'roll_w': 80,
-                'trim': 2,
-                'type': 'X',
-            },
-        },
-        {
-            'group_id': 'C-D',
-            'material_specs': {
-                'b_type': None,
-                'c_type': None,
-                'quantity': 5,
-            },
-            'message': 'Greedy Nesting solution found.',
-            'objective_value': 2,
-            'status': 'Optimal',
-            'variables': {
-                'component_type': '',
-                'cuts': 3,
-                'demand_per_cut': 4.2333,
-                'due_date': None,
-                'order_dmd': None,
-                'order_idx': 3,
-                'order_l': 100,
-                'order_qty': 5,
-                'order_w': 9,
-                'rem_roll_l': 995.7667,
-                'roll_w': 80,
-                'trim': 2,
-                'type': 'Y',
-            },
-        },
-        {
-            'group_id': 'A-B',
-            'material_specs': {
-                'b_type': None,
-                'c_type': None,
-                'quantity': 5,
-            },
-            'message': 'Greedy Nesting solution found.',
-            'objective_value': 3,
-            'status': 'Optimal',
-            'variables': {
-                'component_type': '',
-                'cuts': 4,
-                'demand_per_cut': 3.175,
-                'due_date': None,
-                'order_dmd': None,
-                'order_idx': 0,
-                'order_l': 100,
-                'order_qty': 5,
-                'order_w': 17,
-                'rem_roll_l': 996.825,
-                'roll_w': 80,
-                'trim': 3,
-                'type': 'D',
-            },
-        },
-        {
-            'group_id': 'A-B',
-            'material_specs': {
-                'b_type': None,
-                'c_type': None,
-                'quantity': 1,
-            },
-            'message': 'Greedy Nesting solution found.',
-            'objective_value': 3,
-            'status': 'Optimal',
-            'variables': {
-                'component_type': '',
-                'cuts': 1,
-                'demand_per_cut': 2.54,
-                'due_date': None,
-                'order_dmd': None,
-                'order_idx': 1,
-                'order_l': 100,
-                'order_qty': 1,
-                'order_w': 9,
-                'rem_roll_l': 996.825,
-                'roll_w': 80,
-                'trim': 3,
-                'type': 'D',
-            },
-        },
-     ]    # 3. Call the function
     results, solution = await _find_solution(
         orders_to_process, roll, None, None, None, original_orders_df
     )
 
     # 4. Assertions
     # assert results == mock_greedy_results
-    assert results[0]['group_id'] == 'A-B'
-    assert results[0]['variables']['order_qty'] == 5
-    assert results[0]['variables']['cuts'] == 4
-    assert results[1]['group_id'] == 'A-B'
-    assert results[1]['variables']['order_qty'] == floor(5 / 4)
-    assert results[1]['variables']['cuts'] == 1
-    assert results[2]['group_id'] == 'C-D'
-    assert results[3]['group_id'] == 'C-D'
+    assert results[0]['group_id'] == 'C-D'
+    assert results[0]['variables']['cuts'] == 3
+    assert results[1]['group_id'] == 'C-D'
+    assert results[1]['variables']['cuts'] == 3
+    assert results[2]['group_id'] == 'A-B'
+    assert results[2]['variables']['cuts'] == 4
+    assert results[3]['group_id'] == 'A-B'
+    assert results[3]['variables']['cuts'] == 1
     assert len(results) == 4
     assert solution["status"] == "GreedyNestingSuccess"
 
@@ -478,7 +372,7 @@ async def test_find_solution_greedy_nest_w_pulp_leftover_success():
 
     # assert results == mock_greedy_results
     assert results[0]['variables']['order_qty'] == dmd1
-    assert results[1]['variables']['order_qty'] == floor(dmd1 / out1 * len1 / len2) * out2 * out2
+    assert results[1]['variables']['order_qty'] == floor(dmd1 / out1 * len1 / len2) * out2
     assert results[2]['variables']['order_qty'] == dmd2-results[1]['variables']['order_qty']
     assert solution["status"] == "Optimal"
 
@@ -657,9 +551,9 @@ async def test_find_solution_greedy_nest_double_w_leftover_success():
 
     assert len(results) == 5
     assert results[0]['variables']['order_qty'] == dmd1
-    assert results[1]['variables']['order_qty'] == floor(dmd1 / out1 * len1 / len2) * out2 * out2
+    assert results[1]['variables']['order_qty'] == floor(dmd1 / out1 * len1 / len2) * out2
     assert results[2]['variables']['order_qty'] == dmd2
-    assert results[3]['variables']['order_qty'] == floor(dmd2 / out3 * len2 / len3) * out4 * out4
+    assert results[3]['variables']['order_qty'] == floor(dmd2 / out3 * len2 / len3) * out4
     assert results[4]['variables']['order_qty'] == dmd3 - results[1]['variables']['order_qty'] - results[3]['variables']['order_qty']
     assert solution["status"] == "Optimal"
 
@@ -714,15 +608,15 @@ def test_greedy_nest():
 
     assert order_c_res['order_number'] == 'C'
     assert order_d_res['order_number'] == 'D'
-    assert order_c_res['out'] == 4
-    assert order_d_res['out'] == 1
+    assert order_c_res['out'] == 3
+    assert order_d_res['out'] == 3
     assert order_c_res['roll'] == 80
-    assert order_d_res['quantity'] == 1
+    assert order_d_res['quantity'] == 3
 
     updated_c = next(o for o in updated_orders2 if o['order_number'] == 'C')
     updated_d = next(o for o in updated_orders2 if o['order_number'] == 'D')
     assert updated_c['quantity'] == 0
-    assert updated_d['quantity'] == 6
+    assert updated_d['quantity'] == 4
 
     # Case 3: Mix of paired and unpaired orders
     orders3 = [

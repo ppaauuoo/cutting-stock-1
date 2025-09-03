@@ -8,7 +8,23 @@ orders_data_optimal = [
     {'width': 48, 'length': 100, 'quantity': 10, 'type': 'A', 'component_type': 'A', 'original_idx': 0, 'demand': 1000, 'front': 'K186', 'due_date': '2025-01-01'},
     # This one doesn't fit well for trim waste
     {'width': 30, 'length': 120, 'quantity': 5, 'type': 'B', 'component_type': 'B', 'original_idx': 1, 'demand': 600, 'front': 'K186', 'due_date': '2025-01-02'},
+
 ]
+
+
+@pytest.mark.asyncio
+async def test_solve_linear_program_specific():
+    """ Test that the solver finds an optimal solution. """
+    orders_df = pl.DataFrame(
+        {'width': 18.0915, 'length': 39.7578, 'quantity': 1380, 'type': 'N', 'component_type': 'A', 'original_idx': 2, 'demand': 1280, 'front': 'KS231', 'due_date': '2025-01-02'},
+)
+    roll_width = 95
+    roll_length = 10000
+
+    result = await solve_linear_program(roll_width, roll_length, orders_df)
+
+    assert result['message'] == "PuLP problem solved successfully."
+    assert result['status'] == STATUS_OPTIMAL
 
 @pytest.mark.asyncio
 async def test_solve_linear_program_optimal_solution():
@@ -69,7 +85,7 @@ async def test_solve_linear_program_with_type_x_order():
     roll_length = 10000
 
     result = await solve_linear_program(roll_width, roll_length, orders_df)
-    
+
     assert result['status'] == STATUS_OPTIMAL
     variables = result['variables']
     assert variables['order_w'] == 19
@@ -89,7 +105,7 @@ async def test_solve_linear_program_with_corrugate_type():
 
     assert result['status'] == STATUS_OPTIMAL
     variables = result['variables']
-    
+
     # Check that remaining length is calculated correctly with multiplier
     selected_order = orders_data_optimal[0]
     total_len_val = (

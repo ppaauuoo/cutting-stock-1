@@ -859,3 +859,59 @@ def test_generate_suggestions_sorting_by_spec():
         {'front': 'M1', 'b': 'M2', 'middle': 'M3', 'c': 'M3', 'back': 'M2'},
     ]
     assert specs == expected_specs
+    widths = [s['width'] for s in suggestions]
+    expected_widths = ["80", "82","80", "82","80", "82","80", "82","80", "82",]
+    assert widths == expected_widths
+
+def test_generate_suggestions_sorting_by_len():
+    """Test that suggestions are sorted by the material spec."""
+    orders_df = pl.DataFrame({
+        "order_number": ["1", "2", "3", "4","5","6" ],
+        "front":        ["M1","M2", "M1", "M1","M1", "M1"],
+        "c":            [None,"M2", "M3", None,None, "M2"],
+        "middle":       [None,None, "M3", None,None, "M2"],
+        "b":            ["M2",None, "M2", "M2","M3", "M2"],
+        "back":         ["M3","M4", "M2", "M3","M3", "M2"],
+    })
+    roll_specs = {
+        "80": {
+            "M1": {1: {"id": "R1", "length": 1000}},
+            "M2": {1: {"id": "R2", "length": 1000}},
+            "M3": {1: {"id": "R3", "length": 1000}},
+            "M4": {1: {"id": "R4", "length": 1000}},
+        },
+        "82": {
+            "M1": {1: {"id": "R1", "length": 1000}},
+            "M2": {1: {"id": "R2", "length": 1000}},
+            "M3": {1: {"id": "R3", "length": 4000}}, # test for priority most in specs stock
+            "M4": {1: {"id": "R4", "length": 1000}},
+        }
+    }
+    factory = "รวม"
+
+    suggestions = generate_suggestions(orders_df, roll_specs, factory)
+
+    assert len(suggestions) == 10
+
+    # Expected order is based on sorted list of material names
+    # ['M1']
+    # ['M1', 'M2']
+    # ['M1', 'M2', 'M3']
+    # ['M2', 'M4']
+    specs = [s['spec'] for s in suggestions]
+    expected_specs = [
+        {'front': 'M1', 'b': 'M2', 'middle': None, 'c': None, 'back': 'M3'},
+        {'front': 'M1', 'b': 'M2', 'middle': None, 'c': None, 'back': 'M3'},
+        {'front': 'M1', 'b': 'M3', 'middle': None, 'c': None, 'back': 'M3'},
+        {'front': 'M1', 'b': 'M3', 'middle': None, 'c': None, 'back': 'M3'},
+        {'front': 'M2', 'b': None, 'middle': None, 'c': 'M2', 'back': 'M4'},
+        {'front': 'M2', 'b': None, 'middle': None, 'c': 'M2', 'back': 'M4'},
+        {'front': 'M1', 'b': 'M2', 'middle': 'M2', 'c': 'M2', 'back': 'M2'},
+        {'front': 'M1', 'b': 'M2', 'middle': 'M2', 'c': 'M2', 'back': 'M2'},
+        {'front': 'M1', 'b': 'M2', 'middle': 'M3', 'c': 'M3', 'back': 'M2'},
+        {'front': 'M1', 'b': 'M2', 'middle': 'M3', 'c': 'M3', 'back': 'M2'},
+    ]
+    assert specs == expected_specs
+    widths = [s['width'] for s in suggestions]
+    expected_widths = ["82", "80", "82", "80", "80", "82", "80", "82","82","80", ]
+    assert widths == expected_widths
