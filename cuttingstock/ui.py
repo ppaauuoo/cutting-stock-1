@@ -410,9 +410,9 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_message("🤔 Analyzing orders to generate all possible settings...")
         try:
             selected_factory = self.factory_combo.currentText()
+            filtered_orders = filter_orders_by_factory(self.cleaned_orders_df, selected_factory)
             self.log_message(f"🏭 Using factory filter: '{selected_factory}'")
 
-            filtered_orders = filter_orders_by_factory(self.cleaned_orders_df, selected_factory)
             suggestions = generate_suggestions(
                 filtered_orders, self.ROLL_SPECS, selected_factory
             )
@@ -463,7 +463,9 @@ class CuttingOptimizerUI(QMainWindow):
                 self.log_message(f"⏱️ Total elapsed time: {elapsed_time:.2f} seconds.")
 
             if self.cleaned_orders_df is not None and not self.cleaned_orders_df.is_empty():
-                rem_orders_df = self.cleaned_orders_df.filter(
+                selected_factory = self.factory_combo.currentText()
+                filtered_orders_df = filter_orders_by_factory(self.cleaned_orders_df, selected_factory)
+                rem_orders_df = filtered_orders_df.filter(
                     ~pl.col("order_number").is_in(list(self.processed_order_numbers))
                 )
                 if not rem_orders_df.is_empty():
@@ -526,6 +528,8 @@ class CuttingOptimizerUI(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat(f"Processing suggestion {self.current_suggestion_index + 1}...")
 
+
+        selected_factory = self.factory_combo.currentText()
         self.worker = WorkerThread(
             width, length, None, None, self.order_file_path,
             front_material,
@@ -535,7 +539,8 @@ class CuttingOptimizerUI(QMainWindow):
             back_material,
             self.ROLL_SPECS,
             self.processed_order_numbers.copy(),
-            self.material_substitutions
+            self.material_substitutions,
+            selected_factory
         )
         self.worker.update_signal.connect(self.log_message)
         self.worker.progress_updated.connect(self.update_progress_bar)

@@ -237,6 +237,7 @@ def _load_and_prepare_data(
     processed_orders: Optional[set],
     max_records: Optional[int],
     output_dir: str = "cache",
+    selected_factory: str = "ALL"
 ) -> pl.DataFrame:
     base_filename = os.path.splitext(os.path.basename(file_path))[0]
     cache_db_path = os.path.join(output_dir, f"{base_filename}.db")
@@ -260,13 +261,15 @@ def _load_and_prepare_data(
         b=b if b_type in ["B", "E"] else None,
         back=back,
     )
+    orders_df = filter_orders_by_factory(orders_df, selected_factory)
+    log_message("info", "Loaded and filtered data successfully")
 
     if processed_orders:
         orders_df = orders_df.filter(
             ~pl.col("order_number").is_in(list(processed_orders))
         )
 
-    log_message("info", "Loaded and sorted data successfully")
+    log_message("info", "Clear data successfully")
 
     if max_records:
         orders_df = orders_df.head(max_records)
@@ -401,6 +404,7 @@ async def main_algorithm(
     roll_specs: Optional[dict] = None,
     processed_orders: Optional[set] = None,
     material_substitutions: Optional[dict] = None,
+    selected_factory: str = "ALL"
 ):
     output_dir = "cache"
     os.makedirs(output_dir, exist_ok=True)
@@ -408,7 +412,7 @@ async def main_algorithm(
 
     orders_df = _load_and_prepare_data(
         file_path, start_date, end_date, front, c_type, c, middle, b_type, b,
-        back, processed_orders, max_records, output_dir
+        back, processed_orders, max_records, output_dir, selected_factory
     )
 
     # rolls per specs (set of materials)

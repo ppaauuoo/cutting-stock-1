@@ -24,6 +24,7 @@ class WorkerThread(QThread):
                  roll_specs,
                  processed_orders,
                  material_substitutions,
+                 selected_factory,
                  parent=None):
         super().__init__(parent)
         self._wait_for_input_event = threading.Event()
@@ -44,6 +45,7 @@ class WorkerThread(QThread):
         self.processed_orders = processed_orders
         self.material_substitutions = material_substitutions
         self.current_iteration_step = 0
+        self.selected_factory = selected_factory
 
     def set_user_choice(self, choice):
         """Called from the UI thread to provide the user's choice."""
@@ -124,6 +126,7 @@ class WorkerThread(QThread):
                     roll_specs=self.roll_specs,
                     processed_orders=self.processed_orders,
                     material_substitutions=self.material_substitutions,
+                    selected_factory=self.selected_factory
                 )
             )
             if not self.isInterruptionRequested():
