@@ -102,7 +102,8 @@ class CuttingOptimizerUI(QMainWindow):
 
         self.clear_button = QPushButton("ล้างผลลัพธ์")
         self.clear_button.clicked.connect(self.clear_results)
-        buttons_layout.addWidget(self.clear_button)
+        # LEGACY: clear button
+        # buttons_layout.addWidget(self.clear_button)
 
         self.show_unprocessed_checkbox = QCheckBox("แสดงออเดอร์ที่ไม่สามารถออกได้")
         self.show_unprocessed_checkbox.setChecked(True)
