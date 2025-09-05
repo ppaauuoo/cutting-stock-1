@@ -145,7 +145,10 @@ def clean_data(df: pl.DataFrame,
     df = df.filter(pl.col("length") > 0)
     #LOGIC
     df = df.with_columns(
-        (pl.col("quantity") + 100).alias("quantity")
+        pl.when(pl.col("component_type") == "H")
+        .then(pl.col("quantity") * 2 + 200)
+        .otherwise(pl.col("quantity") + 100)
+        .alias("quantity")
     )
     # Combine order_number and order_idx for uniqueness
     df = df.with_columns(
