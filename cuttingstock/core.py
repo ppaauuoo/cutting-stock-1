@@ -6,11 +6,15 @@ import polars as pl
 
 from cuttingstock.cleaning import clean_data, load_data
 from cuttingstock.grouping import format_greedy_results, greedy_nest
-from cuttingstock.order import filter_orders_by_factory
-from cuttingstock.mlmodel import try_xgboost_solution
 from cuttingstock.linear import solve_linear_program
+from cuttingstock.material import (
+    OutOfStockError,
+    handle_unprocessed_orders,
+    process_single_order,
+)
+from cuttingstock.mlmodel import try_xgboost_solution
+from cuttingstock.order import filter_orders_by_factory
 from cuttingstock.utils import log_message
-from cuttingstock.material import OutOfStockError, process_single_order, handle_unprocessed_orders
 
 # Status Messages
 STATUS_OPTIMAL = "Optimal"
@@ -47,7 +51,7 @@ def verify_stock_availability(width: int, material: str, required_length: float,
 
     return total_available >= required_length
 
-def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_factory: str) -> list:
+def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_factory: str, test: bool = False) -> list:
     """
     Generates a list of all possible calculation settings based on order frequency and stock.
     """
@@ -121,6 +125,10 @@ def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_fac
                 suggestions.append(suggestion)
 
     suggestions.sort(key=lambda s: (len([v for v in s['spec'].values() if v]), sorted([v for v in s['spec'].values() if v])))
+    #TEST 
+    if test:
+        suggestions.sort(key=lambda w: int(re.search(r'\d+', str(w['width'])).group()) if re.search(r'\d+', str(w['width'])) else 0)
+
 
     log_message("info", "Suggestions generated", {'suggestions': suggestions})
     return suggestions

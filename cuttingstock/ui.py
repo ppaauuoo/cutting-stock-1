@@ -324,7 +324,7 @@ class CuttingOptimizerUI(QMainWindow):
                         length = row['length']
 
                         #TEST
-                        length = 10000000
+                        # length = 10000000
 
                         if width not in new_roll_specs:
                             new_roll_specs[width] = {}
@@ -799,7 +799,7 @@ class CuttingOptimizerUI(QMainWindow):
             # Filter out failed/unprocessed orders (those with string roll_w values)
             filtered_results = [result for result in self.results_data if not isinstance(result.get('roll_w'), str)]
             export_manager = ExportManager(filtered_results, headers)
-            
+
             if file_path.endswith('.xlsx'):
                 success = export_manager.export_to_xlsx(file_path)
                 if success:
@@ -816,7 +816,7 @@ class CuttingOptimizerUI(QMainWindow):
                 else:
                     self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออกเป็น CSV")
                     QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", f"เกิดข้อผิดพลาดขณะส่งออกไฟล์")
-        
+
         except Exception as e:
             self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออก: {e}")
             QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", f"เกิดข้อผิดพลาด:\n{e}")
