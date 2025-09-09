@@ -44,6 +44,7 @@ from cuttingstock.stock import StockManager
 from cuttingstock.widget import CustomTableWidget
 from cuttingstock.dialog import MaterialSubstitutionDialog
 from cuttingstock.worker import WorkerThread
+from cuttingstock.export import ExportManager
 
 class CuttingOptimizerUI(QMainWindow):
 
@@ -96,8 +97,8 @@ class CuttingOptimizerUI(QMainWindow):
         self.run_button.clicked.connect(self.start_main_loop)
         buttons_layout.addWidget(self.run_button)
 
-        self.export_button = QPushButton("ส่งออกเป็น CSV")
-        self.export_button.clicked.connect(self.export_results_to_csv)
+        self.export_button = QPushButton("ส่งออก")
+        self.export_button.clicked.connect(self.export_results)
         buttons_layout.addWidget(self.export_button)
 
         self.clear_button = QPushButton("ล้างผลลัพธ์")
@@ -323,7 +324,7 @@ class CuttingOptimizerUI(QMainWindow):
                         length = row['length']
 
                         #TEST
-                        # length = 1000000
+                        length = 10000000
 
                         if width not in new_roll_specs:
                             new_roll_specs[width] = {}
@@ -767,164 +768,58 @@ class CuttingOptimizerUI(QMainWindow):
             self.result_table.setRowCount(0)
             self.log_message("🧹 ผลลัพธ์ทั้งหมดถูกล้างแล้ว")
 
-    def export_results_to_csv(self):
-        """ส่งออกข้อมูลในตารางผลลัพธ์ไปยังไฟล์ CSV"""
+    def export_results(self):
+        """ส่งออกข้อมูลในตารางผลลัพธ์ไปยังไฟล์ CSV หรือ XLSX"""
         if not self.results_data:
             QMessageBox.information(self, "ไม่มีข้อมูล", "ไม่มีข้อมูลสำหรับส่งออก")
             return
 
         options = QFileDialog.Options()
         options |= QFileDialog.DontUseNativeDialog
-        file_path, _ = QFileDialog.getSaveFileName(
+        file_path, selected_filter = QFileDialog.getSaveFileName(
             self,
-            "บันทึกผลลัพธ์เป็น CSV",
-            "cutting_results.csv",
-            "CSV Files (*.csv);;All Files (*)",
+            "บันทึกผลลัพธ์",
+            "cutting_results",
+            "Excel Files (*.xlsx);;CSV Files (*.csv);;All Files (*)",
             options=options,
         )
 
-        if file_path:
-            try:
-                # ใช้ utf-8-sig เพื่อให้ Excel เปิดไฟล์ภาษาไทยได้ถูกต้อง
-                with open(file_path, 'w', newline='', encoding='utf-8-sig') as csv_file:
-                    writer = csv.writer(csv_file)
+        # Check if user canceled the dialog
+        if not file_path:
+            return
 
-                    # เขียนส่วนหัวของตาราง
-                    headers = [self.result_table.horizontalHeaderItem(i).text() for i in range(self.result_table.columnCount())]
-                    detail_headers = [
-                        "แผ่นหน้า (วัสดุ)", "แผ่นหน้า (ใช้)", "แผ่นหน้า (ID ม้วน)",
-                        "ลอน C (วัสดุ)", "ลอน C (ใช้)", "ลอน C (ID ม้วน)",
-                        "แผ่นกลาง (วัสดุ)", "แผ่นกลาง (ใช้)", "แผ่นกลาง (ID ม้วน)",
-                        "ลอน B (วัสดุ)", "ลอน B (ใช้)", "ลอน B (ID ม้วน)",
-                        "แผ่นหลัง (วัสดุ)", "แผ่นหลัง (ใช้)", "แผ่นหลัง (ID ม้วน)",
-                        "ประเภททับเส้น", "ชนิดส่วนประกอบ"
-                    ]
-                    writer.writerow(headers + detail_headers)
+        # Add appropriate extension based on selected filter
+        if selected_filter == "Excel Files (*.xlsx)" and not file_path.endswith('.xlsx'):
+            file_path += '.xlsx'
+        elif selected_filter == "CSV Files (*.csv)" and not file_path.endswith('.csv'):
+            file_path += '.csv'
 
-                    group_id = '000' # init
-                    for result in self.results_data:
-                        # ข้อมูลจากคอลัมน์เดิม
-                        cuts = result.get('cuts')
-                        order_qty = result.get('order_qty')
-                        demand_per_cut_val = ""
-                        if cuts is not None and cuts > 0 and order_qty is not None:
-                            demand_per_cut_val = f"{order_qty / cuts:.2f}"
-                        else:
-                            demand_per_cut_val = "N/A"
-
-                        row_data = [
-                            str(result.get('roll_w', '')) if group_id != result.get('group_id', '') else '',
-                        ]
-                        group_id = result.get('group_id', '')
-
-                        detail = [
-                            str(result.get('order_number', '')),
-                            str(result.get('due_date', '')),
-                            str(result.get('component_type', '')),
-                            f"{result.get('order_w', ''):.4f}",
-                            str(result.get('cuts', '')),
-                            f"{result.get('trim', ''):.2f}",
-                            f"{result.get('order_l', ''):.4f}",
-                            f"{result.get('order_dmd', '')}",
-                            str(result.get('die_cut', '')),
-                            f"{result.get('order_qty', '')}",
-                            demand_per_cut_val,
-                        ]
-                        row_data.extend(detail)
-
-                        # คำนวณข้อมูลเพิ่มเติมเหมือนใน popup
-                        c_type = result.get('c_type', '')
-                        b_type = result.get('b_type', '')
-
-                        type_demand = 1.0
-                        if c_type == 'C':
-                            type_demand = 1.45
-                        elif b_type == 'B':
-                            type_demand = 1.35
-                        elif c_type == 'E' or b_type == 'E':
-                            type_demand = 1.25
-
-                        # แยกวัสดุและค่าการใช้งานเป็นสตริงที่ต่างกันสำหรับแต่ละชนิดของวัสดุ
-                        front_str, front_value, front_roll_info = "", "", ""
-                        if result.get('front'):
-                            front_material = result.get('front')
-                            demand_per_cut = result.get('demand_per_cut', 0)
-                            if type_demand > 0:
-                                front_value = f"{demand_per_cut / type_demand:.2f}"
-                            front_str = front_material
-                            front_roll_info = self._format_roll_usage_for_csv(result.get('front_roll_info', ''))
-
-                        # ลอน C
-                        c_str, c_value, c_roll_info = "", "", ""
-                        if result.get('c'):
-                            c_material = result.get('c')
-                            demand_per_cut = result.get('demand_per_cut', 0)
-                            if c_type == 'C':
-                                c_value = f"{demand_per_cut:.2f}"
-                            elif c_type == 'E':
-                                if b_type == 'B':
-                                    c_value = f"{(demand_per_cut / 1.35 * 1.25):.2f}"
-                                else:
-                                    c_value = f"{demand_per_cut:.2f}"
-                            c_str = c_material
-                            c_roll_info = self._format_roll_usage_for_csv(result.get('c_roll_info', ''))
-
-                        # แผ่นกลาง
-                        middle_str, middle_value, middle_roll_info = "", "", ""
-                        if result.get('middle'):
-                            middle_material = result.get('middle')
-                            demand_per_cut = result.get('demand_per_cut', 0)
-                            if type_demand > 0:
-                                middle_value = f"{demand_per_cut / type_demand:.2f}"
-                            middle_str = middle_material
-                            middle_roll_info = self._format_roll_usage_for_csv(result.get('middle_roll_info', ''))
-
-                        # ลอน B
-                        b_str, b_value, b_roll_info = "", "", ""
-                        if result.get('b'):
-                            b_material = result.get('b')
-                            demand_per_cut = result.get('demand_per_cut', 0)
-                            if b_type == 'B':
-                                if c_type == 'C':
-                                    b_value = f"{(demand_per_cut / 1.45 * 1.35):.2f}"
-                                else:
-                                    b_value = f"{demand_per_cut:.2f}"
-                            elif b_type == 'E':
-                                if c_type == 'C':
-                                    b_value = f"{(demand_per_cut / 1.45 * 1.25):.2f}"
-                                else:
-                                    b_value = f"{demand_per_cut:.2f}"
-                            b_str = b_material
-                            b_roll_info = self._format_roll_usage_for_csv(result.get('b_roll_info', ''))
-
-                        # แผ่นหลัง
-                        back_str, back_value, back_roll_info = "", "", ""
-                        if result.get('back'):
-                            back_material = result.get('back')
-                            demand_per_cut = result.get('demand_per_cut', 0)
-                            if type_demand > 0:
-                                back_value = f"{demand_per_cut / type_demand:.2f}"
-                            back_str = back_material
-                            back_roll_info = self._format_roll_usage_for_csv(result.get('back_roll_info', ''))
-
-                        detail_data = [
-                            front_str, front_value, front_roll_info,
-                            c_str, c_value, c_roll_info,
-                            middle_str, middle_value, middle_roll_info,
-                            b_str, b_value, b_roll_info,
-                            back_str, back_value, back_roll_info,
-                            result.get('type', ''),
-                            result.get('component_type', '')
-                        ]
-
-                        writer.writerow(row_data + detail_data)
-
-                self.log_message(f"✅ ส่งออกผลลัพธ์ไปยัง {file_path} เรียบร้อยแล้ว")
-                QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกผลลัพธ์ไปยัง:\n{file_path} เรียบร้อยแล้ว")
-
-            except Exception as e:
-                self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออกเป็น CSV: {e}")
-                QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", f"เกิดข้อผิดพลาดขณะส่งออกไฟล์:\n{e}")
+        try:
+            headers = [self.result_table.horizontalHeaderItem(i).text() for i in range(self.result_table.columnCount())]
+            # Filter out failed/unprocessed orders (those with string roll_w values)
+            filtered_results = [result for result in self.results_data if not isinstance(result.get('roll_w'), str)]
+            export_manager = ExportManager(filtered_results, headers)
+            
+            if file_path.endswith('.xlsx'):
+                success = export_manager.export_to_xlsx(file_path)
+                if success:
+                    self.log_message(f"✅ ส่งออกผลลัพธ์ไปยัง {file_path} เรียบร้อยแล้ว")
+                    QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกผลลัพธ์ไปยัง:\n{file_path} เรียบร้อยแล้ว")
+                else:
+                    self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออกเป็น XLSX")
+                    QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", "ไม่สามารถส่งออกเป็น XLSX ได้ กรุณาตรวจสอบว่าติดตั้ง xlsxwriter แล้ว")
+            else:
+                success = export_manager.export_to_csv(file_path)
+                if success:
+                    self.log_message(f"✅ ส่งออกผลลัพธ์ไปยัง {file_path} เรียบร้อยแล้ว")
+                    QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกผลลัพธ์ไปยัง:\n{file_path} เรียบร้อยแล้ว")
+                else:
+                    self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออกเป็น CSV")
+                    QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", f"เกิดข้อผิดพลาดขณะส่งออกไฟล์")
+        
+        except Exception as e:
+            self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออก: {e}")
+            QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", f"เกิดข้อผิดพลาด:\n{e}")
 
     def _format_roll_usage_to_html(self, roll_info_str: str) -> str:
         """Parses roll usage string and formats it as an HTML table."""
