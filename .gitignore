@@ -18,3 +18,4 @@ logs/cuttingstock.log
 test_cutting_results.csv
 test_cutting_results.xlsx
 .claude/settings.local.json
+plots
