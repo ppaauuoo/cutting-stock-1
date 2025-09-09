@@ -13,3 +13,4 @@ pandas
 connectorx
 sqlalchemy
 xgboost
+xlsxwriter
