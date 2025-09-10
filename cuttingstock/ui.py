@@ -48,7 +48,7 @@ from cuttingstock.export import ExportManager
 
 class CuttingOptimizerUI(QMainWindow):
 
-    def __init__(self):
+    def __init__(self, auto_export=False, auto_close=False):
         super().__init__()
         self.qtapp = QApplication.instance()
         if self.qtapp:
@@ -63,6 +63,8 @@ class CuttingOptimizerUI(QMainWindow):
         self.current_suggestion_index = 0
         self.processed_order_numbers = set()
         self.material_substitutions = {}
+        self.auto_export = auto_export
+        self.auto_close = auto_close
 
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
@@ -488,6 +490,11 @@ class CuttingOptimizerUI(QMainWindow):
             self.run_button.setEnabled(True)
             self.progress_bar.setFormat("✅ Finished all tasks!")
             self._resume_background_threads()
+            
+            # Auto-export results when algorithm completes
+            if hasattr(self, 'auto_export') and self.auto_export:
+                self.auto_export_results()
+            
             QMessageBox.information(self, "Finished", "All suggested settings have been processed.")
             return
 
@@ -820,6 +827,39 @@ class CuttingOptimizerUI(QMainWindow):
         except Exception as e:
             self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออก: {e}")
             QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", f"เกิดข้อผิดพลาด:\n{e}")
+
+    def auto_export_results(self):
+        """Auto-export results to current directory when algorithm completes."""
+        if not self.results_data:
+            self.log_message("⚠️ No results to export")
+            return
+        
+        # Generate filename with timestamp
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        selected_factory = self.factory_combo.currentText()
+        filename = f"cutting_results_factory_{selected_factory}_{timestamp}.xlsx"
+        
+        try:
+            headers = [self.result_table.horizontalHeaderItem(i).text() for i in range(self.result_table.columnCount())]
+            # Filter out failed/unprocessed orders (those with string roll_w values)
+            filtered_results = [result for result in self.results_data if not isinstance(result.get('roll_w'), str)]
+            export_manager = ExportManager(filtered_results, headers)
+            
+            success = export_manager.export_to_xlsx(filename)
+            if success:
+                self.log_message(f"✅ Auto-exported results to {filename}")
+                # Auto-close application after successful export when in CLI mode
+                if hasattr(self, 'auto_close') and self.auto_close:
+                    self.log_message("🔄 Auto-closing application after successful export...")
+                    # Use QTimer to allow the log message to be displayed before closing
+                    from PyQt5.QtCore import QTimer
+                    QTimer.singleShot(1000, self.close)
+            else:
+                self.log_message(f"❌ Auto-export failed for {filename}")
+                
+        except Exception as e:
+            self.log_message(f"❌ Auto-export error: {e}")
 
     def _format_roll_usage_to_html(self, roll_info_str: str) -> str:
         """Parses roll usage string and formats it as an HTML table."""
