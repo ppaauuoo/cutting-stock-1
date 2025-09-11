@@ -1,6 +1,7 @@
 import os
 import re
-from typing import Callable, Optional
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import polars as pl
 
@@ -27,6 +28,193 @@ CORRUGATE_MULTIPLIERS = {
     "E": 1.25,
 }
 
+# Factory configuration constants
+FACTORY_CONFIGS = {
+    "1": {"min_width": 73, "max_width": 79},
+    "2": {"min_width": 82, "max_width": 97},
+}
+
+# Material columns configuration
+MATERIAL_COLUMNS = ['front', 'c', 'middle', 'b', 'back']
+
+@dataclass
+class WidthInfo:
+    """Container for width information and numeric value."""
+    width_str: str
+    width_int: int
+    
+    @classmethod
+    def from_string(cls, width_str: str) -> 'WidthInfo':
+        """Create WidthInfo from string representation."""
+        try:
+            width_int = int(re.search(r'\d+', width_str).group() if re.search(r'\d+', width_str) else 0)
+            return cls(width_str, width_int)
+        except (AttributeError, ValueError):
+            return cls(width_str, 0)
+
+@dataclass
+class AvailableWidth:
+    """Container for available width data."""
+    width: str
+    length: float
+
+def extract_width_from_string(width_str: str) -> int:
+    """
+    Extract numeric width from string representation.
+    
+    Args:
+        width_str: String containing width (e.g., '79B', '82')
+        
+    Returns:
+        int: Extracted numeric width, 0 if extraction fails
+    """
+    try:
+        return int(re.search(r'\d+', width_str).group())
+    except (AttributeError, ValueError):
+        return 0
+
+def is_width_valid_for_factory(width_str: str, factory: str) -> bool:
+    """
+    Check if width is valid for the specified factory.
+    
+    Args:
+        width_str: Width string to validate
+        factory: Factory identifier ('1', '2', etc.)
+        
+    Returns:
+        bool: True if width is valid for factory
+    """
+    if factory not in FACTORY_CONFIGS:
+        return True  # Allow all widths for unknown factories
+    
+    width_int = extract_width_from_string(width_str)
+    config = FACTORY_CONFIGS[factory]
+    
+    return config["min_width"] <= width_int <= config["max_width"]
+
+def create_factory_sort_key(factory: str) -> Callable[[str], Tuple[int, int]]:
+    """
+    Create a sort key function for factory-specific width sorting.
+    
+    Args:
+        factory: Factory identifier
+        
+    Returns:
+        callable: Sort key function for the specified factory
+    """
+    if factory not in FACTORY_CONFIGS:
+        return lambda width_str: (0, extract_width_from_string(width_str))
+    
+    config = FACTORY_CONFIGS[factory]
+    min_width, max_width = config["min_width"], config["max_width"]
+    
+    def sort_key(width_str: str) -> Tuple[int, int]:
+        width_int = extract_width_from_string(width_str)
+        if min_width <= width_int <= max_width:
+            return (0, width_int)  # Prioritize valid widths
+        return (1, width_int)      # Deprioritize invalid widths
+    
+    return sort_key
+
+def calculate_total_relevant_length(spec_materials: Set[str], materials_in_stock: Dict[str, Dict]) -> float:
+    """
+    Calculate total relevant length for specified materials.
+    
+    Args:
+        spec_materials: Set of materials to calculate for
+        materials_in_stock: Dictionary of materials in stock
+        
+    Returns:
+        float: Total length of relevant materials
+    """
+    try:
+        return sum(
+            roll.get('length', 0)
+            for mat in spec_materials
+            for roll in materials_in_stock.get(mat, {}).values()
+        )
+    except (AttributeError, TypeError):
+        log_message("warning", "Error calculating total relevant length", {
+            'spec_materials': spec_materials,
+            'error': 'Invalid data structure'
+        })
+        return 0.0
+
+def get_available_widths_for_spec(
+    spec_materials: Set[str],
+    roll_specs: Dict[str, Dict],
+    selected_factory: str
+) -> List[AvailableWidth]:
+    """
+    Get list of available widths that can accommodate the specified materials.
+    
+    Args:
+        spec_materials: Set of materials needed
+        roll_specs: Dictionary of roll specifications
+        selected_factory: Selected factory identifier
+        
+    Returns:
+        List[AvailableWidth]: List of available widths with their lengths
+    """
+    if not roll_specs:
+        return []
+    
+    available_widths = []
+    
+    for width_str, materials_in_stock in roll_specs.items():
+        # Skip widths not valid for the factory
+        if not is_width_valid_for_factory(width_str, selected_factory):
+            continue
+        
+        # Check if all required materials are available
+        if spec_materials.issubset(materials_in_stock.keys()):
+            total_length = calculate_total_relevant_length(spec_materials, materials_in_stock)
+            if total_length > 0:
+                available_widths.append(AvailableWidth(width_str, total_length))
+    
+    return available_widths
+
+def sort_widths_by_priority(
+    available_widths: List[AvailableWidth],
+    selected_factory: str
+) -> List[str]:
+    """
+    Sort available widths by factory-specific priority.
+    
+    Args:
+        available_widths: List of available widths
+        selected_factory: Selected factory identifier
+        
+    Returns:
+        List[str]: Sorted list of width strings
+    """
+    if not available_widths:
+        return []
+    
+    # Sort by length (descending) and factory-specific width priority
+    sort_key_func = create_factory_sort_key(selected_factory)
+    
+    sorted_widths = sorted(
+        available_widths,
+        key=lambda w: (-w.length, sort_key_func(w.width))
+    )
+    
+    return [w.width for w in sorted_widths]
+
+def create_suggestion_from_spec(spec_row: Dict, width: str) -> Dict:
+    """
+    Create a suggestion dictionary from specification row and width.
+    
+    Args:
+        spec_row: Specification row from grouped data
+        width: Selected width string
+        
+    Returns:
+        Dict: Formatted suggestion
+    """
+    full_spec = {k: v for k, v in spec_row.items() if k != 'len'}
+    return {'width': width, 'spec': full_spec}
+
 def verify_stock_availability(width: int, material: str, required_length: float, stock_data: pl.DataFrame) -> bool:
     """
     Verifies if the required length of material is truly available in stock.
@@ -51,87 +239,91 @@ def verify_stock_availability(width: int, material: str, required_length: float,
 
     return total_available >= required_length
 
-def generate_suggestions(orders_df: pl.DataFrame, roll_specs: dict, selected_factory: str, test: bool = False) -> list:
+def generate_suggestions(
+    orders_df: pl.DataFrame,
+    roll_specs: Dict[str, Dict],
+    selected_factory: str,
+    test: bool = False
+) -> List[Dict]:
     """
     Generates a list of all possible calculation settings based on order frequency and stock.
+    
+    Args:
+        orders_df: DataFrame containing order information
+        roll_specs: Dictionary of roll specifications with material availability
+        selected_factory: Selected factory identifier
+        test: Whether to enable test mode sorting
+        
+    Returns:
+        List[Dict]: List of suggestion dictionaries with width and spec information
     """
+    # Input validation
     if orders_df is None or orders_df.is_empty():
+        log_message("info", "No orders provided for suggestion generation")
         return []
 
-    material_cols = ['front', 'c', 'middle', 'b', 'back']
-    existing_cols = [col for col in material_cols if col in orders_df.columns]
-
+    # Get available material columns
+    existing_cols = [col for col in MATERIAL_COLUMNS if col in orders_df.columns]
     if not existing_cols:
+        log_message("warning", "No material columns found in orders data")
         return []
 
-    all_specs_df = orders_df.group_by(existing_cols).len().sort("len", descending=True)
+    try:
+        # Group by material specifications and count frequencies
+        all_specs_df = orders_df.group_by(existing_cols).len().sort("len", descending=True)
+        
+        if all_specs_df.is_empty():
+            log_message("info", "No valid specifications found after grouping")
+            return []
 
-    if all_specs_df.is_empty():
-        return []
+        suggestions = []
+        
+        for spec_row in all_specs_df.iter_rows(named=True):
+            # Extract materials from specification (non-empty values)
+            spec_materials = {m for k, m in spec_row.items() if k != 'len' and m}
+            
+            if not spec_materials:
+                continue
 
-    suggestions = []
-    for spec_row in all_specs_df.iter_rows(named=True):
-        spec_materials = {m for k, m in spec_row.items() if k != 'len' and m}
+            # Get available widths for this specification
+            available_widths = get_available_widths_for_spec(
+                spec_materials, roll_specs, selected_factory
+            )
+            
+            if not available_widths:
+                continue
 
-        if not spec_materials:
-            continue
-
-        available_widths_data = []
-        if roll_specs:
-            for width, materials_in_stock in roll_specs.items():
-                # Extract numeric width from the width string (e.g., '79B' -> 79)
-                width_int = int(re.search(r'\d+', width).group() if re.search(r'\d+', width) else 0)
-
-                # Apply factory-specific width restrictions
-                if selected_factory == "2" and not (82 <= width_int <= 97):
-                    continue  # Skip widths not in 82-97 range for factory 2
-                elif selected_factory == "1" and not (73 <= width_int <= 79):
-                    continue  # Skip widths not in 73-79 range for factory 1
-
-                if spec_materials.issubset(materials_in_stock.keys()):
-                    total_relevant_length = sum(
-                        roll.get('length', 0)
-                        for mat in spec_materials
-                        for roll in materials_in_stock.get(mat, {}).values()
-                    )
-                    available_widths_data.append({'width': width, 'length': total_relevant_length})
-
-        if available_widths_data:
-            if selected_factory == "2":
-                def sort_key_factory_2(width_str):
-                    width_int = int(re.search(r'\d+', width_str).group() if re.search(r'\d+', width_str) else 0)
-                    if 82 <= width_int <= 97:
-                        return (0, width_int)
-                    else:
-                        return (1, width_int)
-                sorted_data = sorted(available_widths_data, key=lambda d: (-d['length'], sort_key_factory_2(d['width'])))
-            elif selected_factory == "1":
-                def sort_key_factory_1(width_str):
-                    width_int = int(re.search(r'\d+', width_str).group() if re.search(r'\d+', width_str) else 0)
-                    if 73 <= width_int <= 79:
-                        return (0, width_int)
-                    else:
-                        return (1, width_int)
-                sorted_data = sorted(available_widths_data, key=lambda d: (-d['length'], sort_key_factory_1(d['width'])))
-            else:
-                sorted_data = sorted(available_widths_data, key=lambda d: (-d['length'], int(re.sub(r'\D', '', d['width']) or 0)))
-
-            sorted_widths = [d['width'] for d in sorted_data]
-
-
+            # Sort widths by priority
+            sorted_widths = sort_widths_by_priority(available_widths, selected_factory)
+            
+            # Create suggestions for each valid width
             for width in sorted_widths:
-                full_spec = {k: v for k, v in spec_row.items() if k != 'len'}
-                suggestion = {'width': width, 'spec': full_spec}
+                suggestion = create_suggestion_from_spec(spec_row, width)
                 suggestions.append(suggestion)
 
-    suggestions.sort(key=lambda s: (len([v for v in s['spec'].values() if v]), sorted([v for v in s['spec'].values() if v])))
-    #TEST 
-    if test:
-        suggestions.sort(key=lambda w: int(re.search(r'\d+', str(w['width'])).group()) if re.search(r'\d+', str(w['width'])) else 0)
+        # Sort suggestions by complexity and material values
+        suggestions.sort(key=lambda s: (
+            len([v for v in s['spec'].values() if v]),  # Number of materials
+            sorted([v for v in s['spec'].values() if v])  # Sorted material names
+        ))
 
+        # Test mode: sort by width numeric value
+        if test:
+            suggestions.sort(key=lambda w: extract_width_from_string(str(w['width'])))
 
-    log_message("info", "Suggestions generated", {'suggestions': suggestions})
-    return suggestions
+        log_message("info", "Suggestions generated successfully", {
+            'count': len(suggestions),
+            'factory': selected_factory
+        })
+        
+        return suggestions
+
+    except Exception as e:
+        log_message("error", "Error generating suggestions", {
+            'error': str(e),
+            'factory': selected_factory
+        })
+        return []
 
 async def _find_solution(
     orders_to_process: pl.DataFrame, roll: dict, c_type: Optional[str], b_type: Optional[str],
