@@ -1,11 +1,17 @@
 import logging
+import os
+
+# Ensure logs directory exists
+log_dir = 'logs'
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('logs/cuttingstock.log'),
+        logging.FileHandler(os.path.join(log_dir, 'cuttingstock.log')),
         logging.StreamHandler()
     ]
 )

@@ -13,4 +13,5 @@ pandas
 connectorx
 sqlalchemy
 xgboost
+scikit-learn
 xlsxwriter

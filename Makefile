@@ -5,6 +5,7 @@ help:
 	@echo "Available targets:"
 	@echo "  install - Install dependencies from requirements.txt"
 	@echo "  run     - Run the main application UI"
+	@echo "  auto    - Run the main application UI automatically"
 	@echo "  test    - Run the test suite"
 	@echo "  clean - Remove cache and other generated files"
 
@@ -12,7 +13,10 @@ install:
 	python -m uv pip install -r requirements.txt
 
 run:
-	python -m cuttingstock.ui
+	python -m main
+	
+auto:
+	python -m main --factory 2
 
 test:
 	python -m pytest
@@ -21,12 +25,12 @@ test:
 build:
 	pyinstaller --log-level DEBUG --clean --noconfirm --windowed \
 	    --collect-data pulp \
-	    --hidden-import scipy \
-	    --hidden-import scipy._cyutility \
+	    --collect-all sklearn \
+	    --collect-all scipy \
 	    --collect-all xgboost \
 	    --collect-all connectorx \
 	    --add-data "./model;model" \
-	    --name order-optimizer cuttingstock\ui.py
+	    --name order-optimizer main.py
 
 clean:
 	# Note: These commands use Unix-style tools ('rm', 'find'). On Windows,

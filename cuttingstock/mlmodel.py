@@ -76,27 +76,51 @@ def load_models() -> dict:
     out_model_path = resource_path("model/out.ubj")
     roll_width_model_path = resource_path("model/roll_width.ubj")
 
-    with open(label_out_path, "rb") as f:
-        label_mapping_out = pickle.load(f)
-    _models_cache["reverse_label_mapping_out"] = {
-        idx: val for val, idx in label_mapping_out.items()
-    }
+    # Debug information
+    log_message("info", "Loading models from paths", {
+        "label_out_path": label_out_path,
+        "label_roll_width_path": label_roll_width_path,
+        "out_model_path": out_model_path,
+        "roll_width_model_path": roll_width_model_path
+    })
 
-    with open(label_roll_width_path, "rb") as f:
-        label_mapping_roll_width = pickle.load(f)
-    _models_cache["reverse_label_mapping_roll_width"] = {
-        idx: val for val, idx in label_mapping_roll_width.items()
-    }
+    # Check if files exist before loading
+    for path, name in [(label_out_path, "label_mapping_out.pkl"), 
+                       (label_roll_width_path, "label_mapping_roll_width.pkl"),
+                       (out_model_path, "out.ubj"), 
+                       (roll_width_model_path, "roll_width.ubj")]:
+        if not os.path.exists(path):
+            log_message("error", f"Model file not found", {"file": name, "path": path})
+            raise FileNotFoundError(f"Model file not found: {path}")
 
-    out_model = xgb.XGBClassifier()
-    out_model.load_model(out_model_path)
-    _models_cache["out_model"] = out_model
+    try:
+        with open(label_out_path, "rb") as f:
+            label_mapping_out = pickle.load(f)
+        _models_cache["reverse_label_mapping_out"] = {
+            idx: val for val, idx in label_mapping_out.items()
+        }
 
-    roll_width_model = xgb.XGBClassifier()
-    roll_width_model.load_model(roll_width_model_path)
-    _models_cache["roll_width_model"] = roll_width_model
+        with open(label_roll_width_path, "rb") as f:
+            label_mapping_roll_width = pickle.load(f)
+        _models_cache["reverse_label_mapping_roll_width"] = {
+            idx: val for val, idx in label_mapping_roll_width.items()
+        }
 
-    return _models_cache
+        out_model = xgb.XGBClassifier()
+        out_model.load_model(out_model_path)
+        _models_cache["out_model"] = out_model
+
+        roll_width_model = xgb.XGBClassifier()
+        roll_width_model.load_model(roll_width_model_path)
+        _models_cache["roll_width_model"] = roll_width_model
+
+        log_message("info", "All models loaded successfully")
+        return _models_cache
+    except Exception as e:
+        log_message("error", "Failed to load models", {"error": str(e)})
+        # Clear cache on failure to prevent partial loading
+        _models_cache.clear()
+        raise
 
 
 async def try_xgboost_solution(
@@ -147,8 +171,8 @@ async def try_xgboost_solution(
                         },
                         "material_specs": material_specs, "message": "XGBoost solution found."
                     }
-    except Exception as e:
-        log_message("error", "XGBoost prediction failed.", {"error": str(e)})
+    except (KeyError, FileNotFoundError, Exception) as e:
+        log_message("error", "XGBoost prediction failed.", {"error": str(e), "type": type(e).__name__})
         if progress_callback:
             progress_callback(f"    ⚠️ XGBoost prediction failed: {e}. Falling back to linear solver.")
     return None
@@ -157,7 +181,20 @@ def _predict_with_xgboost(orders_df: pl.DataFrame) -> Tuple[list, list]:
     """
     Takes an order DataFrame, preprocesses it, and returns predictions from cached models.
     """
-    models = load_models()
+    try:
+        models = load_models()
+    except Exception as e:
+        log_message("error", "Failed to load models for prediction", {"error": str(e)})
+        raise
+    
+    # Check if required models are loaded
+    required_models = ["out_model", "roll_width_model", "reverse_label_mapping_out", "reverse_label_mapping_roll_width"]
+    missing_models = [model for model in required_models if model not in models]
+    if missing_models:
+        error_msg = f"Missing required models: {missing_models}"
+        log_message("error", error_msg)
+        raise KeyError(error_msg)
+    
     out_model = models["out_model"]
     roll_width_model = models["roll_width_model"]
     reverse_label_mapping_out = models["reverse_label_mapping_out"]
@@ -180,10 +217,13 @@ def _predict_with_xgboost(orders_df: pl.DataFrame) -> Tuple[list, list]:
         if col not in orders_df.columns:
             orders_df = orders_df.with_columns(pl.lit(None).alias(col))
 
-    X = process(orders_df.select(feature_cols))
-
-    out_predictions = out_model.predict(X)
-    roll_width_predictions = roll_width_model.predict(X)
+    try:
+        X = process(orders_df.select(feature_cols))
+        out_predictions = out_model.predict(X)
+        roll_width_predictions = roll_width_model.predict(X)
+    except Exception as e:
+        log_message("error", "Failed to make predictions", {"error": str(e)})
+        raise
 
     out_predictions_original = [
         reverse_label_mapping_out.get(pred) for pred in out_predictions

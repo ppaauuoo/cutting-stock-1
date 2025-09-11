@@ -210,6 +210,10 @@ class CuttingOptimizerUI(QMainWindow):
         if hasattr(self, 'worker') and self.worker.isRunning():
             self.log_message("กำลังส่งคำขอหยุดการคำนวณ...")
             self.worker.requestInterruption()
+            # If worker is waiting for user input, set it to continue
+            if hasattr(self.worker, '_wait_for_input_event'):
+                self.worker.set_user_choice(None)
+        
         if hasattr(self, 'order_manager'):
             self.order_manager.stop()
         if hasattr(self, 'stock_manager'):
@@ -228,10 +232,10 @@ class CuttingOptimizerUI(QMainWindow):
 
         for name, thread in threads_to_wait:
             self.log_message(f"กำลังรอให้เธรด {name} หยุดทำงาน...")
-            if not thread.wait(5000):  # 5-second timeout
+            if not thread.wait(3000):  # 3-second timeout
                 self.log_message(f"⚠️ เธรด {name} ไม่หยุดทำงานในเวลาที่กำหนด, กำลังบังคับปิด.")
                 thread.terminate()
-                thread.wait()
+                thread.wait(1000)  # Wait 1 more second for termination
 
         self.log_message("ปิดโปรแกรมเรียบร้อยแล้ว")
         event.accept()
@@ -242,26 +246,30 @@ class CuttingOptimizerUI(QMainWindow):
         if hasattr(self, 'order_thread') and self.order_thread and self.order_thread.isRunning():
             self.order_manager.stop()
             self.order_thread.quit()  # Request normal exit
-            if not self.order_thread.wait(5000):  # Extended timeout
+            if not self.order_thread.wait(2000):  # Shorter timeout
                 self.order_manager.stop()  # Ensure worker stops
                 self.order_thread.terminate()  # Force exit if needed
-                self.order_thread.wait()  # Block until thread finishes
+                self.order_thread.wait(1000)  # Wait for termination
             # Add state verification
             if self.order_thread.isRunning():
-                self.log_message("❌ Thread still running after termination")
-                return  # Block deletion until thread is fully stopped
-            self.order_manager.deleteLater()
-            self.order_thread.deleteLater()
-            self.order_manager = None
-            self.order_thread = None
+                self.log_message("❌ Order thread still running after termination")
+                # Force immediate cleanup
+                self.order_thread.terminate()
+                self.order_manager = None
+                self.order_thread = None
+            else:
+                self.order_manager.deleteLater()
+                self.order_thread.deleteLater()
+                self.order_manager = None
+                self.order_thread = None
 
         if hasattr(self, 'stock_thread') and self.stock_thread and self.stock_thread.isRunning():
             self.stock_manager.stop()
             self.stock_thread.quit()
-            if not self.stock_thread.wait(3000):
+            if not self.stock_thread.wait(2000):
                 self.log_message("⚠️ Stock manager thread did not stop gracefully. Terminating.")
                 self.stock_thread.terminate()
-                self.stock_thread.wait()
+                self.stock_thread.wait(1000)
             self.stock_manager.deleteLater()
             self.stock_thread.deleteLater()
             self.stock_manager = None
