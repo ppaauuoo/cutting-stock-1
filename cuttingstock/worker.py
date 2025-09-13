@@ -143,13 +143,31 @@ class WorkerThread(QThread):
                 self.error_signal.emit(f"Error: {str(e)}")
                 self.progress_updated.emit(0, "❌ เกิดข้อผิดพลาด!") # รีเซ็ตโปรเกรสบาร์เมื่อเกิดข้อผิดพลาด
         finally:
-            # Cancel all pending tasks
-            for task in asyncio.all_tasks(loop):
-                task.cancel()
-            
-            # Run the event loop until all tasks are cancelled
-            if loop.is_running():
-                loop.run_until_complete(asyncio.gather(*asyncio.all_tasks(loop), return_exceptions=True))
-            
-            # Close the event loop
-            loop.close()
+            # Ensure the user choice event is cleared to prevent hanging
+            if hasattr(self, '_wait_for_input_event'):
+                self._wait_for_input_event.set()
+                self._user_choice = None
+
+            # Cancel all pending tasks with shorter timeout
+            try:
+                if loop and not loop.is_closed():
+                    tasks = [task for task in asyncio.all_tasks(loop) if not task.done()]
+                    for task in tasks:
+                        task.cancel()
+
+                    # Give tasks a chance to complete cancellation with shorter timeout
+                    if tasks:
+                        try:
+                            loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True, timeout=1.0))
+                        except (asyncio.TimeoutError, RuntimeError):
+                            # Force close if timeout occurs or loop is closing
+                            pass
+            except (RuntimeError, AttributeError):
+                pass  # Ignore errors during task cancellation
+
+            # Close the event loop gracefully
+            try:
+                if loop and not loop.is_closed():
+                    loop.close()
+            except (RuntimeError, AttributeError):
+                pass  # Ignore errors during loop closure
