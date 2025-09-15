@@ -29,225 +29,186 @@ def _spec_to_key(spec: dict) -> tuple:
     valid_keys = {'front', 'c', 'middle', 'b', 'back'}
     return tuple(sorted((k, v) for k, v in spec.items() if k in valid_keys and v))
 
-def _try_partial_roll_for_new_order(
-    material_rolls_dict: dict, required_length: float, width: str, material: str,
-    used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str], position: int
-) -> Optional[str]:
-    """For a new order, try to find any partially used roll first to minimize waste."""
-    used_ids_for_this_width = {
-        v for k, v in last_used_roll_ids.items()
-        if isinstance(k, tuple) and len(k) == 3 and k[0] == width
-    }
+def _format_roll_message(roll_id: str, original_length: float, remaining_length: float) -> str:
+    """Format a consistent roll usage message."""
+    if remaining_length > 0:
+        return f"{roll_id} (ยาว {int(original_length)} ม., เหลือ {int(remaining_length)} ม.)"
+    else:
+        return f"{roll_id} (ยาว {int(original_length)} ม., ใช้หมด)"
 
-    partial_rolls = sorted(
-        [(k, r) for k, r in material_rolls_dict.items() if r.get('id') in used_ids_for_this_width and r.get('id') not in used_roll_ids and r.get('length', 0) > 0],
-        key=lambda item: item[0]
-    )
+def _process_roll_usage(rolls: list, required_length: float, used_roll_ids: set) -> tuple[list[str], float, Optional[str]]:
+    """Process roll usage and return message parts, remaining length, and final roll ID."""
+    message_parts = []
+    remaining_needed = required_length
+    final_roll_id = None
 
-    for _roll_key, roll in partial_rolls:
-        if roll.get('length', 0) >= required_length:
-            roll_id = roll.get('id')
-            original_length = roll['length']
-            roll['length'] -= required_length
-            position_key = ('_position', width, material)
-            last_order_key = ('_last_order', width, material)
-            last_used_roll_ids[(width, material, position)] = roll_id
-            last_used_roll_ids[position_key] = position
-            last_used_roll_ids[last_order_key] = order_number
-            return f"-> ใช้ม้วนต่อเนื่อง: {roll_id} (ยาว {int(original_length)} ม., เหลือ {int(roll['length'])} ม.)"
-    return None
+    for roll_key, roll in rolls:
+        roll_id = roll.get('id')
+        roll_length = roll.get('length', 0)
+        used_roll_ids.add(roll_id)
 
-def _try_continuation_roll(
-    material_rolls_dict: dict, required_length: float, width: str, material: str,
-    used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str],
-    unused_rolls: list, position: int, last_roll_id: Optional[str]
-) -> Optional[str]:
-    """Try to continue using the last used roll for this material spec."""
-    if not last_roll_id:
-        return None
-
-    last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_roll_id), None)
-
-    if last_roll_data:
-        _last_roll_key, last_roll = last_roll_data
-        position_key = ('_position', width, material)
-        last_order_key = ('_last_order', width, material)
-
-        if last_roll['length'] >= required_length:
-            original_length = last_roll['length']
-            last_roll['length'] -= required_length
-            used_roll_ids.add(last_roll_id)
-            last_used_roll_ids[(width, material, position)] = last_roll_id
-            last_used_roll_ids[position_key] = position
-            last_used_roll_ids[last_order_key] = order_number
-            return f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_length)} ม., เหลือ {int(last_roll['length'])} ม.)"
+        if remaining_needed > 0:
+            if roll_length >= remaining_needed:
+                roll['length'] -= remaining_needed
+                message_parts.append(_format_roll_message(roll_id, roll_length, roll['length']))
+                final_roll_id = roll_id
+                remaining_needed = 0
+            else:
+                roll['length'] = 0
+                message_parts.append(_format_roll_message(roll_id, roll_length, 0))
+                remaining_needed -= roll_length
+                if remaining_needed == 0:
+                    final_roll_id = roll_id
         else:
-            # Not enough length, try to combine with other rolls
-            needed_from_another = required_length - last_roll['length']
-            original_len_roll1 = last_roll['length']
-
-            supplement_rolls = sorted(
-                [(k, r) for k, r in unused_rolls if r.get('id') != last_roll_id],
-                key=lambda item: item[1]['length'], reverse=True
-            )
-
-            rolls_for_combination = []
-            length_from_supplements = 0
-            for supp_key, supp_roll in supplement_rolls:
-                rolls_for_combination.append((supp_key, supp_roll))
-                length_from_supplements += supp_roll.get('length', 0)
-                if length_from_supplements >= needed_from_another:
-                    break
-
-            if length_from_supplements >= needed_from_another:
-                last_roll['length'] = 0
-                used_roll_ids.add(last_roll_id)
-                message_parts = [f"-> ใช้ม้วนต่อเนื่อง: {last_roll_id} (ยาว {int(original_len_roll1)} ม., ใช้หมด)"]
-                remaining_needed = needed_from_another
-                new_last_used_roll_id = None
-
-                for i, (supp_key, supp_roll) in enumerate(rolls_for_combination):
-                    supp_id = supp_roll.get('id')
-                    original_supp_length = supp_roll['length']
-                    used_roll_ids.add(supp_id)
-                    if remaining_needed > 0:
-                        if original_supp_length >= remaining_needed:
-                            supp_roll['length'] -= remaining_needed
-                            message_parts.append(f"{supp_id} (ยาว {int(original_supp_length)} ม., เหลือ {int(supp_roll['length'])} ม.)")
-                            new_last_used_roll_id = supp_id
-                            remaining_needed = 0
-                        else:
-                            supp_roll['length'] = 0
-                            message_parts.append(f"{supp_id} (ยาว {int(original_supp_length)} ม., ใช้หมด)")
-                            remaining_needed -= original_supp_length
-                            if i == len(rolls_for_combination) - 1:
-                                new_last_used_roll_id = supp_id
-
-                if new_last_used_roll_id:
-                    last_used_roll_ids[(width, material, position)] = new_last_used_roll_id
-                    last_used_roll_ids[position_key] = position
-                    last_used_roll_ids[last_order_key] = order_number
-
-                return " + ".join(message_parts)
-    return None
-
-def _try_new_rolls(
-    unused_rolls: list, required_length: float, width: str, material: str,
-    used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str], position: int
-) -> Optional[str]:
-    """Fallback to combining one or more new rolls to meet the required length."""
-    sorted_unused_rolls = sorted(unused_rolls, key=lambda item: item[1]['length'], reverse=True)
-
-    rolls_for_combination = []
-    combined_length = 0
-    for roll_key, roll in sorted_unused_rolls:
-        rolls_for_combination.append((roll_key, roll))
-        combined_length += roll.get('length', 0)
-        if combined_length >= required_length:
             break
 
-    if combined_length >= required_length:
-        message_parts = []
-        remaining_needed = required_length
-        new_last_used_roll_id = None
+    return message_parts, remaining_needed, final_roll_id
 
-        for i, (roll_key, roll) in enumerate(rolls_for_combination):
-            roll_id = roll.get('id')
-            original_length = roll.get('length', 0)
-            used_roll_ids.add(roll_id)
-
-            if remaining_needed > 0:
-                if original_length >= remaining_needed:
-                    roll['length'] -= remaining_needed
-                    message_parts.append(f"{roll_id} (ยาว {int(original_length)} ม., เหลือ {int(roll['length'])} ม.)")
-                    new_last_used_roll_id = roll_id
-                    remaining_needed = 0
-                else:
-                    roll['length'] = 0
-                    message_parts.append(f"{roll_id} (ยาว {int(original_length)} ม., ใช้หมด)")
-                    remaining_needed -= original_length
-                    if i == len(rolls_for_combination) - 1:
-                        new_last_used_roll_id = roll_id
-
-        if new_last_used_roll_id:
-            position_key = ('_position', width, material)
-            last_order_key = ('_last_order', width, material)
-            last_used_roll_ids[(width, material, position)] = new_last_used_roll_id
-            last_used_roll_ids[position_key] = position
-            last_used_roll_ids[last_order_key] = order_number
-
-        return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
-    return None
-
-def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None, material_specs: Optional[dict] = None, material_substitutions: Optional[dict] = None, known_out_of_stock: Optional[list] = None) -> str:
+#TODO substitute material features
+def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None, material_specs: Optional[dict] = None, group_id: Optional[str] = None, positions: Optional[dict] = None, roll_positions: Optional[dict] = None, spec_key: Optional[str] = None) -> str:
     """
-    Finds a suitable roll by trying different strategies in order of priority:
-    1. Use a partially used roll for a new order.
-    2. Continue using the last used roll for the same material.
-    3. Open a new roll (or combination of rolls).
+    Args:
+        roll_specs (dict): Dictionary of roll specifications and stock.
+        width (str): Width of the roll.
+        material (str): Material of the roll.
+        required_length (float): Required length of the roll.
+        used_roll_ids (set): Set of all used roll IDs.
+        last_used_roll_ids (dict): Dictionary of last used roll IDs.
+        order_number (Optional[str]): Order number.
+        material_specs (Optional[dict]): Dictionary of material specifications.
+        group_id (Optional[str]): Group ID for order grouping.
+        positions (Optional[dict]): Dictionary tracking order/group positions.
+        roll_positions (Optional[dict]): Dictionary tracking roll positions per material.
+        spec_key (Optional[str]): Specification key (front, c, middle, b, back) for material context.
+
+    Returns:
+        str: Message indicating the roll to be used.
+
+    Raises:
+        OutOfStockError: If no suitable roll is found.
+
+    Keep track of sequences of orders base on order_number, width and material and
+    finds a suitable roll by trying different strategies in order of priority:
+    1. Continue using the last used roll for the same material on the same width and position.
+    2. Open a new roll if the last used roll if out of stock or not exists.
+    3. Reset position if material is different from last used material.
+
+    Roll position tracking counts the number of rolls used for each material combination.
     """
     if not material or not width:
         return ""
 
     material_rolls_dict = roll_specs.get(str(width), {}).get(material, {})
     if not material_rolls_dict:
-        log_message("error", "Out of stock: No stock data available for material.", {"width": width, "material": material, "required_length": required_length, "material_specs": material_specs, "known_out_of_stock": known_out_of_stock})
-        raise OutOfStockError("ไม่มีข้อมูลสต็อก", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
+        log_message("error", "Out of stock: No stock data available for material.", {"width": width, "material": material, "required_length": required_length, "material_specs": material_specs})
+        raise OutOfStockError("ไม่มีข้อมูลสต็อก", width, material, required_length, material_specs)
 
-    all_available_rolls = sorted(material_rolls_dict.items(), key=lambda item: item[1]['length'])
+    # Get available rolls sorted by length
+    all_available_rolls = sorted(material_rolls_dict.items(), key=lambda item: item[1]['length'], reverse=True)
     unused_rolls = [(k, r) for k, r in all_available_rolls if r.get('id') not in used_roll_ids]
 
+    # Try to find a suitable roll combination
+    rolls_for_combination = []
+    combined_length = 0
+
     # --- State management for roll usage ---
-    seen_orders = last_used_roll_ids.setdefault('_seen_orders', set())
-    position_key = ('_position', width, material)
-    last_order_key = ('_last_order', width, material)
-    last_order_number = last_used_roll_ids.get(last_order_key)
+    current_order_id = group_id if group_id else order_number
 
-    if order_number and order_number != last_order_number and not (order_number and (order_number, material) in seen_orders):
-        position = 0
+    if positions is None:
+        positions = {}
+    if roll_positions is None:
+        roll_positions = {}
+
+    if current_order_id in positions:
+        position = positions[current_order_id] + 1
     else:
-        position = last_used_roll_ids.get(position_key, 0)
+        position = 0
 
-    last_roll_id = last_used_roll_ids.get((width, material, position))
-    if order_number and (order_number, material) in seen_orders:
-        position = last_used_roll_ids.get(position_key, 0) + 1
-        last_roll_id = last_used_roll_ids.get((width, material, position))
+    # Get roll position for this material combination
+    # Include spec_key in the key to handle duplicate materials in different contexts
+    spec_key_for_tracking = spec_key or 'unknown'
+    material_key = (width, material, spec_key_for_tracking)
+    roll_position = roll_positions.get(material_key, 0)
 
-    if order_number:
-        seen_orders.add((order_number, material))
-    is_new_order = (order_number and order_number != last_order_number)
+    position_key = (width, material, position)
+    last_used_roll_id = last_used_roll_ids.get(position_key)
 
-    # --- Strategy 1: For a new order, try to find any partially used roll first ---
-    if is_new_order:
-        message = _try_partial_roll_for_new_order(
-            material_rolls_dict, required_length, width, material,
-            used_roll_ids, last_used_roll_ids, order_number, position
-        )
-        if message:
-            return message
+    # Check if we can continue using the last roll (either alone or in combination)
+    if last_used_roll_id:
+        last_roll_data = next(((k, r) for k, r in material_rolls_dict.items() if r.get('id') == last_used_roll_id), None)
+        if last_roll_data:
+            last_roll = last_roll_data[1]
+            last_roll_length = last_roll['length']
 
-    # --- Strategy 2: Try to continue using the last used roll ---
-    if last_roll_id and last_roll_id in used_roll_ids and order_number == last_order_number and not (order_number and (order_number, material) in seen_orders):
-        position += 1
-        last_roll_id = last_used_roll_ids.get((width, material, position))
+            if last_roll_length >= required_length:
+                # Use the existing roll alone
+                last_roll['length'] -= required_length
+                used_roll_ids.add(last_used_roll_id)
+                positions[current_order_id] = position
+                # Update roll position (reusing existing roll, no increment)
+                roll_positions[material_key] = roll_position
+                return f"-> ใช้ม้วนต่อเนื่อง: {_format_roll_message(last_used_roll_id, last_roll_length, last_roll['length'])}"
+            elif last_roll_length > 0:
+                # Use last roll in combination with new rolls
+                remaining_needed = required_length - last_roll_length
 
-    message = _try_continuation_roll(
-        material_rolls_dict, required_length, width, material, used_roll_ids,
-        last_used_roll_ids, order_number, unused_rolls, position, last_roll_id
+                # Find additional rolls to meet the remaining need
+                supplement_rolls = []
+                supplement_length = 0
+
+                for roll_key, roll in unused_rolls:
+                    if roll.get('id') != last_used_roll_id:
+                        supplement_rolls.append((roll_key, roll))
+                        supplement_length += roll.get('length', 0)
+                        if supplement_length >= remaining_needed:
+                            break
+
+                if supplement_length >= remaining_needed:
+                    # We have enough with combination
+                    message_parts = [f"-> ใช้ม้วนต่อเนื่อง: {_format_roll_message(last_used_roll_id, last_roll_length, 0)}"]
+                    last_roll['length'] = 0
+                    used_roll_ids.add(last_used_roll_id)
+
+                    # Process supplement rolls using helper function
+                    supp_message_parts, remaining_supplement_needed, final_roll_id = _process_roll_usage(
+                        supplement_rolls, remaining_needed, used_roll_ids
+                    )
+                    message_parts.extend(supp_message_parts)
+
+                    # Update tracking
+                    last_used_roll_ids[position_key] = final_roll_id
+                    positions[current_order_id] = position
+                    # Update roll position (increment because we used new rolls)
+                    roll_positions[material_key] = roll_position + 1
+
+                    return " + ".join(message_parts)
+
+    # Find combination of new rolls (excluding the last used roll which was already considered)
+    for roll_key, roll in unused_rolls:
+        if roll.get('id') != last_used_roll_id:
+            rolls_for_combination.append((roll_key, roll))
+            combined_length += roll.get('length', 0)
+            if combined_length >= required_length:
+                break
+
+    # Check if we have enough length
+    if combined_length < required_length:
+        log_message("error", "Out of stock: Not enough stock length available for material.", {"width": width, "material": material, "required_length": required_length, "material_specs": material_specs})
+        raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs)
+
+    # Process the selected rolls using helper function
+    message_parts, remaining_needed, new_last_used_roll_id = _process_roll_usage(
+        rolls_for_combination, required_length, used_roll_ids
     )
-    if message:
-        return message
 
-    # --- Strategy 3: Fallback to opening a new roll ---
-    message = _try_new_rolls(
-        unused_rolls, required_length, width, material, used_roll_ids,
-        last_used_roll_ids, order_number, position
-    )
-    if message:
-        return message
+    # Update last used roll tracking and positions
+    if new_last_used_roll_id:
+        last_used_roll_ids[position_key] = new_last_used_roll_id
+        positions[current_order_id] = position
+        # Update roll position (increment because we used new rolls)
+        roll_positions[material_key] = roll_position + 1
 
-    log_message("error", "Out of stock: Not enough stock length available for material.", {"width": width, "material": material, "required_length": required_length, "material_specs": material_specs, "known_out_of_stock": known_out_of_stock})
-    raise OutOfStockError("ไม่มีสต็อกที่พอ", width, material, required_length, material_specs, known_out_of_stock=known_out_of_stock)
+    return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
 
 async def process_single_order(
     result: dict, orders_df: pl.DataFrame, order_num_col_idx: int, material_substitutions: dict,
@@ -259,7 +220,11 @@ async def process_single_order(
     Returns the final cut information, the processed order index, and any failure reason.
     """
     variables = result.get("variables", {})
+    group_id = variables.get("group_id", None)
     order_idx = variables.get("order_idx")
+    roll_w_str = str(variables.get("roll_w", "")).strip()
+    positions = {}  # Initialize positions tracking for order grouping
+    roll_positions = {}  # Initialize roll positions tracking for materials
 
     if progress_callback:
         progress_callback(f"    Optimal solution found. Trim: {variables.get('trim', 0):.4f}")
@@ -275,43 +240,49 @@ async def process_single_order(
     known_out_of_stock_materials = []
 
     while not order_processed_successfully:
+
+        # look for front,c,middle,b,back in order
         spec_key_for_lookup = _spec_to_key(material_specs_for_order)
+
+        # if OutOfStockError happened in the previous round, material_substitutions will be set
         if material_substitutions and spec_key_for_lookup in material_substitutions:
+            # check if this is a valid substitution for this material.
             substituted_spec = material_substitutions[spec_key_for_lookup]
             if substituted_spec is None:
                 if progress_callback: progress_callback("    ❌ User previously cancelled substitution for this spec. Failing order.")
-                # calculation_failed_reason = "ผู้ใช้ยกเลิกสำหรับสเปคนี้"
                 break
             if progress_callback:
                 changes_str = ", ".join([f"{k.title()}: {v}" for k, v in substituted_spec.items() if material_specs_for_order.get(k) != v])
                 progress_callback(f"    🔄 Applying stored substitution for spec: {changes_str}")
+            # set new spec.
             material_specs_for_order = substituted_spec.copy()
 
         current_attempt_specs = material_specs_for_order.copy()
-        variables = result.get("variables", {})
         roll_info_this_attempt = {}
         spec_changed_this_attempt = False
         calculation_failed_reason = None
         roll_specs_backup = copy.deepcopy(roll_specs)
         last_used_roll_ids_backup = copy.deepcopy(last_used_roll_ids)
+        roll_positions_backup = copy.deepcopy(roll_positions)
 
         def get_roll_for_material(spec_key: str, value_calculator: Callable[[], float]):
             nonlocal calculation_failed_reason, spec_changed_this_attempt, material_specs_for_order
-            if calculation_failed_reason or not current_attempt_specs.get(spec_key): return
-            material = str(current_attempt_specs.get(spec_key)).strip()
+            nonlocal roll_w_str
+            value = value_calculator()
+            material = str(current_attempt_specs.get(spec_key, "")).strip()
+            if calculation_failed_reason or not material or not value: return
             try:
-                value = value_calculator()
-                roll_w_str = str(variables.get("roll_w", "")).strip()
-                info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, current_attempt_specs, material_substitutions=material_substitutions, known_out_of_stock=known_out_of_stock_materials)
+                info = _find_and_update_roll(roll_specs, roll_w_str, material, value, used_roll_ids_for_cut, last_used_roll_ids, order_number, current_attempt_specs, group_id=group_id, positions=positions, roll_positions=roll_positions, spec_key=spec_key)
                 roll_info_this_attempt[f'{spec_key}_roll_info'] = info
             except OutOfStockError as e:
                 known_out_of_stock_materials.append((e.width, e.material))
                 if out_of_stock_handler:
                     if progress_callback: progress_callback(f"    ⚠️ สต็อกสำหรับ '{e.material}' (หน้ากว้าง {e.width}) ไม่พอ, รอการตัดสินใจจากผู้ใช้...")
                     log_message("info", "Out of stock, awaiting user interaction.", {"width": e.width, "material": e.material, "required_length": e.required_length, "material_specs": e.material_specs})
+                    # get new set of materials from handler(user)
                     new_material_specs = out_of_stock_handler(e)
                     if new_material_specs:
-                        changes = {k: v for k, v in new_material_specs.items() if current_attempt_specs.get(k) != v}
+                        changes = {k: v for k, v in new_material_specs.items()}
                         log_message("info", "User provided material substitution.", {"original_specs": current_attempt_specs, "new_specs": new_material_specs, "changes": changes})
                         if progress_callback:
                             changes_str = ", ".join([f"{k.title()}: {v}" for k, v in changes.items()])
@@ -319,7 +290,8 @@ async def process_single_order(
                         original_spec_key = _spec_to_key(current_attempt_specs)
                         material_substitutions[original_spec_key] = new_material_specs
                         for key, value in list(material_substitutions.items()):
-                            if value is not None and _spec_to_key(value) == original_spec_key: material_substitutions[key] = new_material_specs
+                            if value is not None and _spec_to_key(value) == original_spec_key:
+                                material_substitutions[key] = new_material_specs
                         material_specs_for_order = new_material_specs
                         spec_changed_this_attempt = True
                         calculation_failed_reason = "SPEC_CHANGED"
@@ -330,16 +302,15 @@ async def process_single_order(
                         material_substitutions[original_spec_key] = None
                         for key, value in list(material_substitutions.items()):
                             if value is not None and _spec_to_key(value) == original_spec_key: material_substitutions[key] = None
-                        # roll_info_this_attempt[f'{spec_key}_roll_info'] = "-> (ผู้ใช้ยกเลิก)"
                         calculation_failed_reason = "ผู้ใช้ยกเลิก"
                 else:
                     fail_reason_msg = e.args[0]
-                    # roll_info_this_attempt[f'{spec_key}_roll_info'] = f"-> ({fail_reason_msg})"
                     calculation_failed_reason = fail_reason_msg
 
         if roll_specs:
             demand_per_cut = variables.get("demand_per_cut", 0)
-            c_type_spec = current_attempt_specs.get('c_type'); b_type_spec = current_attempt_specs.get('b_type')
+            c_type_spec = current_attempt_specs.get('c_type')
+            b_type_spec = current_attempt_specs.get('b_type')
             type_demand_divisor = CORRUGATE_MULTIPLIERS.get(c_type_spec or b_type_spec) or 1.0
             get_roll_for_material('front', lambda: demand_per_cut / type_demand_divisor)
             if c_type_spec == 'C': get_roll_for_material('c', lambda: demand_per_cut)
@@ -350,23 +321,16 @@ async def process_single_order(
             get_roll_for_material('back', lambda: demand_per_cut / type_demand_divisor)
 
         if spec_changed_this_attempt:
-            roll_specs.clear(); roll_specs.update(roll_specs_backup)
-            last_used_roll_ids.clear(); last_used_roll_ids.update(last_used_roll_ids_backup)
+            roll_specs.clear()
+            roll_specs.update(roll_specs_backup)
+            last_used_roll_ids.clear()
+            last_used_roll_ids.update(last_used_roll_ids_backup)
+            roll_positions.clear()
+            roll_positions.update(roll_positions_backup)
             used_roll_ids_for_cut.clear()
             if calculation_failed_reason == "SPEC_CHANGED": calculation_failed_reason = None
             if progress_callback: progress_callback("    🔄 Spec changed, restarting roll allocation for this order...")
             continue
-        if calculation_failed_reason: break
-        # if _stock_data is not None:
-        #     insufficient_materials = [
-        #         m for spec_key in ['front', 'c', 'middle', 'b', 'back']
-        #         if (m := current_attempt_specs.get(spec_key)) and not verify_stock_availability(roll_width, m, variables.get("demand_per_cut", 0), _stock_data)
-        #     ]
-        #     if insufficient_materials:
-        #         if progress_callback: progress_callback(f"    ❌ ตรวจพบว่าสต็อกสำหรับ {', '.join(insufficient_materials)} ไม่พอจริงๆ หลังตรวจสอบระบบสต็อก")
-        #         log_message("error", "Confirmed out of stock", {"materials": insufficient_materials})
-        #         calculation_failed_reason = "Confirmed out of stock"
-        #         break
         if calculation_failed_reason: break
         final_roll_info = roll_info_this_attempt
         material_specs = current_attempt_specs
@@ -425,16 +389,12 @@ def _create_unprocessed_result(order: dict, status: str, reason: str) -> dict:
 
 def handle_unprocessed_orders(
     rem_orders_df: pl.DataFrame,
-    # final_status: Optional[str],
-    # failure_reason: str,
     progress_callback: Optional[Callable[[str], None]]
 ) -> list:
     if rem_orders_df.is_empty():
         return []
 
     roll_w_status = failure_reason = STATUS_FAILED
-    # if final_status == STATUS_INFEASIBLE:
-    #     roll_w_status = STATUS_INFEASIBLE
 
     if progress_callback:
         progress_callback(
