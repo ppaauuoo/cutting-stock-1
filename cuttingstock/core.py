@@ -493,6 +493,7 @@ async def _process_cuts_for_roll(
 ) -> tuple[list, pl.DataFrame, str, Optional[str]]:
     last_used_roll_ids = {}
     used_roll_ids_for_cut = set()
+    roll_positions = {}
     if progress_callback:
         progress_callback(f"🔧 กำลังประมวลผลม้วน {roll['width']} นิ้ว")
 
@@ -526,7 +527,7 @@ async def _process_cuts_for_roll(
             cut_info, order_idx = await process_single_order(
                 res, orders_df, order_num_col_idx, material_substitutions,
                 progress_callback, out_of_stock_handler, roll_specs,
-                used_roll_ids_for_cut, last_used_roll_ids, roll['width']
+                used_roll_ids_for_cut, last_used_roll_ids, roll_positions, roll['width']
             )
 
             if cut_info:

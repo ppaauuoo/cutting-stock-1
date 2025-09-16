@@ -64,8 +64,7 @@ def _process_roll_usage(rolls: list, required_length: float, used_roll_ids: set)
 
     return message_parts, remaining_needed, final_roll_id
 
-#TODO substitute material features
-def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None, material_specs: Optional[dict] = None, group_id: Optional[str] = None, positions: Optional[dict] = None, roll_positions: Optional[dict] = None, spec_key: Optional[str] = None) -> str:
+def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_length: float, used_roll_ids: set, last_used_roll_ids: dict, order_number: Optional[str] = None, material_specs: Optional[dict] = None, group_id: Optional[str] = None, positions: Optional[dict[str, int]] = None, roll_positions: Optional[dict[str, tuple[str, str, str]]] = None, spec_key: Optional[str] = None) -> str:
     """
     Args:
         roll_specs (dict): Dictionary of roll specifications and stock.
@@ -119,16 +118,19 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
     if roll_positions is None:
         roll_positions = {}
 
+    spec_key_for_tracking = spec_key or 'unknown'
+    # (group_id, CM127, front)
+    material_key = (current_order_id, material, spec_key_for_tracking)
+    # eg. same group, same material and spec -> new order within same group
+    if material_key in roll_positions:
+        return 'กลุ่มเดียวกัน'
+    else:
+        roll_positions[material_key] = 1
+
     if current_order_id in positions:
         position = positions[current_order_id] + 1
     else:
         position = 0
-
-    # Get roll position for this material combination
-    # Include spec_key in the key to handle duplicate materials in different contexts
-    spec_key_for_tracking = spec_key or 'unknown'
-    material_key = (width, material, spec_key_for_tracking)
-    roll_position = roll_positions.get(material_key, 0)
 
     position_key = (width, material, position)
     last_used_roll_id = last_used_roll_ids.get(position_key)
@@ -146,7 +148,6 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                 used_roll_ids.add(last_used_roll_id)
                 positions[current_order_id] = position
                 # Update roll position (reusing existing roll, no increment)
-                roll_positions[material_key] = roll_position
                 return f"-> ใช้ม้วนต่อเนื่อง: {_format_roll_message(last_used_roll_id, last_roll_length, last_roll['length'])}"
             elif last_roll_length > 0:
                 # Use last roll in combination with new rolls
@@ -179,7 +180,6 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
                     last_used_roll_ids[position_key] = final_roll_id
                     positions[current_order_id] = position
                     # Update roll position (increment because we used new rolls)
-                    roll_positions[material_key] = roll_position + 1
 
                     return " + ".join(message_parts)
 
@@ -206,25 +206,23 @@ def _find_and_update_roll(roll_specs: dict, width: str, material: str, required_
         last_used_roll_ids[position_key] = new_last_used_roll_id
         positions[current_order_id] = position
         # Update roll position (increment because we used new rolls)
-        roll_positions[material_key] = roll_position + 1
 
     return f"-> เปิดม้วนใหม่: " + " + ".join(message_parts)
 
 async def process_single_order(
     result: dict, orders_df: pl.DataFrame, order_num_col_idx: int, material_substitutions: dict,
     progress_callback: Optional[Callable[[str], None]], out_of_stock_handler: Optional[Callable],
-    roll_specs: dict, used_roll_ids_for_cut: set, last_used_roll_ids: dict, roll_width: int
+    roll_specs: dict, used_roll_ids_for_cut: set, last_used_roll_ids: dict, roll_positions: dict, roll_width: int
 ) -> tuple[Optional[dict], Optional[int], Optional[str]]:
     """
     Processes a single order solution, handling stock checks, material substitutions, and roll allocation.
     Returns the final cut information, the processed order index, and any failure reason.
     """
     variables = result.get("variables", {})
-    group_id = variables.get("group_id", None)
+    group_id = result.get("group_id", None)
     order_idx = variables.get("order_idx")
     roll_w_str = str(variables.get("roll_w", "")).strip()
     positions = {}  # Initialize positions tracking for order grouping
-    roll_positions = {}  # Initialize roll positions tracking for materials
 
     if progress_callback:
         progress_callback(f"    Optimal solution found. Trim: {variables.get('trim', 0):.4f}")
