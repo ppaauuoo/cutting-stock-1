@@ -14,6 +14,9 @@ from PyQt5.QtCore import (
     QTextCodec,
     QThread,
     QTimer,
+    QObject,
+    pyqtSignal,
+    QEventLoop
 )
 from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtWidgets import (
@@ -53,6 +56,8 @@ class CuttingOptimizerUI(QMainWindow):
         self.qtapp = QApplication.instance()
         if self.qtapp:
             self.qtapp.setQuitOnLastWindowClosed(False)
+            # Set up global signal handler for application quit
+            self.qtapp.aboutToQuit.connect(self._on_application_quit)
         self.setWindowTitle("กระดาษม้วนตัด Optimizer")
         self.setGeometry(100, 100, 800, 700)
 
@@ -65,6 +70,10 @@ class CuttingOptimizerUI(QMainWindow):
         self.material_substitutions = {}
         self.auto_export = auto_export
         self.auto_close = auto_close
+
+        # Initialize threading cleanup state
+        self._is_closing = False
+        self._pending_threads = []
 
         central_widget = QWidget()
         layout = QVBoxLayout(central_widget)
@@ -206,82 +215,189 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_message("กำลังปิดโปรแกรม...")
         self.run_button.setEnabled(False) # ป้องกันการคลิกซ้ำ
 
-        # --- Phase 1: Request all threads to stop ---
-        if hasattr(self, 'worker') and self.worker.isRunning():
+        # --- Phase 1: Request all threads to stop gracefully ---
+        threads_to_stop = []
+
+        if hasattr(self, 'worker') and self.worker is not None and self.worker.isRunning():
             self.log_message("กำลังส่งคำขอหยุดการคำนวณ...")
             self.worker.requestInterruption()
             # If worker is waiting for user input, set it to continue
             if hasattr(self.worker, '_wait_for_input_event'):
                 self.worker.set_user_choice(None)
-        
+            threads_to_stop.append(self.worker)
+
         if hasattr(self, 'order_manager'):
             self.order_manager.stop()
+            if hasattr(self, 'order_thread'):
+                threads_to_stop.append(self.order_thread)
+
         if hasattr(self, 'stock_manager'):
             self.stock_manager.stop()
+            if hasattr(self, 'stock_thread'):
+                threads_to_stop.append(self.stock_thread)
 
+        # Process any pending events to allow threads to respond to stop signals
         QApplication.processEvents()
 
-        # --- Phase 2: Wait for all threads to finish gracefully ---
-        threads_to_wait = []
-        if hasattr(self, 'worker') and self.worker.isRunning():
-            threads_to_wait.append(("Worker", self.worker))
-        if hasattr(self, 'order_thread') and self.order_thread.isRunning():
-            threads_to_wait.append(("Order Manager", self.order_thread))
-        if hasattr(self, 'stock_thread') and self.stock_thread.isRunning():
-            threads_to_wait.append(("Stock Manager", self.stock_thread))
+        # --- Phase 2: Wait for threads to finish with timeout ---
+        for i, thread in enumerate(threads_to_stop):
+            if thread.isRunning():
+                thread_name = f"Thread {i+1}"
+                if thread == self.worker:
+                    thread_name = "Worker"
+                elif thread == self.order_thread:
+                    thread_name = "Order Manager"
+                elif thread == self.stock_thread:
+                    thread_name = "Stock Manager"
 
-        for name, thread in threads_to_wait:
-            self.log_message(f"กำลังรอให้เธรด {name} หยุดทำงาน...")
-            if not thread.wait(3000):  # 3-second timeout
-                self.log_message(f"⚠️ เธรด {name} ไม่หยุดทำงานในเวลาที่กำหนด, กำลังบังคับปิด.")
+                self.log_message(f"กำลังรอให้ {thread_name} หยุดทำงาน...")
+
+                # For manager threads, first try quit, then terminate
+                if thread in [self.order_thread, self.stock_thread]:
+                    thread.quit()  # Try to quit the event loop gracefully
+                    if thread.wait(1000):  # 1 second timeout for graceful quit
+                        self.log_message(f"✅ {thread_name} หยุดทำงานเรียบร้อย")
+                        continue
+
+                # For worker thread or if quit failed, try wait
+                if thread.wait(2000):  # 2 second timeout for graceful shutdown
+                    self.log_message(f"✅ {thread_name} หยุดทำงานเรียบร้อย")
+                    continue
+
+                # If graceful shutdown fails, force terminate
+                self.log_message(f"⚠️ {thread_name} ไม่ตอบสนอง กำลังบังคับปิด...")
                 thread.terminate()
-                thread.wait(1000)  # Wait 1 more second for termination
+
+                # Give terminated thread time to clean up
+                if thread.wait(1000):
+                    self.log_message(f"✅ {thread_name} ถูกบังคับปิดเรียบร้อย")
+                else:
+                    self.log_message(f"❌ {thread_name} ไม่สามารถบังคับปิดได้")
+
+        # --- Phase 3: Clean up thread objects ---
+        for thread_name in ['worker', 'order_thread', 'stock_thread']:
+            if hasattr(self, thread_name):
+                thread = getattr(self, thread_name)
+                if thread:
+                    if thread.isRunning():
+                        # Force terminate any remaining running threads
+                        try:
+                            thread.terminate()
+                            thread.wait(500)  # Final wait
+                        except:
+                            pass
+                    # Schedule thread for deletion
+                    thread.deleteLater()
+                setattr(self, thread_name, None)
+
+        # Clean up manager objects
+        for manager_name in ['order_manager', 'stock_manager']:
+            if hasattr(self, manager_name):
+                manager = getattr(self, manager_name)
+                if manager:
+                    # Signal manager to stop first
+                    if hasattr(manager, 'stop'):
+                        manager.stop()
+                    # Wait a bit for the manager to stop
+                    if hasattr(manager, '_is_running'):
+                        import time
+                        for _ in range(10):  # Wait up to 10 seconds
+                            if not getattr(manager, '_is_running', True):
+                                break
+                            time.sleep(0.1)
+                    manager.deleteLater()
+                    setattr(self, manager_name, None)
 
         self.log_message("ปิดโปรแกรมเรียบร้อยแล้ว")
-        event.accept()
+
+        # Force exit the application if threads are still running
+        # This ensures the process terminates completely
+        import sys
+        import time
+
+        # Small delay to allow cleanup
+        time.sleep(0.1)
+
+        # Force quit the application
+        QApplication.quit()
+
+        # If still running, force exit
+        if not event.isAccepted():
+            event.accept()
+        else:
+            # Additional safety measure - force process exit
+            sys.exit(0)
 
     def _pause_background_threads(self):
         """Stops and cleans up the background file monitoring threads gracefully."""
         self.log_message("ℹ️ Pausing background file monitoring...")
-        if hasattr(self, 'order_thread') and self.order_thread and self.order_thread.isRunning():
-            self.order_manager.stop()
-            self.order_thread.quit()  # Request normal exit
-            if not self.order_thread.wait(2000):  # Shorter timeout
-                self.order_manager.stop()  # Ensure worker stops
-                self.order_thread.terminate()  # Force exit if needed
-                self.order_thread.wait(1000)  # Wait for termination
-            # Add state verification
-            if self.order_thread.isRunning():
-                self.log_message("❌ Order thread still running after termination")
-                # Force immediate cleanup
-                self.order_thread.terminate()
-                self.order_manager = None
-                self.order_thread = None
-            else:
-                self.order_manager.deleteLater()
-                self.order_thread.deleteLater()
-                self.order_manager = None
-                self.order_thread = None
 
-        if hasattr(self, 'stock_thread') and self.stock_thread and self.stock_thread.isRunning():
-            self.stock_manager.stop()
-            self.stock_thread.quit()
-            if not self.stock_thread.wait(2000):
-                self.log_message("⚠️ Stock manager thread did not stop gracefully. Terminating.")
-                self.stock_thread.terminate()
-                self.stock_thread.wait(1000)
-            self.stock_manager.deleteLater()
-            self.stock_thread.deleteLater()
-            self.stock_manager = None
-            self.stock_thread = None
+        def cleanup_thread(thread, manager, thread_name, manager_name):
+            """Helper function to clean up individual thread/manager pair"""
+            if thread and thread.isRunning():
+                # Signal manager to stop
+                if manager:
+                    manager.stop()
+
+                # Request graceful exit
+                thread.quit()
+
+                # Wait for graceful exit
+                if thread.wait(2000):
+                    self.log_message(f"✅ {thread_name} stopped gracefully")
+                else:
+                    # Force terminate if graceful exit fails
+                    self.log_message(f"⚠️ {thread_name} did not stop gracefully. Terminating.")
+                    thread.terminate()
+                    thread.wait(1000)
+
+                # Clean up
+                thread.deleteLater()
+                if manager:
+                    manager.deleteLater()
+            elif thread:
+                # Thread exists but not running
+                thread.deleteLater()
+                if manager:
+                    manager.deleteLater()
+
+            # Set references to None
+            setattr(self, thread_name, None)
+            if manager_name:
+                setattr(self, manager_name, None)
+
+        # Clean up order thread and manager
+        cleanup_thread(
+            getattr(self, 'order_thread', None),
+            getattr(self, 'order_manager', None),
+            'Order thread',
+            'order_manager'
+        )
+
+        # Clean up stock thread and manager
+        cleanup_thread(
+            getattr(self, 'stock_thread', None),
+            getattr(self, 'stock_manager', None),
+            'Stock thread',
+            'stock_manager'
+        )
 
     def _resume_background_threads(self):
         """Resumes the background file monitoring by creating new threads."""
         self.log_message("ℹ️ Resuming background file monitoring...")
-        if not (hasattr(self, 'order_thread') and self.order_thread and self.order_thread.isRunning()):
-             self.setup_order_manager()
-        if not (hasattr(self, 'stock_thread') and self.stock_thread and self.stock_thread.isRunning()):
-             self.setup_stock_manager()
+        try:
+            if not (hasattr(self, 'order_thread') and self.order_thread and self.order_thread.isRunning()):
+                 self.setup_order_manager()
+        except RuntimeError:
+            # Thread was deleted, create new one
+            self.setup_order_manager()
+
+        try:
+            if not (hasattr(self, 'stock_thread') and self.stock_thread and self.stock_thread.isRunning()):
+                 self.setup_stock_manager()
+        except RuntimeError:
+            # Thread was deleted, create new one
+            self.setup_stock_manager()
 
     def setup_stock_manager(self):
         """เริ่มต้นและเริ่มการทำงานของเธรดจัดการสต็อก"""
@@ -563,9 +679,10 @@ class CuttingOptimizerUI(QMainWindow):
         self.worker.calculation_succeeded.connect(self.on_calculation_finished)
         self.worker.error_signal.connect(self.on_calculation_error)
         self.worker.out_of_stock_signal.connect(self.handle_out_of_stock)
-        # เชื่อมต่อสัญญาณ destroyed เพื่อให้แน่ใจว่าเธรดเก่าถูกลบอย่างสมบูรณ์
+        # เชื่อมต่อ signal destroyed เพื่อให้แน่ใจว่าเธรดเก่าถูกลบอย่างสมบูรณ์
         # ก่อนที่จะเริ่มการคำนวณครั้งถัดไปโดยอัตโนมัติ
-        self.worker.destroyed.connect(self.run_next_calculation)
+        # Note: We now handle cleanup in on_calculation_finished/error methods
+        # instead of relying on destroyed signal
         self.worker.start()
 
     def handle_out_of_stock(self, details: dict):
@@ -625,15 +742,26 @@ class CuttingOptimizerUI(QMainWindow):
 
         self.current_suggestion_index += 1
         sender_thread = self.sender()
+
+        # Clean up the worker thread properly
         if sender_thread:
-            # The thread has finished its work. We just need to wait for it to
-            # fully exit and then schedule it for deletion. The 'destroyed'
-            # signal will then trigger the next calculation.
-            if not sender_thread.wait(5000):
+            # Wait for thread to exit gracefully
+            if sender_thread.wait(3000):  # 3 second timeout
+                self.log_message("✅ Worker thread exited cleanly")
+            else:
                 self.log_message("⚠️ Worker thread did not exit cleanly. Terminating.")
                 sender_thread.terminate()
-                sender_thread.wait()
+                sender_thread.wait(1000)
+
+            # Schedule thread for deletion
             sender_thread.deleteLater()
+
+            # Clear reference
+            if hasattr(self, 'worker') and self.worker == sender_thread:
+                self.worker = None
+
+        # Schedule next calculation
+        QTimer.singleShot(100, self.run_next_calculation)
 
     def _refresh_results_display(self):
         """Refreshes the results table display based on current filters."""
@@ -759,15 +887,26 @@ class CuttingOptimizerUI(QMainWindow):
         self.log_message(f"❌ Error or infeasible on suggestion {self.current_suggestion_index + 1}: {error_message}")
         self.current_suggestion_index += 1
         sender_thread = self.sender()
+
+        # Clean up the worker thread properly
         if sender_thread:
-            # The thread has finished its work. We just need to wait for it to
-            # fully exit and then schedule it for deletion. The 'destroyed'
-            # signal will then trigger the next calculation.
-            if not sender_thread.wait(5000):
+            # Wait for thread to exit gracefully
+            if sender_thread.wait(3000):  # 3 second timeout
+                self.log_message("✅ Worker thread exited cleanly after error")
+            else:
                 self.log_message("⚠️ Worker thread did not exit cleanly after error. Terminating.")
                 sender_thread.terminate()
-                sender_thread.wait()
+                sender_thread.wait(1000)
+
+            # Schedule thread for deletion
             sender_thread.deleteLater()
+
+            # Clear reference
+            if hasattr(self, 'worker') and self.worker == sender_thread:
+                self.worker = None
+
+        # Schedule next calculation
+        QTimer.singleShot(100, self.run_next_calculation)
 
     def clear_results(self):
         """Clears the results table and resets related data."""
@@ -1047,6 +1186,40 @@ class CuttingOptimizerUI(QMainWindow):
         msg_box.setTextInteractionFlags(Qt.TextSelectableByMouse)
         msg_box.exec_()
 
+    def _on_application_quit(self):
+        """Called when the application is about to quit"""
+        self._is_closing = True
+        self.log_message("Application quit signal received")
+
+    def force_cleanup(self):
+        """Force cleanup of all remaining threads and resources"""
+        if self._is_closing:
+            return
+
+        self._is_closing = True
+        self.log_message("Force cleaning up resources...")
+
+        # Force stop all threads
+        for thread_name in ['worker', 'order_thread', 'stock_thread']:
+            if hasattr(self, thread_name):
+                thread = getattr(self, thread_name)
+                if thread and thread.isRunning():
+                    try:
+                        thread.terminate()
+                        thread.wait(500)
+                    except:
+                        pass
+                thread.deleteLater()
+                setattr(self, thread_name, None)
+
+        # Force cleanup managers
+        for manager_name in ['order_manager', 'stock_manager']:
+            if hasattr(self, manager_name):
+                manager = getattr(self, manager_name)
+                if manager:
+                    manager.deleteLater()
+                    setattr(self, manager_name, None)
+
 def convert_thai_digits_to_arabic(text: str) -> str:
     """Convert Thai digits to Arabic digits"""
     thai_digits = "๐๑๒๓๔๕๖๗๘๙"
@@ -1058,15 +1231,56 @@ if __name__ == "__main__":
     if sys.platform == "win32":
         os.environ["QT_QPA_PLATFORM"] = "windows:fontengine=freetype"
         os.environ["PYTHONIOENCODING"] = "utf-8"
+        # Enhanced Windows-specific settings to prevent hanging
+        os.environ["QT_FILE_LOCKING"] = "0"
+        os.environ["QT_QPA_ENABLE_TERMINAL_KEYBOARD"] = "0"
+        os.environ["QT_LOGGING_RULES"] = "qt.core.io=false"
 
     QTextCodec.setCodecForLocale(QTextCodec.codecForName("UTF-8"))
 
     thai_locale = QLocale(QLocale.Thai, QLocale.Thailand)
     QLocale.setDefault(thai_locale)
 
+    # Create application with better error handling
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
+
+    # Set up global exception handler
+    import traceback
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            # Call the default handler
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+
+        print(f"""Uncaught exception:\n{exc_type.__name__}: {exc_value}\n{traceback.format_exc()}""")
+
+    sys.excepthook = handle_exception
+
+    # Set up signal handlers for Windows
+    if sys.platform == "win32":
+        import signal
+        def signal_handler(signum, frame):
+            print(f"\nReceived signal {signum}, shutting down...")
+            QApplication.quit()
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
     app.setFont(QFont('Tahoma', 9))  # ตั้งค่าฟอนต์ภาษาไทย
 
     window = CuttingOptimizerUI()
     window.show()
-    sys.exit(app.exec_())
+
+    # Start event loop with better error handling
+    try:
+        exit_code = app.exec_()
+        # Force cleanup before exit
+        if hasattr(window, 'force_cleanup'):
+            window.force_cleanup()
+        sys.exit(exit_code)
+    except Exception as e:
+        print(f"Application error: {e}")
+        if hasattr(window, 'force_cleanup'):
+            window.force_cleanup()
+        sys.exit(1)

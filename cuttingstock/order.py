@@ -69,7 +69,10 @@ class OrderManager(QObject):
                         self.file_not_found_signal.emit(current_path)
                         self._file_exists = False
                     # รอก่อนที่จะพยายามอีกครั้งเพื่อหลีกเลี่ยง busy-waiting
-                    time.sleep(5)
+                    for _ in range(50):  # 5 seconds with smaller intervals
+                        if not self._is_running:
+                            return
+                        time.sleep(0.1)
                     continue
 
                 # หากพบไฟล์ ให้รีเซ็ตแฟล็ก
@@ -113,14 +116,17 @@ class OrderManager(QObject):
                     f"เกิดข้อผิดพลาดในการประมวลผลไฟล์ออเดอร์ '{self._file_path}':\n{e}"
                 )
                 # หลีกเลี่ยงข้อความแสดงข้อผิดพลาดที่รวดเร็วสำหรับปัญหาเดียวกัน
-                time.sleep(10)
+                for _ in range(100):  # 10 seconds with smaller intervals
+                    if not self._is_running:
+                        return
+                    time.sleep(0.1)
 
             # รอ 60 วินาทีก่อนรอบถัดไป
             # ลูปนี้ช่วยให้ออกจากโปรแกรมได้เร็วขึ้นหากเรียกใช้ stop()
-            for _ in range(60):
+            for _ in range(600):  # 60 seconds with smaller intervals
                 if not self._is_running:
-                    break
-                time.sleep(1)
+                    return
+                time.sleep(0.1)
 
     def stop(self):
         """หยุดการทำงานของลูป"""

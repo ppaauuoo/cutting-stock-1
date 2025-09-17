@@ -56,9 +56,11 @@ def main():
     # Set up proper cleanup on exit
     def handle_quit():
         """Handle application quit"""
-        # Give some time for cleanup
-        QTimer.singleShot(100, QCoreApplication.quit)
-    
+        # Force immediate cleanup and quit
+        from PyQt5.QtWidgets import QApplication
+        QApplication.processEvents()
+        QCoreApplication.quit()
+
     # Connect quit signal
     app.aboutToQuit.connect(handle_quit)
     
