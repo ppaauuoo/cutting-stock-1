@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def log_message(level: str, message: str, details: dict = None):
+def log_message(level: str, message: str, details: dict = None) -> None:
     """
     Log a message with the specified level.
 

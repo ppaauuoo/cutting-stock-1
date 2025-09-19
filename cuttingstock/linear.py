@@ -11,6 +11,7 @@ from pulp import (
     lpSum,
     value,
 )
+from cuttingstock.utils import log_message
 
 # Constants
 INCH_TO_M = 25.4 / 1000  # Conversion factor from inches

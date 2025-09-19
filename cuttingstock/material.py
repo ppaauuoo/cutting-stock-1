@@ -221,7 +221,6 @@ async def process_single_order(
     variables = result.get("variables", {})
     group_id = result.get("group_id", None)
     order_idx = variables.get("order_idx")
-    roll_w_str = str(variables.get("roll_w", "")).strip()
     positions = {}  # Initialize positions tracking for order grouping
 
     if progress_callback:
@@ -265,7 +264,7 @@ async def process_single_order(
 
         def get_roll_for_material(spec_key: str, value_calculator: Callable[[], float]):
             nonlocal calculation_failed_reason, spec_changed_this_attempt, material_specs_for_order
-            nonlocal roll_w_str
+            roll_w_str = str(variables.get("roll_w", "")).strip()
             value = value_calculator()
             material = str(current_attempt_specs.get(spec_key, "")).strip()
             if calculation_failed_reason or not material or not value: return
