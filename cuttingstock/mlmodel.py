@@ -85,9 +85,9 @@ def load_models() -> dict:
     })
 
     # Check if files exist before loading
-    for path, name in [(label_out_path, "label_mapping_out.pkl"), 
+    for path, name in [(label_out_path, "label_mapping_out.pkl"),
                        (label_roll_width_path, "label_mapping_roll_width.pkl"),
-                       (out_model_path, "out.ubj"), 
+                       (out_model_path, "out.ubj"),
                        (roll_width_model_path, "roll_width.ubj")]:
         if not os.path.exists(path):
             log_message("error", f"Model file not found", {"file": name, "path": path})
@@ -186,7 +186,7 @@ def _predict_with_xgboost(orders_df: pl.DataFrame) -> Tuple[list, list]:
     except Exception as e:
         log_message("error", "Failed to load models for prediction", {"error": str(e)})
         raise
-    
+
     # Check if required models are loaded
     required_models = ["out_model", "roll_width_model", "reverse_label_mapping_out", "reverse_label_mapping_roll_width"]
     missing_models = [model for model in required_models if model not in models]
@@ -194,7 +194,7 @@ def _predict_with_xgboost(orders_df: pl.DataFrame) -> Tuple[list, list]:
         error_msg = f"Missing required models: {missing_models}"
         log_message("error", error_msg)
         raise KeyError(error_msg)
-    
+
     out_model = models["out_model"]
     roll_width_model = models["roll_width_model"]
     reverse_label_mapping_out = models["reverse_label_mapping_out"]
@@ -234,57 +234,3 @@ def _predict_with_xgboost(orders_df: pl.DataFrame) -> Tuple[list, list]:
     ]
 
     return out_predictions_original, roll_width_predictions_original
-
-
-def main():
-    from cuttingstock.cleaning import clean_data, load_data
-
-    # Example usage:
-    # These would be your inputs
-    try:
-        # Using a raw string for the path is safer on Windows
-        raw_orders_df = load_data(r"D:\order.csv")
-    except FileNotFoundError:
-        print("Error: The file D:\\order.csv was not found.")
-        return
-    except Exception as e:
-        print(f"An error occurred while loading the data: {e}")
-        return
-
-    start_date = None
-    end_date = None
-    front = 'KS231'
-    c = 'CM127'
-    middle = 'CM127'
-    b = 'CM127'
-    back = 'KB160'
-    c_type = "C"  # example value
-    b_type = "B"  # example value
-
-    orders_df = clean_data(
-        raw_orders_df,
-        start_date,
-        end_date,
-        front=front,
-        c=c if c_type in ["C", "E"] else None,
-        middle=middle,
-        b=b if b_type in ["B", "E"] else None,
-        back=back,
-    )
-
-    (
-        out_predictions_original,
-        roll_width_predictions_original,
-    ) = predict_with_xgboost(orders_df)
-
-    # Print or use predictions
-    print("Order Width:", orders_df["width"].to_list()[0])
-    print("Out Model Predictions (Original Labels):", out_predictions_original[0])
-    print(
-        "Roll Width Model Predictions (Original Labels):",
-        roll_width_predictions_original[0],
-    )
-
-
-if __name__ == "__main__":
-    main()
