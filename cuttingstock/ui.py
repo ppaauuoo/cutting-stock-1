@@ -9,23 +9,22 @@ from math import floor
 import polars as pl
 from PyQt5.QtCore import (
     QDateTime,
+    QEventLoop,
     QLocale,
+    QObject,
     Qt,
     QTextCodec,
     QThread,
     QTimer,
-    QObject,
     pyqtSignal,
-    QEventLoop
 )
 from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
-    QDialog,
-    QDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -41,13 +40,14 @@ from PyQt5.QtWidgets import (
 )
 
 from cuttingstock.core import generate_suggestions
+from cuttingstock.dialog import MaterialSubstitutionDialog
+from cuttingstock.export import ExportManager
 from cuttingstock.material import handle_unprocessed_orders
 from cuttingstock.order import OrderManager, filter_orders_by_factory
 from cuttingstock.stock import StockManager
 from cuttingstock.widget import CustomTableWidget
-from cuttingstock.dialog import MaterialSubstitutionDialog
 from cuttingstock.worker import WorkerThread
-from cuttingstock.export import ExportManager
+
 
 class CuttingOptimizerUI(QMainWindow):
 
@@ -111,6 +111,10 @@ class CuttingOptimizerUI(QMainWindow):
         self.export_button = QPushButton("ส่งออก")
         self.export_button.clicked.connect(self.export_results)
         buttons_layout.addWidget(self.export_button)
+
+        self.export_magic_button = QPushButton("ส่งออก (Magic)")
+        self.export_magic_button.clicked.connect(self.export_results_magic)
+        buttons_layout.addWidget(self.export_magic_button)
 
         self.clear_button = QPushButton("ล้างผลลัพธ์")
         self.clear_button.clicked.connect(self.clear_results)
@@ -600,16 +604,16 @@ class CuttingOptimizerUI(QMainWindow):
                     unprocessed_results = handle_unprocessed_orders(rem_orders_df, self.log_message)
                     self.append_results_to_table(unprocessed_results)
 
-            if self.results_data:
-                self.log_message("Sorting final results by roll width...")
-                try:
-                    # Sort the results data in place by roll_w, treating it as an integer.
-                    self.results_data.sort(key=lambda r: int(r.get('roll_w', 0)))
-                    # Repopulate the table with the sorted data by calling append_results_to_table
-                    # with an empty list. This re-uses the existing repopulation logic.
-                    self.append_results_to_table([])
-                except (ValueError, TypeError) as e:
-                    self.log_message(f"⚠️ Could not sort results by roll width: {e}")
+            # if self.results_data:
+            #     self.log_message("Sorting final results by roll width...")
+            #     try:
+            #         # Sort the results data in place by roll_w, treating it as an integer.
+            #         self.results_data.sort(key=lambda r: int(r.get('roll_w', 0)))
+            #         # Repopulate the table with the sorted data by calling append_results_to_table
+            #         # with an empty list. This re-uses the existing repopulation logic.
+            #         self.append_results_to_table([])
+            #     except (ValueError, TypeError) as e:
+            #         self.log_message(f"⚠️ Could not sort results by roll width: {e}")
 
             self.run_button.setEnabled(True)
             self.progress_bar.setFormat("✅ Finished all tasks!")
@@ -921,6 +925,47 @@ class CuttingOptimizerUI(QMainWindow):
             self.material_substitutions.clear()
             self.result_table.setRowCount(0)
             self.log_message("🧹 ผลลัพธ์ทั้งหมดถูกล้างแล้ว")
+
+    def export_results_magic(self):
+        """ส่งออกข้อมูลในตารางผลลัพธ์ไปยังไฟล์ XLSX Magic Format"""
+        if not self.results_data:
+            QMessageBox.information(self, "ไม่มีข้อมูล", "ไม่มีข้อมูลสำหรับส่งออก")
+            return
+
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "บันทึกผลลัพธ์ (Magic Format)",
+            "cutting_results_magic",
+            "Excel Files (*.xlsx);;All Files (*)",
+            options=options,
+        )
+
+        # Check if user canceled the dialog
+        if not file_path:
+            return
+
+        # Add appropriate extension based on selected filter
+        if selected_filter == "Excel Files (*.xlsx)" and not file_path.endswith('.xlsx'):
+            file_path += '.xlsx'
+
+        try:
+            # Filter out failed/unprocessed orders (those with string roll_w values)
+            filtered_results = [result for result in self.results_data if not isinstance(result.get('roll_w'), str)]
+            export_manager = ExportManager(filtered_results, [])  # Empty headers for simple format
+
+            success = export_manager.export_to_xlsx_magic(file_path)
+            if success:
+                self.log_message(f"✅ ส่งออกผลลัพธ์ Magic Format ไปยัง {file_path} เรียบร้อยแล้ว")
+                QMessageBox.information(self, "ส่งออกสำเร็จ", f"บันทึกผลลัพธ์ Magic Format ไปยัง:\n{file_path} เรียบร้อยแล้ว")
+            else:
+                self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออกเป็น XLSX Magic Format")
+                QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", "ไม่สามารถส่งออกเป็น XLSX Magic Format ได้ กรุณาตรวจสอบว่าติดตั้ง xlsxwriter แล้ว")
+
+        except Exception as e:
+            self.log_message(f"❌ เกิดข้อผิดพลาดในการส่งออก: {e}")
+            QMessageBox.critical(self, "เกิดข้อผิดพลาดในการส่งออก", f"เกิดข้อผิดพลาด:\n{e}")
 
     def export_results(self):
         """ส่งออกข้อมูลในตารางผลลัพธ์ไปยังไฟล์ CSV หรือ XLSX"""

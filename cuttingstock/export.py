@@ -1,6 +1,7 @@
 import csv
 import re
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import polars as pl
 
 try:
@@ -207,6 +208,168 @@ class ExportManager:
         except Exception as e:
             print(f"Error exporting to XLSX: {e}")
             return False
+
+    def export_to_xlsx_magic(self, file_path: str) -> bool:
+        """Export results to XLSX format with specified columns and no formatting"""
+        if not XLSX_SUPPORT:
+            print("xlsxwriter not available. Please install: pip install xlsxwriter")
+            return False
+
+        try:
+            # Define the simple format columns
+            fields = [
+                "เครื่องผลิต",
+                "วันที่ Plan",
+                "ชุดที่",
+                "Seq",
+                "เลขที่ใบสั่งขาย",
+                "ลำดับที่",
+                "ประเภทกล่อง",
+                "จำนวนให้ผลิต",
+                "จำนวนผลิตได้",
+                "วันที่ป้อนผลิต",
+                "เวลาบันทึกผลิต",
+                "สถานะ",
+                "ผลผลิตสุทธิ",
+                "หน้ากระดาษ",
+                "หมายเหตุ",
+                "สถานะเข้าเครื่องจักร",
+                "วันที่เข้าเครื่องจักร",
+                "เวลาเข้าเครื่องจักร",
+                "สั่งผลิตเกิน%",
+                "วันที่เข้าเครื่องพิมพ์",
+                "เวลาเข้าเครื่องพิมพ์",
+                "Job ##",
+                "Out",
+                "ใบมีด",
+                "เลขที่ใบสั่งขาย-2",
+                "ลำดับที่-2",
+                "ประเภทกล่อง-2",
+                "จำนวนให้ผลิต-2",
+                "ผลิตได้-2",
+                "ผลิตสุทธิ-2",
+                "Out-2",
+                "Group-1",
+                "Group-2",
+                "วันที่เริ่มผลิต",
+                "เวลาเริ่มผลิต",
+                "วันที่ผลิตเสร็จ",
+                "เวลาผลิตเสร็จ",
+                "Process_machine",
+                "Process_machine-2",
+                "ทับหน้าเรียบ",
+                "ทับหน้าเรียบ-2",
+                "SideOrderWidth(mm)",
+                "SideOrderCutoff",
+                "กว้าง(inch)",
+                "กว้าง-2(inch)",
+                "run_idmc",
+                "ซ้าย-1",
+                "กลาง-1",
+                "ขวา-1",
+                "ซ้าย-2",
+                "กลาง-2",
+                "ขวา-2",
+                "สั่งพิมพ์หมด-1",
+                "สั่งพิมพ์หมด-2",
+                "turnDegree-1",
+                "turnDegree-2",
+                "Urgent-1",
+                "Urgent-2"
+            ]
+
+            workbook = xlsxwriter.Workbook(file_path)
+            worksheet = workbook.add_worksheet("Cutting Results Magic")
+
+            # Write headers without formatting
+            for col, header in enumerate(fields):
+                worksheet.write(0, col, header)
+
+            # Write data rows without formatting
+            row_idx = 1
+            for result in self.results_data:
+                # Build simple row data based on available fields
+                row_data = self._build_simple_row_data(result)
+
+                # Write row data
+                for col, value in enumerate(row_data):
+                    worksheet.write(row_idx, col, value)
+
+                row_idx += 1
+
+            # Auto-adjust column widths
+            for col in range(len(fields)):
+                worksheet.set_column(col, col, 15)
+
+            workbook.close()
+            return True
+
+        except Exception as e:
+            print(f"Error exporting to XLSX magic: {e}")
+            return False
+
+    def _build_simple_row_data(self, result: Dict[str, Any]) -> List[str]:
+        """Build simple row data for the specified format columns, mapping from UI result_table data"""
+        return [
+            str(result.get("machine", "")),  # เครื่องผลิต - leave as is
+            str(result.get("plan_date", "")),  # วันที่ Plan - leave as is
+            str(result.get("set_id", "")),  # ชุดกี - leave as is
+            str(result.get("seq", "")),  # Seq - leave as is
+            str(result.get("order_number", "")),  # เลขที่ใบสั่งขาย - mapped from result_table
+            str(result.get("order_seq", "")),  # ลำดับที่ - leave as is
+            str(result.get("component_type", "")),  # ประเภทกล่อง - mapped from component_type in result_table
+            str(result.get("order_qty", "")),  # จำนวนให้ผลิต - mapped from order_qty in result_table
+            str(result.get("actual_qty", "")),  # จำนวนผลิตได้ - leave as is
+            str(result.get("production_date", "")),  # วันที่ป้อนผลิต - leave as is
+            str(result.get("production_time", "")),  # เวลาบันทึกผลิต - leave as is
+            str(result.get("status", "")),  # สถานะ - leave as is
+            str(result.get("set_result", "")),  # ผลผลิตชุดกี - leave as is
+            str(result.get("paper_face", "")),  # หน้ากระดาษ - leave as is
+            str(result.get("remarks", "")),  # หมายเหตุ - leave as is
+            str(result.get("machine_status", "")),  # สถานะบ้าเครื่องจักร - leave as is
+            str(result.get("machine_entry_date", "")),  # วันที่เข้าเครื่องจักร - leave as is
+            str(result.get("machine_entry_time", "")),  # เวลาเข้าเครื่องจักร - leave as is
+            str(result.get("overproduction_percent", "")),  # สั่งผลิตเกิน% - leave as is
+            str(result.get("print_entry_date", "")),  # วันที่เข้าเครื่องพิมพ์ - leave as is
+            str(result.get("print_entry_time", "")),  # เวลาเข้าเครื่องพิมพ์ - leave as is
+            str(result.get("job_number", "")),  # Job ## - leave as is
+            str(result.get("cuts", "")),  # Out - mapped from cuts in result_table
+            str(result.get("production_sheet", "")),  # ใบผลิต - leave as is
+            str(result.get("order_number_2", "")),  # เลขที่ใบสั่งขาย-2 - leave as is
+            str(result.get("order_seq_2", "")),  # ลำดับที่-2 - leave as is
+            str(result.get("box_type_2", "")),  # ประเภทกล่อง-2 - leave as is
+            str(result.get("order_qty_2", "")),  # จำนวนให้ผลิต-2 - leave as is
+            str(result.get("actual_qty_2", "")),  # ผลิตได้-2 - leave as is
+            str(result.get("set_result_2", "")),  # ผลิตชุดกี-2 - leave as is
+            str(result.get("out_2", "")),  # Out-2 - leave as is
+            str(result.get("group_id", "")),  # Group-1 - mapped from group_id in result_table
+            str(result.get("group_2", "")),  # Group-2 - leave as is
+            str(result.get("start_date", "")),  # วันที่เริ่มผลิต - leave as is
+            str(result.get("start_time", "")),  # เวลาเริ่มผลิต - leave as is
+            str(result.get("finish_date", "")),  # วันที่ผลิตเสร็จ - leave as is
+            str(result.get("finish_time", "")),  # เวลาผลิตเสร็จ - leave as is
+            str(result.get("process_machine", "")),  # Process_machine - leave as is
+            str(result.get("process_machine_2", "")),  # Process_machine-2 - leave as is
+            str(result.get("front_fold", "")),  # ก้บหน้ารียม - leave as is
+            str(result.get("front_fold_2", "")),  # ก้บหน้ารียม-2 - leave as is
+            str(result.get("side_order_width", "")),  # SideOrderWidth(mm) - leave as is
+            str(result.get("side_order_cutoff", "")),  # SideOrderCutoff - leave as is
+            str(result.get("order_w", "")),  # กว้าง(inch) - mapped from order_w in result_table
+            str(result.get("width_inch_2", "")),  # กว้าง-2(inch) - leave as is
+            str(result.get("run_idmc", "")),  # run_idmc - leave as is
+            str(result.get("left_1", "")),  # ซ้าย-1 - leave as is
+            str(result.get("middle_1", "")),  # กลาง-1 - leave as is
+            str(result.get("right_1", "")),  # ขวา-1 - leave as is
+            str(result.get("left_2", "")),  # ซ้าย-2 - leave as is
+            str(result.get("middle_2", "")),  # กลาง-2 - leave as is
+            str(result.get("right_2", "")),  # ขวา-2 - leave as is
+            str(result.get("print_complete_1", "")),  # สั่งพิมพ์หมด-1 - leave as is
+            str(result.get("print_complete_2", "")),  # สั่งพิมพ์หมด-2 - leave as is
+            str(result.get("turn_degree_1", "")),  # turnDegree-1 - leave as is
+            str(result.get("turn_degree_2", "")),  # turnDegree-2 - leave as is
+            str(result.get("urgent_1", "")),  # Urgent-1 - leave as is
+            str(result.get("urgent_2", "")),  # Urgent-2 - leave as is
+        ]
 
     def _build_main_row_data_with_visibility(
         self, result: Dict[str, Any], show_roll_width: bool
